@@ -68,4 +68,18 @@
     <string name="sound_plays_here">The movie\'s sound will play here.</string>
     <string name="see_names_title">Show headphone names</string>
     <string name="see_names_hint">Allow TheatreSync to see the names of your Bluetooth devices.</string>
+    <string name="brand_eyebrow">Quantari · TheatreSync</string>
+    <string name="play">Play</string>
+    <string name="pause">Pause</string>
+    <string name="skip_back">Back 10 seconds</string>
+    <string name="skip_forward">Forward 10 seconds</string>
+    <string name="skip_back_short">−10s</string>
+    <string name="skip_fwd_short">+10s</string>
+    <string name="screen_mirroring">Screen mirroring</string>
+    <string name="mirroring_a_screen">Mirroring a screen</string>
+    <string name="phone_speaker">Phone speaker</string>
+    <string name="bluetooth_headphones">Bluetooth headphones</string>
+    <string name="wired_headphones">Wired headphones</string>
+    <string name="notif_play_pause">Play / Pause</string>
+    <string name="notif_stop">Stop</string>
 </resources>

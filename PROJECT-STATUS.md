@@ -1,6 +1,6 @@
 # Project status
 
-_Last updated: 2026-11-18. Milestone 1.2: Now casting, headphones page, navigation_
+_Last updated: 2026-11-18. Milestone 1.3: audit against industry standards (see [docs/QUALITY-AUDIT.md](docs/QUALITY-AUDIT.md))_
 
 ## Audit: what actually works
 

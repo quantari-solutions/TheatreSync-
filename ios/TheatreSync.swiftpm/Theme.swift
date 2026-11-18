@@ -140,10 +140,14 @@ struct GradientTitle: View {
     let text: String
     var size: CGFloat = 34
 
+    /// Scales with the user's Dynamic Type setting (Apple HIG), starting from `size`.
+    @ScaledMetric(relativeTo: .largeTitle) private var scale: CGFloat = 1
+
     var body: some View {
         Text(text)
-            .font(.system(size: size, weight: .heavy))
+            .font(.system(size: size * scale, weight: .heavy))
             .foregroundStyle(Q.gold)
+            .accessibilityAddTraits(.isHeader)
     }
 }
 

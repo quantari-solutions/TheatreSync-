@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Adaptive icon foreground: artwork kept inside the 66dp safe zone of the 108dp canvas. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <group android:scaleX="0.62" android:scaleY="0.62" android:translateX="20.5" android:translateY="18">
+        <path android:pathData="M26,30h56v34h-56z">
+            <aapt:attr name="android:fillColor">
+                <gradient android:type="linear" android:startX="26" android:startY="30" android:endX="82" android:endY="64">
+                    <item android:offset="0" android:color="#FFF0C44C" />
+                    <item android:offset="0.5" android:color="#FFFFE9A8" />
+                    <item android:offset="1" android:color="#FFD4A017" />
+                </gradient>
+            </aapt:attr>
+        </path>
+        <path android:fillColor="#050508" android:pathData="M49,40l12,7l-12,7z" />
+        <path android:strokeWidth="6" android:strokeLineCap="round" android:strokeColor="#F0C44C"
+            android:pathData="M34,90a20,16 0,0 1,40 0" />
+        <path android:fillColor="#F0C44C" android:pathData="M28,86h10v14h-10z M70,86h10v14h-10z" />
+    </group>
+</vector>

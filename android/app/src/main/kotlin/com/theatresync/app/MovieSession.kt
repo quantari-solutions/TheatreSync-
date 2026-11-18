@@ -133,8 +133,20 @@ class MovieSession(private val app: Application) {
     /** Call while the setup screen is visible. */
     fun startTvSearch() {
         if (castContext == null) return
-        router.addCallback(selector, routerCallback, MediaRouter.CALLBACK_FLAG_PERFORM_ACTIVE_SCAN)
+        applyScanMode()
         refreshTvs()
+    }
+
+    /**
+     * Battery: an active network scan only while the user still has to pick a TV.
+     * Once connected (or a movie is playing) passive discovery is enough.
+     */
+    private fun applyScanMode() {
+        val active = _ui.value.connectedTv == null && _ui.value.phase == Phase.SETUP
+        router.addCallback(
+            selector, routerCallback,
+            if (active) MediaRouter.CALLBACK_FLAG_PERFORM_ACTIVE_SCAN else MediaRouter.CALLBACK_FLAG_REQUEST_DISCOVERY,
+        )
     }
 
     fun stopTvSearch() {
@@ -197,6 +209,7 @@ class MovieSession(private val app: Application) {
         castSession = session
         restoreTvSoundIfWeMutedIt(session)
         _ui.update { it.copy(connectedTv = session.castDevice?.friendlyName ?: "Chromecast", message = null) }
+        if (castContext != null) applyScanMode()
     }
 
     private fun onTvDisconnected() {
@@ -271,6 +284,9 @@ class MovieSession(private val app: Application) {
         wifiLock = null
         HostService.stop(app)
     }
+
+    /** From the notification: pause or resume the movie on the TV. */
+    fun notificationPlayPause() = togglePause()
 
     fun togglePause() {
         val c = castSession?.remoteMediaClient ?: return

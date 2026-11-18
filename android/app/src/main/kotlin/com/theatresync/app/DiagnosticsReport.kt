@@ -30,9 +30,10 @@ object DiagnosticsReport {
             } ?: return@mapNotNull null
             val raw = d.productName?.toString()?.trim().orEmpty()
             val name = when {
-                kind == Kind.SPEAKER -> "Phone speaker"
-                kind == Kind.BLUETOOTH && !canReadNames -> "Bluetooth headphones"
-                raw.isBlank() || raw == Build.MODEL -> if (kind == Kind.WIRED) "Wired headphones" else "Bluetooth headphones"
+                kind == Kind.SPEAKER -> context.getString(R.string.phone_speaker)
+                kind == Kind.BLUETOOTH && !canReadNames -> context.getString(R.string.bluetooth_headphones)
+                raw.isBlank() || raw == Build.MODEL ->
+                    context.getString(if (kind == Kind.WIRED) R.string.wired_headphones else R.string.bluetooth_headphones)
                 else -> raw
             }
             Output(name, kind)

@@ -44,8 +44,10 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: TheatreSync-debug-apk
-          path: dist/TheatreSync-debug.apk
+          name: TheatreSync-apk
+          path: |
+            dist/TheatreSync.apk
+            dist/TheatreSync-debug.apk
           retention-days: 14
 
       - name: Upload reports
@@ -93,7 +95,17 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-boot-anim -camera-back none
           working-directory: ./android
-          script: ./gradlew --no-daemon :app:connectedDebugAndroidTest
+          # 1) instrumented tests on the debug build, 2) smoke test of the optimised (R8) build:
+          #    install, launch, and fail if it crashes within 8 seconds.
+          script: |
+            ./gradlew --no-daemon :app:connectedDebugAndroidTest :app:assembleRelease
+            adb install -r app/build/outputs/apk/release/app-release.apk
+            adb logcat -c
+            adb shell am start -W -n com.theatresync.app/.MainActivity
+            sleep 8
+            adb shell pidof com.theatresync.app || (adb logcat -d -s AndroidRuntime:E; exit 1)
+            if adb logcat -d -s AndroidRuntime:E | grep -q "FATAL EXCEPTION"; then adb logcat -d -s AndroidRuntime:E; exit 1; fi
+            echo "Release build launched without crashing"
 
       - name: Upload emulator test reports
         if: always()

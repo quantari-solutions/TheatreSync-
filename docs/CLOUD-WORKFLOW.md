@@ -16,7 +16,7 @@ The Windows PC is **optional**. Everything below runs in Claude Code Cloud or Gi
 ## Getting the APK onto the phone (no PC)
 
 1. On the phone, open the PR in the GitHub app or browser → **Checks** → **Android** → run summary.
-2. Under **Artifacts**, download `TheatreSync-debug-apk` (a `.zip`; you must be signed in to GitHub).
+2. Under **Artifacts**, download `TheatreSync-apk` (a `.zip`; you must be signed in to GitHub). Install `TheatreSync.apk`, the optimised build.
 3. Open the zip in Files, tap `TheatreSync-debug.apk`, allow "Install unknown apps" for that app once.
 
 ## Scripts

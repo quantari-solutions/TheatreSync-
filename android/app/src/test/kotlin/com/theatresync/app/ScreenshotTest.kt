@@ -76,3 +76,34 @@ class ScreenshotTest {
     }
     @Test fun headphones3_technicalDetails() = shot { TechnicalDetails(details) }
 }
+
+/** Accessibility: the largest system font size (200 %) must not clip or overlap anything. */
+class LargeFontScreenshotTest {
+    @get:Rule
+    val paparazzi = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.copy(fontScale = 2.0f), theme = "android:Theme.Material.NoActionBar", maxPercentDifference = 0.01)
+
+    @Test fun setup_largeFont() = paparazzi.snapshot {
+        QuantariTheme { GridBackground { SetupScreen(Ui(movieTitle = "Interstellar", connectedTv = "Theatre Room TV"), {}, {}, {}, {}, {}, {}) } }
+    }
+
+    @Test fun playing_largeFont() = paparazzi.snapshot {
+        QuantariTheme {
+            GridBackground {
+                PlayingScreen(
+                    Ui(movieTitle = "Interstellar", connectedTv = "Theatre Room TV", phase = Phase.PLAYING, positionMs = 2_712_000, durationMs = 10_140_000, driftMs = 6, friends = 1, joinAddress = "192.168.1.23:41234"),
+                    {}, {}, {}, {}, {}, {}, {}, {},
+                )
+            }
+        }
+    }
+}
+
+/** Tablets: content stays at a comfortable width, centred. */
+class TabletScreenshotTest {
+    @get:Rule
+    val paparazzi = Paparazzi(deviceConfig = DeviceConfig.PIXEL_C, theme = "android:Theme.Material.NoActionBar", maxPercentDifference = 0.01)
+
+    @Test fun setup_tablet() = paparazzi.snapshot {
+        QuantariTheme { GridBackground { SetupScreen(Ui(movieTitle = "Interstellar", tvs = listOf(Tv("1", "Theatre Room TV"))), {}, {}, {}, {}, {}, {}) } }
+    }
+}

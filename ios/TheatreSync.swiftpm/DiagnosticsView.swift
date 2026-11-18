@@ -24,6 +24,7 @@ struct DiagnosticsView: View {
                             .foregroundStyle(headphones.isEmpty ? Q.textFaint : .black)
                     }
                     .padding(.top, 12)
+                    .accessibilityHidden(true)
 
                     if headphones.isEmpty {
                         Text("No headphones connected")
@@ -95,7 +96,7 @@ struct DiagnosticsView: View {
             .map { $0.portName }
 
         var lines: [String] = []
-        lines.append("TheatreSync iOS 0.3.0 · protocol v\(SyncProtocol.protocolVersion)")
+        lines.append("TheatreSync iOS 0.3.1 · protocol v\(SyncProtocol.protocolVersion)")
         lines.append("Output latency: \(Int(session.outputLatency * 1000)) ms")
         lines.append("IO buffer: \(Int(session.ioBufferDuration * 1000)) ms")
         lines.append("Sample rate: \(Int(session.sampleRate)) Hz")
