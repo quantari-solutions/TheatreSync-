@@ -11,7 +11,7 @@ _Last updated: 2026-11-18 — Milestone 0 (foundation)_
 | Android `sync-core`: codec, clock sync, playback clock, latency aligner | 17 JVM unit tests passing |
 | Android `app`: diagnostics screen (outputs, permissions, audio props) | 4 unit tests passing, lint 0 issues |
 | Debug APK build | `./scripts/build-android.sh` → `dist/TheatreSync-debug.apk` (minSdk 29, targetSdk 35) |
-| CI: Android (tests, lint, APK artifact) + Contracts/iOS static + docs links | `.github/workflows/` — first run happens on the PR |
+| CI: Android (tests, lint, APK artifact) + Contracts/iOS static + docs links | `.github/workflows/` — green on PR #1 |
 | iOS Swift Playgrounds package: diagnostics view, shared models, clock sync | Static checks pass (**not compiled**) |
 
 ## Not yet verified
@@ -20,7 +20,6 @@ _Last updated: 2026-11-18 — Milestone 0 (foundation)_
 |---|---|
 | iOS package compiles & runs | HW-02 on iPad |
 | App sees WH-1000XM4 as A2DP output | HW-01 on Motorola |
-| GitHub Actions workflows green | First PR run |
 
 ## Next milestones (proposed)
 
@@ -28,6 +27,10 @@ _Last updated: 2026-11-18 — Milestone 0 (foundation)_
 2. **M2 — Latency calibration:** OS latency estimates + manual lip-sync slider, feeding `LatencyAligner`.
 3. **M3 — LAN sync:** host/listener discovery (NSD/Bonjour), clock exchange over UDP/WebSocket, iPad as remote.
 4. **M4 — Cast:** Google Cast sender integration, discovery and session control.
+
+## Working agreement
+
+Claude merges PRs itself once all checks pass (see [CLAUDE.md](CLAUDE.md)).
 
 ## Open questions for the owner
 
