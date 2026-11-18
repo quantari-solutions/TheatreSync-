@@ -6,6 +6,7 @@ import app.cash.paparazzi.Paparazzi
 import com.theatresync.app.MovieSession.Phase
 import com.theatresync.app.MovieSession.Tv
 import com.theatresync.app.MovieSession.Ui
+import com.theatresync.core.CastActivity
 import org.junit.Rule
 import org.junit.Test
 
@@ -46,5 +47,32 @@ class ScreenshotTest {
         ),
     )
 
-    @Test fun diagnostics() = shot { DiagnosticsScreen("TheatreSync 0.2.0 · protocol v1\nDevice: motorola moto g\n\nAudio outputs (2)\n  • WH-1000XM4\n    type=8 route=BLUETOOTH_A2DP", {}, {}) }
+    private val youtube = TvWatchers.NowCasting(
+        "1", "Theatre Room TV",
+        CastActivity(
+            appId = "233637DE", appName = "YouTube", kind = CastActivity.Kind.YOUTUBE,
+            title = "Interstellar – Official Trailer", subtitle = "Warner Bros. Pictures",
+            imageUrl = null, playerState = "PLAYING", currentTimeSec = 84.0, durationSec = 170.0,
+            mediaSessionId = 1, transportId = "web-1", hasMedia = true,
+        ),
+    )
+    private val mirroring = TvWatchers.NowCasting(
+        "1", "Theatre Room TV",
+        CastActivity(appId = "0F5096E8", appName = "Chrome Mirroring", kind = CastActivity.Kind.MIRRORING, statusText = "Casting tab: Netflix"),
+    )
+    private val details = "TheatreSync 0.2.0 · protocol v1\nDevice: motorola moto g\nAndroid 14 (API 34)\n\nAudio outputs (2)\n  • WH-1000XM4\n    type=8 route=BLUETOOTH_A2DP id=12"
+
+    @Test fun setup5_nowCastingYouTube() = setup(Ui(nowCasting = listOf(youtube), tvs = listOf(Tv("1", "Theatre Room TV"))))
+    @Test fun casting1_youtube() = shot { NowCastingScreen(youtube, {}, {}, {}) }
+    @Test fun casting2_mirroring() = shot { NowCastingScreen(mirroring, {}, {}, {}) }
+    @Test fun headphones1_connected() = shot {
+        HeadphonesScreen(
+            listOf(DiagnosticsReport.Output("WH-1000XM4", DiagnosticsReport.Kind.BLUETOOTH), DiagnosticsReport.Output("Phone speaker", DiagnosticsReport.Kind.SPEAKER)),
+            details, namesAllowed = true, onAllow = {}, onOpenBluetooth = {}, onBack = {},
+        )
+    }
+    @Test fun headphones2_none() = shot {
+        HeadphonesScreen(listOf(DiagnosticsReport.Output("Phone speaker", DiagnosticsReport.Kind.SPEAKER)), details, namesAllowed = false, onAllow = {}, onOpenBluetooth = {}, onBack = {})
+    }
+    @Test fun headphones3_technicalDetails() = shot { TechnicalDetails(details) }
 }

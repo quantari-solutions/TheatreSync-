@@ -13,6 +13,7 @@ import android.os.SystemClock
 import androidx.core.content.edit
 import androidx.mediarouter.media.MediaRouteSelector
 import androidx.mediarouter.media.MediaRouter
+import com.google.android.gms.cast.CastDevice
 import com.google.android.gms.cast.CastMediaControlIntent
 import com.google.android.gms.cast.MediaInfo
 import com.google.android.gms.cast.MediaLoadRequestData
@@ -22,6 +23,8 @@ import com.google.android.gms.cast.MediaStatus
 import com.google.android.gms.cast.framework.CastContext
 import com.google.android.gms.cast.framework.CastSession
 import com.google.android.gms.cast.framework.SessionManagerListener
+import com.theatresync.core.CastActivity
+import com.theatresync.core.CastStatus
 import com.theatresync.core.MediaServer
 import com.theatresync.core.Payload
 import com.theatresync.core.Platform
@@ -61,6 +64,8 @@ class MovieSession(private val app: Application) {
         val joinAddress: String? = null,
         val driftMs: Long? = null,
         val message: String? = null,
+        /** What each Chromecast is showing right now (YouTube, a mirrored tab, …), from any device. */
+        val nowCasting: List<TvWatchers.NowCasting> = emptyList(),
     ) {
         val canStart: Boolean get() = movieTitle != null && connectedTv != null
     }
@@ -90,6 +95,8 @@ class MovieSession(private val app: Application) {
     private var player: HeadphonePlayer? = null
     private var server: MediaServer? = null
     private val announcer = HostAnnouncer(app)
+    private val tvWatchers = TvWatchers { list -> publishNowCasting(list) }
+    private var rawNowCasting: List<TvWatchers.NowCasting> = emptyList()
     private var wifiLock: WifiManager.WifiLock? = null
     private var interrupted = false
     private var tickCount = 0
@@ -130,14 +137,41 @@ class MovieSession(private val app: Application) {
         refreshTvs()
     }
 
-    fun stopTvSearch() = router.removeCallback(routerCallback)
+    fun stopTvSearch() {
+        router.removeCallback(routerCallback)
+        tvWatchers.stopAll()
+    }
 
     private fun refreshTvs() {
-        val tvs = router.routes
-            .filter { !it.isDefault && it.isEnabled && it.matchesSelector(selector) }
-            .map { Tv(it.id, it.name) }
-        _ui.update { it.copy(tvs = tvs) }
+        val routes = router.routes.filter { !it.isDefault && it.isEnabled && it.matchesSelector(selector) }
+        _ui.update { it.copy(tvs = routes.map { r -> Tv(r.id, r.name) }) }
+        tvWatchers.update(
+            routes.mapNotNull { r ->
+                val device = CastDevice.getFromBundle(r.extras) ?: return@mapNotNull null
+                val address = device.inetAddress ?: return@mapNotNull null
+                TvWatchers.Tv(r.id, r.name, address, device.servicePort.takeIf { it > 0 } ?: 8009)
+            },
+        )
     }
+
+    private fun publishNowCasting(list: List<TvWatchers.NowCasting>) {
+        rawNowCasting = list
+        // Our own movie is shown on the playing screen, not as "now casting".
+        // Also hide Google's media player left open with nothing loaded after a movie ends.
+        val visible = list.filterNot {
+            val a = it.activity
+            a.appId == CastStatus.APP_DEFAULT_MEDIA_RECEIVER && (server != null || a.title == null || a.playerState == "IDLE")
+        }
+        _ui.update { it.copy(nowCasting = visible) }
+    }
+
+    fun castPlayPause(tvId: String) {
+        val a = rawNowCasting.firstOrNull { it.tvId == tvId }?.activity ?: return
+        tvWatchers.playPause(tvId, play = !a.isPlaying)
+    }
+
+    fun castSkip(tvId: String, deltaSec: Double) = tvWatchers.seekBy(tvId, deltaSec)
+
 
     fun connectTv(id: String) {
         router.routes.firstOrNull { it.id == id }?.select()
@@ -221,6 +255,7 @@ class MovieSession(private val app: Application) {
         castSession?.remoteMediaClient?.stop()
         teardown()
         _ui.update { it.copy(phase = Phase.SETUP, joinAddress = null, friends = 0, driftMs = null) }
+        publishNowCasting(rawNowCasting)
     }
 
     private fun teardown() {

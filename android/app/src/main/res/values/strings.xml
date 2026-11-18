@@ -50,4 +50,22 @@
     <string name="notif_channel">Movie playing</string>
     <string name="notif_title">TheatreSync is playing a movie</string>
     <string name="notif_text">Tap to open the controls.</string>
+    <string name="now_casting">Now casting</string>
+    <string name="on_tv">on %1$s</string>
+    <string name="play_pause">Play or pause</string>
+    <string name="mirroring_title">Mirroring from another device</string>
+    <string name="mirroring_hint">Use the laptop or phone that started it to pause or stop.</string>
+    <string name="cast_sound_title">Want this in your headphones?</string>
+    <string name="cast_sound_hint">YouTube and mirrored tabs send their sound straight to the TV, so it plays through the room speakers. For headphones in perfect sync, play your own movie files with TheatreSync.</string>
+    <string name="headphones">Headphones</string>
+    <string name="technical_details">Technical details</string>
+    <string name="no_headphones">No headphones connected</string>
+    <string name="no_headphones_hint">Turn your headphones on and connect them to this phone in Bluetooth settings.</string>
+    <string name="open_bluetooth">Open Bluetooth settings</string>
+    <string name="wired">Wired</string>
+    <string name="bluetooth">Bluetooth</string>
+    <string name="connected">Connected</string>
+    <string name="sound_plays_here">The movie\'s sound will play here.</string>
+    <string name="see_names_title">Show headphone names</string>
+    <string name="see_names_hint">Allow TheatreSync to see the names of your Bluetooth devices.</string>
 </resources>

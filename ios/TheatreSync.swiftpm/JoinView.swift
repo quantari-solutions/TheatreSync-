@@ -80,7 +80,7 @@ struct JoinView: View {
                         NavigationLink {
                             DiagnosticsView()
                         } label: {
-                            Label("Check headphones", systemImage: "headphones")
+                            Label("Headphones", systemImage: "headphones")
                         }
                         .buttonStyle(GhostButtonStyle())
                         Spacer()

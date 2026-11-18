@@ -52,6 +52,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalView
+import android.view.HapticFeedbackConstants
 
 /**
  * Quantari Solutions look (quantari-solutions.vercel.app):
@@ -187,13 +189,17 @@ fun GoldButton(
     shape: Shape = RoundedCornerShape(50),
     leading: String? = null,
 ) {
+    val view = LocalView.current
     Box(
         modifier
             .heightIn(min = height)
             .then(if (enabled) Modifier.shadow(14.dp, shape, ambientColor = Q.Glow, spotColor = Q.Glow) else Modifier)
             .clip(shape)
             .background(if (enabled) Q.Gold else Brush.linearGradient(listOf(Color(0xFF1A1A1A), Color(0xFF1A1A18))))
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .clickable(enabled = enabled, role = Role.Button) {
+                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                onClick()
+            }
             .padding(PaddingValues(horizontal = 22.dp, vertical = 12.dp)),
         contentAlignment = Alignment.Center,
     ) {
@@ -209,13 +215,17 @@ fun GoldButton(
 @Composable
 fun GhostButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, height: Dp = 48.dp) {
     val shape = RoundedCornerShape(50)
+    val view = LocalView.current
     Box(
         modifier
             .heightIn(min = height)
             .clip(shape)
             .background(Q.Card.copy(alpha = 0.6f))
             .border(BorderStroke(1.dp, Q.BorderAccent), shape)
-            .clickable(role = Role.Button, onClick = onClick)
+            .clickable(role = Role.Button) {
+                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                onClick()
+            }
             .padding(horizontal = 18.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center,
     ) {

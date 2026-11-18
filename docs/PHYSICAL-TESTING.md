@@ -83,3 +83,20 @@ How to report: reply in Claude Code with the test ID, *Pass/Fail*, and a screens
 **Expected:** the Android phone shows **Friends listening: 1**; both hear the movie in sync with the screen.
 
 **Report:** Pass/Fail, any error text, the iPhone's **Sync: … ms** and **Sound delay** values.
+
+---
+
+## HW-05 — "Now casting" card (YouTube from a phone, tab from a laptop)
+
+**Objective:** TheatreSync shows what's on the TV, with a thumbnail, whoever started it.
+
+**Steps**
+1. On any phone, cast a YouTube video to the Chromecast with the YouTube app.
+2. Open TheatreSync on the Android phone. Within a few seconds a **Now casting** card should appear at the top, showing the thumbnail and the title.
+3. Tap the pause button on the card. The TV should pause. Tap it again to resume.
+4. Tap the card. The **Now casting** page opens. Try −10s / +10s, then tap ← (or swipe back).
+5. On the laptop, in Chrome: ⋮ → **Cast…** → choose the Chromecast → **Cast tab**. The card should change to **Screen mirroring**.
+
+**Expected:** the card appears and disappears on its own; the thumbnail and title match the video; pause/skip control the TV.
+
+**Report:** Pass/Fail per step and a screenshot of the card.

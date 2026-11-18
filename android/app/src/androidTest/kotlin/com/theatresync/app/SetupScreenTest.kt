@@ -7,33 +7,57 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.test.espresso.Espresso
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Launches the real app on an emulator and checks the three-step setup screen.
- * The screen scrolls, so each item is scrolled into view before checking it
- * (small emulator screens don't show everything at once).
+ * Launches the real app on an emulator. The screens scroll, so each item is
+ * scrolled into view before checking it.
  */
 @RunWith(AndroidJUnit4::class)
 class SetupScreenTest {
     @get:Rule val rule = createAndroidComposeRule<MainActivity>()
 
+    private fun openHeadphones() {
+        rule.onNodeWithText("Check headphones", substring = true).performScrollTo().performClick()
+        rule.onNodeWithText("Headphones").assertIsDisplayed()
+    }
+
+    private fun assertHome() {
+        rule.onNodeWithText("Choose movie", substring = true).performScrollTo().assertIsDisplayed()
+    }
+
     @Test
     fun showsThreeStepsAndStartIsDisabledUntilReady() {
         rule.onNodeWithText("Choose a movie").performScrollTo().assertIsDisplayed()
-        rule.onNodeWithText("Choose movie", substring = true).performScrollTo().assertIsDisplayed()
+        assertHome()
         rule.onNodeWithText("Choose your TV").performScrollTo().assertIsDisplayed()
         rule.onNodeWithTag("start").performScrollTo().assertIsDisplayed().assertIsNotEnabled()
     }
 
     @Test
-    fun headphoneCheckOpensAndCloses() {
-        rule.onNodeWithText("Check headphones", substring = true).performScrollTo().performClick()
-        rule.onNodeWithText("Allow Bluetooth").performScrollTo().assertIsDisplayed()
-        rule.onNodeWithText("Back").performScrollTo().performClick()
-        rule.onNodeWithText("Choose movie", substring = true).performScrollTo().assertIsDisplayed()
+    fun backArrowReturnsFromHeadphones() {
+        openHeadphones()
+        rule.onNodeWithTag("back").performClick()
+        assertHome()
+    }
+
+    @Test
+    fun systemBackReturnsFromHeadphones() {
+        openHeadphones()
+        Espresso.pressBack()
+        assertHome()
+    }
+
+    @Test
+    fun technicalDetailsOnlyBehindInfoButton() {
+        openHeadphones()
+        rule.onNodeWithText("Technical details", substring = true, useUnmergedTree = true).assertDoesNotExist()
+        rule.onNodeWithTag("info").performClick()
+        rule.waitForIdle()
+        rule.onNodeWithText("protocol v1", substring = true).assertIsDisplayed()
     }
 }
