@@ -100,6 +100,18 @@ class MediaServerTest {
         assertEquals(state, playing)
     }
 
+    @Test fun brokenFileProviderDoesNotKillServer() {
+        server.media = object : MediaSource {
+            override val title = "Broken"
+            override val mimeType = "video/mp4"
+            override val sizeBytes = 1000L
+            override fun open(offset: Long): InputStream = throw SecurityException("permission revoked")
+        }
+        runCatching { get("/media").inputStream.readBytes() } // request fails, that's fine
+        server.media = movie
+        assertEquals(200, get("/media").responseCode) // server still alive
+    }
+
     @Test fun unknownPathIs404() = assertEquals(404, get("/nope").responseCode)
 
     @Test fun noMovieIs404() {

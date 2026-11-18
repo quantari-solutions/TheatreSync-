@@ -104,6 +104,7 @@ class CastV2Test {
         val server = ServerSocket(0).also { fake = it }
         val received = CopyOnWriteArrayList<CastMessage>()
         val pauseSeen = CountDownLatch(1)
+        val stopSeen = CountDownLatch(1)
         var appRunning = false
         Thread {
             server.accept().use { c ->
@@ -124,6 +125,7 @@ class CastV2Test {
                         m.namespace == CastMessage.NS_MEDIA && type == "GET_STATUS" ->
                             CastMessage.write(out, CastMessage("web-7", m.sourceId, CastMessage.NS_MEDIA, youtubeMedia))
                         m.namespace == CastMessage.NS_MEDIA && type == "PAUSE" -> pauseSeen.countDown()
+                        m.namespace == CastMessage.NS_RECEIVER && type == "STOP" && m.payloadUtf8.contains("\"sessionId\":\"a1b2\"") -> stopSeen.countDown()
                     }
                 }
             }
@@ -146,6 +148,8 @@ class CastV2Test {
             val pause = received.first { CastStatus.type(it.payloadUtf8) == "PAUSE" }
             assertEquals("web-7", pause.destinationId)
             assertTrue(pause.payloadUtf8.contains("\"mediaSessionId\":3"))
+            watcher.stopApp()
+            assertTrue("STOP with the receiver session ID not sent", stopSeen.await(5, TimeUnit.SECONDS))
             assertTrue("must CONNECT to the app transport before media commands",
                 received.any { it.destinationId == "web-7" && it.namespace == CastMessage.NS_CONNECTION })
         } finally {

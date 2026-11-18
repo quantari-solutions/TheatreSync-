@@ -53,7 +53,7 @@ class ScreenshotTest {
             appId = "233637DE", appName = "YouTube", kind = CastActivity.Kind.YOUTUBE,
             title = "Interstellar – Official Trailer", subtitle = "Warner Bros. Pictures",
             imageUrl = null, playerState = "PLAYING", currentTimeSec = 84.0, durationSec = 170.0,
-            mediaSessionId = 1, transportId = "web-1", hasMedia = true,
+            mediaSessionId = 1, transportId = "web-1", hasMedia = true, sessionId = "s1",
         ),
     )
     private val mirroring = TvWatchers.NowCasting(
@@ -75,6 +75,12 @@ class ScreenshotTest {
         HeadphonesScreen(listOf(DiagnosticsReport.Output("Phone speaker", DiagnosticsReport.Kind.SPEAKER)), details, namesAllowed = false, onAllow = {}, onOpenBluetooth = {}, onBack = {})
     }
     @Test fun headphones3_technicalDetails() = shot { TechnicalDetails(details) }
+    @Test fun youtube1_paste() = shot { YouTubeScreen(Ui(tvs = listOf(Tv("1", "Media Room TV"))), "https://youtu.be/dQw4w9WgXcQ", { _, _ -> }, {}, {}) }
+    @Test fun youtube2_failed() = shot {
+        YouTubeScreen(Ui(tvs = listOf(Tv("1", "Media Room TV"), Tv("2", "Alfred")), youTube = MovieSession.YouTubeState.FAILED), "https://youtu.be/dQw4w9WgXcQ", { _, _ -> }, {}, {})
+    }
+    @Test fun mirror() = shot { MirrorScreen({}, {}) }
+    @Test fun setup6_crashCard() = shot { SetupScreen(Ui(), {}, {}, {}, {}, {}, {}, crashReport = "trace") }
 }
 
 /** Accessibility: the largest system font size (200 %) must not clip or overlap anything. */

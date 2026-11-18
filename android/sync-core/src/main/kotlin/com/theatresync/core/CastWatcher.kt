@@ -39,6 +39,20 @@ class CastWatcher(
     /** Sends PLAY or PAUSE to the media session on the TV (works for YouTube and other media apps). */
     fun playPause(play: Boolean) = mediaCommand(if (play) """{"type":"PLAY"""" else """{"type":"PAUSE"""")
 
+    /** Stops whatever is playing on the TV (closes the app there; the TV returns to its idle screen). */
+    fun stopApp() {
+        val session = current?.sessionId ?: return
+        val s = socket ?: return
+        Thread {
+            try {
+                synchronized(this) {
+                    CastMessage.write(s.getOutputStream(), CastMessage(sender, "receiver-0", CastMessage.NS_RECEIVER,
+                        """{"type":"STOP","sessionId":"$session","requestId":${requestId.incrementAndGet()}}"""))
+                }
+            } catch (_: IOException) {}
+        }.start()
+    }
+
     /** Seeks the media session to [seconds]. */
     fun seekTo(seconds: Double) = mediaCommand("""{"type":"SEEK","currentTime":$seconds""")
 

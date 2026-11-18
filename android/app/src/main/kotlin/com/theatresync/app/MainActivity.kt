@@ -7,6 +7,8 @@ import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
+import android.content.ActivityNotFoundException
+import android.net.Uri
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -51,6 +53,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -69,6 +73,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -80,21 +85,26 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.theatresync.app.MovieSession.Phase
 import com.theatresync.core.CastActivity
+import com.theatresync.core.YouTubeLinks
 import kotlin.math.abs
 
-enum class Page { HOME, HEADPHONES, NOW_CASTING }
+enum class Page { HOME, HEADPHONES, NOW_CASTING, YOUTUBE, MIRROR }
 
 class MainActivity : ComponentActivity() {
     private val session: MovieSession get() = (application as TheatreSyncApplication).session
     private val outputs = mutableStateOf<List<DiagnosticsReport.Output>>(emptyList())
     private val details = mutableStateOf("")
+    private val sharedLink = mutableStateOf<String?>(null)
+    private val crashReport = mutableStateOf<String?>(null)
     private lateinit var audioManager: AudioManager
 
     private val pickMovie = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -122,8 +132,11 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         audioManager = getSystemService(AudioManager::class.java)
+        crashReport.value = CrashReporter.pending(this)
+        handleShare(intent)
         mirroringLabel = getString(R.string.screen_mirroring)
         mirroringHeadline = getString(R.string.mirroring_a_screen)
+        videoLabel = getString(R.string.video_label)
         setContent {
             QuantariTheme {
                 GridBackground {
@@ -133,6 +146,8 @@ class MainActivity : ComponentActivity() {
                     val casting = ui.nowCasting.firstOrNull { it.tvId == castTvId }
 
                     BackHandler(enabled = page != Page.HOME) { page = Page.HOME }
+                    // Shared from the YouTube app: jump straight to the YouTube page.
+                    LaunchedEffect(sharedLink.value) { if (sharedLink.value != null) page = Page.YOUTUBE }
                     // If the cast we're looking at ends, go back home on its own.
                     LaunchedEffect(page, casting == null) {
                         if (page == Page.NOW_CASTING && casting == null) page = Page.HOME
@@ -140,6 +155,8 @@ class MainActivity : ComponentActivity() {
 
                     val target = when {
                         page == Page.HEADPHONES -> "headphones"
+                        page == Page.YOUTUBE -> "youtube"
+                        page == Page.MIRROR -> "mirror"
                         page == Page.NOW_CASTING && casting != null -> "casting"
                         ui.phase == Phase.SETUP -> "setup"
                         else -> "playing"
@@ -147,7 +164,7 @@ class MainActivity : ComponentActivity() {
                     AnimatedContent(
                         targetState = target,
                         transitionSpec = {
-                            val forward = targetState == "headphones" || targetState == "casting"
+                            val forward = targetState in setOf("headphones", "casting", "youtube", "mirror")
                             (slideInHorizontally { if (forward) it / 3 else -it / 3 } + fadeIn(tween(220)))
                                 .togetherWith(slideOutHorizontally { if (forward) -it / 3 else it / 3 } + fadeOut(tween(180)))
                         },
@@ -162,12 +179,24 @@ class MainActivity : ComponentActivity() {
                                 onOpenBluetooth = { startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) },
                                 onBack = { page = Page.HOME },
                             )
+                            "youtube" -> YouTubeScreen(
+                                ui = ui,
+                                initialLink = sharedLink.value,
+                                onCast = { id, tv -> session.castYouTube(id, tv) },
+                                onOpenApp = { link -> openYouTubeApp(link) },
+                                onBack = { session.resetYouTube(); sharedLink.value = null; page = Page.HOME },
+                            )
+                            "mirror" -> MirrorScreen(
+                                onStart = { startMirroring() },
+                                onBack = { page = Page.HOME },
+                            )
                             "casting" -> casting?.let { c ->
                                 NowCastingScreen(
                                     item = c,
                                     onPlayPause = { session.castPlayPause(c.tvId) },
                                     onSkip = { session.castSkip(c.tvId, it) },
                                     onBack = { page = Page.HOME },
+                                    onStop = { session.castStop(c.tvId); page = Page.HOME },
                                 )
                             }
                             "setup" -> SetupScreen(
@@ -186,6 +215,12 @@ class MainActivity : ComponentActivity() {
                                 onDismiss = session::dismissMessage,
                                 onOpenCasting = { id -> castTvId = id; page = Page.NOW_CASTING },
                                 onCastPlayPause = session::castPlayPause,
+                                onCastStop = session::castStop,
+                                onYouTube = { page = Page.YOUTUBE },
+                                onMirror = { page = Page.MIRROR },
+                                crashReport = crashReport.value,
+                                onShareCrash = { shareCrash() },
+                                onDismissCrash = { CrashReporter.clear(this@MainActivity); crashReport.value = null },
                             )
                             else -> PlayingScreen(
                                 ui = ui,
@@ -216,6 +251,58 @@ class MainActivity : ComponentActivity() {
         session.stopTvSearch()
         audioManager.unregisterAudioDeviceCallback(deviceCallback)
         super.onStop()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleShare(intent)
+    }
+
+    /** "Share → TheatreSync" from the YouTube app (or any app sharing a YouTube link). */
+    private fun handleShare(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_SEND) return
+        val text = intent.getStringExtra(Intent.EXTRA_TEXT) ?: return
+        if (YouTubeLinks.videoId(text) != null) sharedLink.value = text
+    }
+
+    private fun openYouTubeApp(link: String?) {
+        val uri = Uri.parse(link?.takeIf { YouTubeLinks.videoId(it) != null } ?: "https://www.youtube.com/")
+        val inApp = Intent(Intent.ACTION_VIEW, uri).setPackage("com.google.android.youtube")
+        try {
+            startActivity(inApp)
+        } catch (_: ActivityNotFoundException) {
+            runCatching { startActivity(Intent(Intent.ACTION_VIEW, uri)) }
+        }
+    }
+
+    /**
+     * Android doesn't let apps start screen mirroring themselves, so open the phone's own
+     * Cast/screen-mirroring screen, falling back to the Google Home app.
+     */
+    private fun startMirroring() {
+        val attempts = listOf(
+            Intent(Settings.ACTION_CAST_SETTINGS),
+            Intent("android.settings.WIFI_DISPLAY_SETTINGS"),
+            packageManager.getLaunchIntentForPackage("com.google.android.apps.chromecast.app"),
+        )
+        for (i in attempts) {
+            if (i == null) continue
+            try {
+                startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                return
+            } catch (_: Exception) {
+                // try the next one
+            }
+        }
+        runCatching {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=com.google.android.apps.chromecast.app")))
+        }
+    }
+
+    private fun shareCrash() {
+        val report = crashReport.value ?: return
+        val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, report)
+        runCatching { startActivity(Intent.createChooser(send, getString(R.string.share_crash))) }
     }
 
     private fun runtimePermissions(): Array<String> = buildList {
@@ -295,13 +382,27 @@ internal fun SetupScreen(
     onDismiss: () -> Unit,
     onOpenCasting: (String) -> Unit = {},
     onCastPlayPause: (String) -> Unit = {},
+    onCastStop: (String) -> Unit = {},
+    onYouTube: () -> Unit = {},
+    onMirror: () -> Unit = {},
+    crashReport: String? = null,
+    onShareCrash: () -> Unit = {},
+    onDismissCrash: () -> Unit = {},
 ) = Screen {
     Brand(stringResource(R.string.setup_intro))
+    if (crashReport != null) CrashCard(onShareCrash, onDismissCrash)
     Message(ui.message, onDismiss)
     ui.nowCasting.forEach { item ->
-        NowCastingCard(item, onOpen = { onOpenCasting(item.tvId) }, onPlayPause = { onCastPlayPause(item.tvId) })
+        NowCastingCard(item, onOpen = { onOpenCasting(item.tvId) }, onPlayPause = { onCastPlayPause(item.tvId) }, onStop = { onCastStop(item.tvId) })
     }
 
+    Eyebrow(stringResource(R.string.quick_watch))
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        WatchTile("▶", stringResource(R.string.youtube), stringResource(R.string.youtube_tile_hint), Modifier.weight(1f).testTag("tile_youtube"), Color(0xFFE62117), onYouTube)
+        WatchTile("⧉", stringResource(R.string.mirror_screen), stringResource(R.string.mirror_tile_hint), Modifier.weight(1f).testTag("tile_mirror"), Q.Primary, onMirror)
+    }
+
+    Eyebrow(stringResource(R.string.movie_night))
     QCard(highlighted = ui.movieTitle == null) {
         StepHeader(1, stringResource(R.string.step_movie), done = ui.movieTitle != null)
         if (ui.movieTitle != null) {
@@ -342,6 +443,138 @@ internal fun SetupScreen(
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         GhostButton("🎧  " + stringResource(R.string.check_headphones), onCheckHeadphones, description = stringResource(R.string.check_headphones))
     }
+    Footer()
+}
+
+@Composable
+private fun WatchTile(glyph: String, title: String, hint: String, modifier: Modifier, accent: Color, onClick: () -> Unit) {
+    QCard(modifier.clickable(role = Role.Button, onClick = onClick)) {
+        Box(Modifier.size(44.dp).clip(CircleShape).background(accent).clearAndSetSemantics { }, contentAlignment = Alignment.Center) {
+            Text(glyph, color = if (accent == Q.Primary) Color.Black else Color.White, style = MaterialTheme.typography.titleMedium)
+        }
+        Text(title, color = Q.Text, style = MaterialTheme.typography.titleMedium)
+        Hint(hint)
+    }
+}
+
+@Composable
+private fun CrashCard(onShare: () -> Unit, onDismiss: () -> Unit) {
+    QCard(Modifier.semantics { liveRegion = LiveRegionMode.Polite }, highlighted = true) {
+        Text(stringResource(R.string.crash_title), style = MaterialTheme.typography.titleMedium, color = Q.Text)
+        Hint(stringResource(R.string.crash_hint))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            GoldButton(stringResource(R.string.share_crash), onShare, height = 48.dp)
+            GhostButton(stringResource(R.string.ok), onDismiss)
+        }
+    }
+}
+
+// ---------------------------------------------------------------- YouTube
+
+@Composable
+internal fun YouTubeScreen(
+    ui: MovieSession.Ui,
+    initialLink: String?,
+    onCast: (videoId: String, tvId: String) -> Unit,
+    onOpenApp: (String?) -> Unit,
+    onBack: () -> Unit,
+) = Screen {
+    var link by rememberSaveable(initialLink) { mutableStateOf(initialLink.orEmpty()) }
+    var tvId by rememberSaveable { mutableStateOf<String?>(null) }
+    val clipboard = LocalClipboardManager.current
+    val videoId = YouTubeLinks.videoId(link)
+    val chosenTv = ui.tvs.firstOrNull { it.id == tvId } ?: ui.tvs.firstOrNull { it.name == ui.connectedTv } ?: ui.tvs.singleOrNull()
+
+    // Shared straight from the YouTube app: cast at once if there's exactly one TV.
+    LaunchedEffect(initialLink, chosenTv?.id) {
+        val id = YouTubeLinks.videoId(initialLink)
+        if (id != null && chosenTv != null && ui.youTube == MovieSession.YouTubeState.IDLE) onCast(id, chosenTv.id)
+    }
+
+    TopBar(stringResource(R.string.youtube), onBack)
+    QCard(highlighted = true) {
+        Text(stringResource(R.string.yt_cast_title), style = MaterialTheme.typography.titleLarge, color = Q.Text)
+        Hint(stringResource(R.string.yt_cast_hint))
+        OutlinedTextField(
+            value = link,
+            onValueChange = { link = it },
+            modifier = Modifier.fillMaxWidth().testTag("yt_link"),
+            singleLine = true,
+            placeholder = { Text("https://youtu.be/…", color = Q.TextFaint) },
+            label = { Text(stringResource(R.string.yt_link_label)) },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = Q.Primary, unfocusedBorderColor = Q.BorderAccent,
+                focusedLabelColor = Q.Primary, unfocusedLabelColor = Q.TextFaint,
+                focusedTextColor = Q.Text, unfocusedTextColor = Q.Text, cursorColor = Q.Primary,
+            ),
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            GhostButton(stringResource(R.string.paste), { clipboard.getText()?.text?.let { link = it } })
+            if (link.isNotBlank() && videoId == null) Hint(stringResource(R.string.yt_not_a_link))
+        }
+        when {
+            ui.tvs.isEmpty() -> StatusPill(stringResource(R.string.searching), Q.Primary, pulsing = true)
+            ui.tvs.size > 1 -> ui.tvs.forEach { tv ->
+                val selected = tv.id == chosenTv?.id
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                        .border(BorderStroke(1.dp, if (selected) Q.Primary else Q.BorderAccent), RoundedCornerShape(14.dp))
+                        .clickable(role = Role.RadioButton) { tvId = tv.id }
+                        .padding(14.dp)
+                        .semantics { stateDescription = if (selected) "Selected" else "Not selected" },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(if (selected) "◉" else "○", color = Q.Primary, modifier = Modifier.clearAndSetSemantics { })
+                    Text(tv.name, Modifier.padding(start = 12.dp), color = Q.Text, style = MaterialTheme.typography.titleMedium)
+                }
+            }
+        }
+        GoldButton(
+            stringResource(R.string.yt_cast_to, chosenTv?.name ?: "TV"),
+            { if (videoId != null && chosenTv != null) onCast(videoId, chosenTv.id) },
+            Modifier.fillMaxWidth().testTag("yt_cast"),
+            enabled = videoId != null && chosenTv != null && ui.youTube != MovieSession.YouTubeState.STARTING,
+            height = 56.dp, leading = "▶",
+        )
+        when (ui.youTube) {
+            MovieSession.YouTubeState.STARTING -> StatusPill(stringResource(R.string.yt_starting), Q.Primary, pulsing = true)
+            MovieSession.YouTubeState.PLAYING -> StatusPill(stringResource(R.string.yt_playing), Q.Success)
+            MovieSession.YouTubeState.FAILED -> {
+                Body(stringResource(R.string.yt_failed))
+                GoldButton(stringResource(R.string.yt_open_this), { onOpenApp(link) }, height = 48.dp)
+            }
+            MovieSession.YouTubeState.IDLE -> Unit
+        }
+    }
+    QCard {
+        Text(stringResource(R.string.yt_app_title), style = MaterialTheme.typography.titleMedium, color = Q.Text)
+        Hint(stringResource(R.string.yt_app_hint))
+        GhostButton(stringResource(R.string.yt_open_app), { onOpenApp(null) }, Modifier.fillMaxWidth())
+    }
+    QCard {
+        Text(stringResource(R.string.yt_share_title), style = MaterialTheme.typography.titleMedium, color = Q.Text)
+        Hint(stringResource(R.string.yt_share_hint))
+    }
+    Hint(stringResource(R.string.yt_sound_note))
+    Footer()
+}
+
+// ---------------------------------------------------------------- Mirror
+
+@Composable
+internal fun MirrorScreen(onStart: () -> Unit, onBack: () -> Unit) = Screen {
+    TopBar(stringResource(R.string.mirror_screen), onBack)
+    QCard(highlighted = true) {
+        Text(stringResource(R.string.mirror_title), style = MaterialTheme.typography.titleLarge, color = Q.Text)
+        Body(stringResource(R.string.mirror_steps))
+        GoldButton(stringResource(R.string.mirror_start), onStart, Modifier.fillMaxWidth().testTag("mirror_start"), height = 56.dp, leading = "⧉")
+    }
+    QCard {
+        Text(stringResource(R.string.mirror_laptop_title), style = MaterialTheme.typography.titleMedium, color = Q.Text)
+        Hint(stringResource(R.string.mirror_laptop_hint))
+    }
+    Hint(stringResource(R.string.mirror_sound_note))
     Footer()
 }
 
@@ -531,12 +764,13 @@ private fun SwitchRow(icon: String, label: String, checked: Boolean, onChange: (
 private fun CastActivity.label(): String = when (kind) {
     CastActivity.Kind.YOUTUBE -> "YouTube" // brand name, not translated
     CastActivity.Kind.MIRRORING -> mirroringLabel
-    else -> appName
+    else -> if (appId == com.theatresync.core.CastStatus.APP_DEFAULT_MEDIA_RECEIVER) videoLabel else appName
 }
 
 /** Set from resources at startup so non-Composable helpers stay translatable. */
 internal var mirroringLabel = "Screen mirroring"
 internal var mirroringHeadline = "Mirroring a screen"
+internal var videoLabel = "Video"
 
 private fun CastActivity.headline(): String = title
     ?: when (kind) {
@@ -570,7 +804,7 @@ private fun Thumb(a: CastActivity, modifier: Modifier, big: Boolean = false) {
 }
 
 @Composable
-private fun NowCastingCard(item: TvWatchers.NowCasting, onOpen: () -> Unit, onPlayPause: () -> Unit) {
+private fun NowCastingCard(item: TvWatchers.NowCasting, onOpen: () -> Unit, onPlayPause: () -> Unit, onStop: () -> Unit) {
     val a = item.activity
     QCard(Modifier.clickable(role = Role.Button, onClick = onOpen).testTag("nowcasting"), highlighted = true) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -586,7 +820,10 @@ private fun NowCastingCard(item: TvWatchers.NowCasting, onOpen: () -> Unit, onPl
                     color = Q.TextFaint, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
             }
-            if (a.canControl) RoundIconButton(if (a.isPlaying) "❚❚" else "▶", stringResource(R.string.play_pause), onPlayPause)
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (a.canControl) RoundIconButton(if (a.isPlaying) "❚❚" else "▶", stringResource(R.string.play_pause), onPlayPause)
+                if (a.sessionId != null) RoundIconButton("■", stringResource(R.string.stop_casting), onStop, Modifier.testTag("card_stop"))
+            }
         }
         val d = a.durationSec
         val t = a.currentTimeSec
@@ -600,6 +837,7 @@ internal fun NowCastingScreen(
     onPlayPause: () -> Unit,
     onSkip: (Double) -> Unit,
     onBack: () -> Unit,
+    onStop: () -> Unit = {},
 ) = Screen {
     val a = item.activity
     TopBar(stringResource(R.string.now_casting), onBack)
@@ -636,6 +874,9 @@ internal fun NowCastingScreen(
         }
     }
 
+    if (a.sessionId != null) {
+        GhostButton("■  " + stringResource(R.string.stop_casting), onStop, Modifier.fillMaxWidth().testTag("stop_casting"), height = 52.dp, description = stringResource(R.string.stop_casting))
+    }
     QCard {
         Text(stringResource(R.string.cast_sound_title), style = MaterialTheme.typography.titleMedium, color = Q.Text)
         Hint(stringResource(R.string.cast_sound_hint))

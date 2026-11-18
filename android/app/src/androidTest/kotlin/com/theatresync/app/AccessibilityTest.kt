@@ -52,4 +52,10 @@ class AccessibilityTest {
             {}, {}, {},
         )
     }
+
+    @Test fun youTubeScreen() = check {
+        YouTubeScreen(MovieSession.Ui(tvs = listOf(MovieSession.Tv("1", "TV"))), "https://youtu.be/dQw4w9WgXcQ", { _, _ -> }, {}, {})
+    }
+
+    @Test fun mirrorScreen() = check { MirrorScreen({}, {}) }
 }

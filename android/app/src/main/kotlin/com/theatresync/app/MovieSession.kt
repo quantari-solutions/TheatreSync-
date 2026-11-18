@@ -26,6 +26,8 @@ import com.google.android.gms.cast.framework.SessionManagerListener
 import com.theatresync.core.CastActivity
 import com.theatresync.core.CastStatus
 import com.theatresync.core.MediaServer
+import com.theatresync.core.YouTubeLounge
+import com.theatresync.core.YouTubeScreenFinder
 import com.theatresync.core.Payload
 import com.theatresync.core.Platform
 import com.theatresync.core.Role
@@ -45,6 +47,8 @@ import java.util.UUID
 class MovieSession(private val app: Application) {
 
     enum class Phase { SETUP, STARTING, PLAYING, PAUSED, ENDED }
+
+    enum class YouTubeState { IDLE, STARTING, PLAYING, FAILED }
 
     data class Tv(val id: String, val name: String)
 
@@ -66,6 +70,9 @@ class MovieSession(private val app: Application) {
         val message: String? = null,
         /** What each Chromecast is showing right now (YouTube, a mirrored tab, …), from any device. */
         val nowCasting: List<TvWatchers.NowCasting> = emptyList(),
+        /** YouTube casting started from TheatreSync. */
+        val youTube: YouTubeState = YouTubeState.IDLE,
+        val youTubeVideoId: String? = null,
     ) {
         val canStart: Boolean get() = movieTitle != null && connectedTv != null
     }
@@ -97,25 +104,18 @@ class MovieSession(private val app: Application) {
     private val announcer = HostAnnouncer(app)
     private val tvWatchers = TvWatchers { list -> publishNowCasting(list) }
     private var rawNowCasting: List<TvWatchers.NowCasting> = emptyList()
+    private var knownTvs: List<TvWatchers.Tv> = emptyList()
     private var wifiLock: WifiManager.WifiLock? = null
     private var interrupted = false
     private var tickCount = 0
 
     @Volatile private var snapshot: Payload.PlaybackState? = null
 
-    init {
-        if (castContext == null) {
-            _ui.update { it.copy(castAvailable = false, message = app.getString(R.string.msg_no_cast)) }
-        } else {
-            castContext.sessionManager.addSessionManagerListener(sessionListener(), CastSession::class.java)
-            castContext.sessionManager.currentCastSession?.let { onTvConnected(it) }
-        }
-    }
-
     // ---------------------------------------------------------------- setup
 
     fun chooseMovie(uri: Uri) {
-        val source = ContentUriSource.from(app, uri)
+        // Some file providers throw (permission revoked, cloud file offline): never crash for that.
+        val source = try { ContentUriSource.from(app, uri) } catch (_: Exception) { null }
         if (source == null) {
             say(R.string.msg_bad_file)
             return
@@ -157,6 +157,11 @@ class MovieSession(private val app: Application) {
     private fun refreshTvs() {
         val routes = router.routes.filter { !it.isDefault && it.isEnabled && it.matchesSelector(selector) }
         _ui.update { it.copy(tvs = routes.map { r -> Tv(r.id, r.name) }) }
+        knownTvs = routes.mapNotNull { r ->
+            val device = CastDevice.getFromBundle(r.extras) ?: return@mapNotNull null
+            val address = device.inetAddress ?: return@mapNotNull null
+            TvWatchers.Tv(r.id, r.name, address, device.servicePort.takeIf { it > 0 } ?: 8009)
+        }
         tvWatchers.update(
             routes.mapNotNull { r ->
                 val device = CastDevice.getFromBundle(r.extras) ?: return@mapNotNull null
@@ -172,7 +177,7 @@ class MovieSession(private val app: Application) {
         // Also hide Google's media player left open with nothing loaded after a movie ends.
         val visible = list.filterNot {
             val a = it.activity
-            a.appId == CastStatus.APP_DEFAULT_MEDIA_RECEIVER && (server != null || a.title == null || a.playerState == "IDLE")
+            a.appId == CastStatus.APP_DEFAULT_MEDIA_RECEIVER && server != null
         }
         _ui.update { it.copy(nowCasting = visible) }
     }
@@ -183,6 +188,41 @@ class MovieSession(private val app: Application) {
     }
 
     fun castSkip(tvId: String, deltaSec: Double) = tvWatchers.seekBy(tvId, deltaSec)
+
+    /** Stops whatever is on that TV. If it's our own Cast session, end that cleanly too. */
+    fun castStop(tvId: String) {
+        val a = rawNowCasting.firstOrNull { it.tvId == tvId }?.activity
+        if (server != null && a?.appId == CastStatus.APP_DEFAULT_MEDIA_RECEIVER) {
+            stopMovie()
+            return
+        }
+        tvWatchers.stopCasting(tvId)
+        if (a?.appId == CastStatus.APP_YOUTUBE) resetYouTube()
+    }
+
+    /**
+     * Plays a YouTube video on the chosen TV: starts the YouTube app on the Chromecast and
+     * tells it which video to play (Lounge API). Runs off the main thread.
+     */
+    fun castYouTube(videoId: String, tvId: String) {
+        if (server != null) return say(R.string.yt_stop_movie_first)
+        val tv = knownTvs.firstOrNull { it.id == tvId } ?: return say(R.string.yt_no_tv)
+        _ui.update { it.copy(youTube = YouTubeState.STARTING, youTubeVideoId = videoId, message = null) }
+        Thread({
+            val ok = try {
+                val screenId = YouTubeScreenFinder({ TvWatchers.openTls(tv.address, tv.port) }).screenId()
+                YouTubeLounge().play(screenId, videoId)
+                true
+            } catch (_: Exception) {
+                false
+            }
+            main.post {
+                _ui.update { it.copy(youTube = if (ok) YouTubeState.PLAYING else YouTubeState.FAILED) }
+            }
+        }, "youtube-cast").start()
+    }
+
+    fun resetYouTube() = _ui.update { it.copy(youTube = YouTubeState.IDLE) }
 
 
     fun connectTv(id: String) {
@@ -425,5 +465,20 @@ class MovieSession(private val app: Application) {
     companion object {
         private const val TICK_MS = 200L
         private const val KEY_WE_MUTED = "weMutedTv"
+    }
+
+    // IMPORTANT: this init block must stay LAST in the class. Kotlin runs property
+    // initialisers and init blocks top to bottom, so anything it touches (routerCallback,
+    // tick, playerEvents, …) must already be declared above. Having it earlier caused a
+    // crash on start-up whenever a Chromecast was already connected (e.g. after Android
+    // restarted the app while the file picker was open).
+    init {
+        if (castContext == null) {
+            _ui.update { it.copy(castAvailable = false, message = app.getString(R.string.msg_no_cast)) }
+        } else {
+            castContext.sessionManager.addSessionManagerListener(sessionListener(), CastSession::class.java)
+            // Defer: let construction finish before reacting to an already-running session.
+            main.post { castContext.sessionManager.currentCastSession?.let { onTvConnected(it) } }
+        }
     }
 }
