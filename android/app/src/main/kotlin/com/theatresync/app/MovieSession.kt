@@ -105,6 +105,8 @@ class MovieSession(private val app: Application) {
     private val tvWatchers = TvWatchers { list -> publishNowCasting(list) }
     private var rawNowCasting: List<TvWatchers.NowCasting> = emptyList()
     private var knownTvs: List<TvWatchers.Tv> = emptyList()
+    /** Cast sessions the user just stopped: hidden at once, before the TV confirms. */
+    private val stoppedSessions = mutableSetOf<String>()
     private var wifiLock: WifiManager.WifiLock? = null
     private var interrupted = false
     private var tickCount = 0
@@ -177,7 +179,8 @@ class MovieSession(private val app: Application) {
         // Also hide Google's media player left open with nothing loaded after a movie ends.
         val visible = list.filterNot {
             val a = it.activity
-            a.appId == CastStatus.APP_DEFAULT_MEDIA_RECEIVER && server != null
+            (a.appId == CastStatus.APP_DEFAULT_MEDIA_RECEIVER && server != null) ||
+                (a.sessionId != null && a.sessionId in stoppedSessions)
         }
         _ui.update { it.copy(nowCasting = visible) }
     }
@@ -192,6 +195,9 @@ class MovieSession(private val app: Application) {
     /** Stops whatever is on that TV. If it's our own Cast session, end that cleanly too. */
     fun castStop(tvId: String) {
         val a = rawNowCasting.firstOrNull { it.tvId == tvId }?.activity
+        // Close the card immediately; the TV goes back to its "Ready to cast" screen.
+        a?.sessionId?.let { stoppedSessions += it }
+        publishNowCasting(rawNowCasting)
         if (server != null && a?.appId == CastStatus.APP_DEFAULT_MEDIA_RECEIVER) {
             stopMovie()
             return
@@ -307,6 +313,8 @@ class MovieSession(private val app: Application) {
     fun stopMovie() {
         castSession?.remoteMediaClient?.stop()
         teardown()
+        // Close the media player on the Chromecast so it returns to "Ready to cast".
+        castContext?.sessionManager?.endCurrentSession(true)
         _ui.update { it.copy(phase = Phase.SETUP, joinAddress = null, friends = 0, driftMs = null) }
         publishNowCasting(rawNowCasting)
     }
