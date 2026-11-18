@@ -7,7 +7,8 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
-import androidx.test.espresso.Espresso
+import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.uiautomator.UiDevice
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Rule
 import org.junit.Test
@@ -48,7 +49,9 @@ class SetupScreenTest {
     @Test
     fun systemBackReturnsFromHeadphones() {
         openHeadphones()
-        Espresso.pressBack()
+        // A real Back key press, exactly like the phone's back button/gesture.
+        UiDevice.getInstance(InstrumentationRegistry.getInstrumentation()).pressBack()
+        rule.waitForIdle()
         assertHome()
     }
 
