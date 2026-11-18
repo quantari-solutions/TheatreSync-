@@ -131,6 +131,22 @@ class MediaServerTest {
     }
 }
 
+class LocalNetworkTest {
+    private fun ip(s: String) = java.net.InetAddress.getByName(s)
+
+    @Test fun allowsHomeNetworks() {
+        for (a in listOf("127.0.0.1", "192.168.1.23", "10.0.0.5", "172.16.4.2", "169.254.1.1", "::1", "fe80::1", "fd12:3456::1")) {
+            assertTrue(a, MediaServer.isLocalNetwork(ip(a)))
+        }
+    }
+
+    @Test fun refusesInternetAddresses() {
+        for (a in listOf("8.8.8.8", "1.1.1.1", "172.32.0.1", "2001:4860:4860::8888")) {
+            assertTrue(a, !MediaServer.isLocalNetwork(ip(a)))
+        }
+    }
+}
+
 class HttpRangeTest {
     @Test fun parses() {
         assertEquals(HttpRange.Full, HttpRange.parse(null, 100))

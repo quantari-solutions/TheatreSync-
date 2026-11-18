@@ -7,20 +7,26 @@ import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
-import android.view.WindowManager
+import android.provider.Settings
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -29,46 +35,66 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.theatresync.app.MovieSession.Phase
+import com.theatresync.core.CastActivity
 import kotlin.math.abs
+
+enum class Page { HOME, HEADPHONES, NOW_CASTING }
 
 class MainActivity : ComponentActivity() {
     private val session: MovieSession get() = (application as TheatreSyncApplication).session
-    private val diagnostics = mutableStateOf("")
+    private val outputs = mutableStateOf<List<DiagnosticsReport.Output>>(emptyList())
+    private val details = mutableStateOf("")
     private lateinit var audioManager: AudioManager
 
     private val pickMovie = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -79,55 +105,100 @@ class MainActivity : ComponentActivity() {
     }
 
     private val askPermissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
-        diagnostics.value = DiagnosticsReport.build(this)
+        refreshAudio()
     }
 
     private val deviceCallback = object : AudioDeviceCallback() {
-        override fun onAudioDevicesAdded(added: Array<out AudioDeviceInfo>) { diagnostics.value = DiagnosticsReport.build(this@MainActivity) }
-        override fun onAudioDevicesRemoved(removed: Array<out AudioDeviceInfo>) { diagnostics.value = DiagnosticsReport.build(this@MainActivity) }
+        override fun onAudioDevicesAdded(added: Array<out AudioDeviceInfo>) = refreshAudio()
+        override fun onAudioDevicesRemoved(removed: Array<out AudioDeviceInfo>) = refreshAudio()
+    }
+
+    private fun refreshAudio() {
+        outputs.value = DiagnosticsReport.friendlyOutputs(this)
+        details.value = DiagnosticsReport.build(this)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         audioManager = getSystemService(AudioManager::class.java)
+        mirroringLabel = getString(R.string.screen_mirroring)
+        mirroringHeadline = getString(R.string.mirroring_a_screen)
         setContent {
             QuantariTheme {
                 GridBackground {
                     val ui by session.ui.collectAsState()
-                    var showCheck by rememberSaveable { mutableStateOf(false) }
-                    when {
-                        showCheck -> DiagnosticsScreen(
-                            report = diagnostics.value,
-                            onAllow = { askPermissions.launch(runtimePermissions()) },
-                            onBack = { showCheck = false },
-                        )
-                        ui.phase == Phase.SETUP -> SetupScreen(
-                            ui = ui,
-                            onChooseMovie = { pickMovie.launch(arrayOf("video/*")) },
-                            onConnectTv = session::connectTv,
-                            onDisconnectTv = session::disconnectTv,
-                            onStart = {
-                                askPermissions.launch(runtimePermissions())
-                                session.startMovie()
-                            },
-                            onCheckHeadphones = {
-                                diagnostics.value = DiagnosticsReport.build(this@MainActivity)
-                                showCheck = true
-                            },
-                            onDismiss = session::dismissMessage,
-                        )
-                        else -> PlayingScreen(
-                            ui = ui,
-                            onPlayPause = session::togglePause,
-                            onSkip = session::skip,
-                            onSoundEarly = { session.adjustSoundDelay(+STEP_MS) },
-                            onSoundLate = { session.adjustSoundDelay(-STEP_MS) },
-                            onHeadphonesHere = session::setHeadphonesHere,
-                            onMuteTv = session::setMuteTv,
-                            onStop = session::stopMovie,
-                            onDismiss = session::dismissMessage,
-                        )
+                    var page by rememberSaveable { mutableStateOf(Page.HOME) }
+                    var castTvId by rememberSaveable { mutableStateOf<String?>(null) }
+                    val casting = ui.nowCasting.firstOrNull { it.tvId == castTvId }
+
+                    BackHandler(enabled = page != Page.HOME) { page = Page.HOME }
+                    // If the cast we're looking at ends, go back home on its own.
+                    LaunchedEffect(page, casting == null) {
+                        if (page == Page.NOW_CASTING && casting == null) page = Page.HOME
+                    }
+
+                    val target = when {
+                        page == Page.HEADPHONES -> "headphones"
+                        page == Page.NOW_CASTING && casting != null -> "casting"
+                        ui.phase == Phase.SETUP -> "setup"
+                        else -> "playing"
+                    }
+                    AnimatedContent(
+                        targetState = target,
+                        transitionSpec = {
+                            val forward = targetState == "headphones" || targetState == "casting"
+                            (slideInHorizontally { if (forward) it / 3 else -it / 3 } + fadeIn(tween(220)))
+                                .togetherWith(slideOutHorizontally { if (forward) -it / 3 else it / 3 } + fadeOut(tween(180)))
+                        },
+                        label = "page",
+                    ) { t ->
+                        when (t) {
+                            "headphones" -> HeadphonesScreen(
+                                outputs = outputs.value,
+                                details = details.value,
+                                namesAllowed = DiagnosticsReport.bluetoothNamesAllowed(this@MainActivity),
+                                onAllow = { askPermissions.launch(runtimePermissions()) },
+                                onOpenBluetooth = { startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) },
+                                onBack = { page = Page.HOME },
+                            )
+                            "casting" -> casting?.let { c ->
+                                NowCastingScreen(
+                                    item = c,
+                                    onPlayPause = { session.castPlayPause(c.tvId) },
+                                    onSkip = { session.castSkip(c.tvId, it) },
+                                    onBack = { page = Page.HOME },
+                                )
+                            }
+                            "setup" -> SetupScreen(
+                                ui = ui,
+                                onChooseMovie = { pickMovie.launch(arrayOf("video/*")) },
+                                onConnectTv = session::connectTv,
+                                onDisconnectTv = session::disconnectTv,
+                                onStart = {
+                                    askPermissions.launch(runtimePermissions())
+                                    session.startMovie()
+                                },
+                                onCheckHeadphones = {
+                                    refreshAudio()
+                                    page = Page.HEADPHONES
+                                },
+                                onDismiss = session::dismissMessage,
+                                onOpenCasting = { id -> castTvId = id; page = Page.NOW_CASTING },
+                                onCastPlayPause = session::castPlayPause,
+                            )
+                            else -> PlayingScreen(
+                                ui = ui,
+                                onPlayPause = session::togglePause,
+                                onSkip = session::skip,
+                                onSoundEarly = { session.adjustSoundDelay(+STEP_MS) },
+                                onSoundLate = { session.adjustSoundDelay(-STEP_MS) },
+                                onHeadphonesHere = session::setHeadphonesHere,
+                                onMuteTv = session::setMuteTv,
+                                onStop = session::stopMovie,
+                                onDismiss = session::dismissMessage,
+                            )
+                        }
                     }
                 }
             }
@@ -138,8 +209,7 @@ class MainActivity : ComponentActivity() {
         super.onStart()
         session.startTvSearch()
         audioManager.registerAudioDeviceCallback(deviceCallback, null)
-        // Keep the screen on while the app is open, so controls are ready in the dark.
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        refreshAudio()
     }
 
     override fun onStop() {
@@ -158,18 +228,44 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+/** Top bar for inner pages: round back button, title, optional action on the right. */
+@Composable
+private fun TopBar(title: String, onBack: () -> Unit, action: (@Composable () -> Unit)? = null) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        RoundIconButton("←", stringResource(R.string.back), onBack, Modifier.testTag("back"))
+        Text(title, Modifier.weight(1f).padding(horizontal = 14.dp), style = MaterialTheme.typography.titleLarge, color = Q.Text)
+        action?.invoke()
+    }
+}
+
+@Composable
+private fun RoundIconButton(glyph: String, description: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Box(
+        modifier.size(48.dp).clip(CircleShape).background(Q.Card)
+            .border(BorderStroke(1.dp, Q.BorderAccent), CircleShape)
+            .clickable(role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = description },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(glyph, color = Q.PrimaryLight, style = MaterialTheme.typography.titleMedium)
+    }
+}
+
 @Composable
 private fun Screen(content: @Composable () -> Unit) {
-    Column(
-        Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) { content() }
+    // Tablets / landscape: keep a comfortable reading width, centred.
+    Box(Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.TopCenter) {
+        Column(
+            Modifier.widthIn(max = 600.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) { content() }
+    }
 }
 
 @Composable
 private fun Brand(subtitle: String) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Eyebrow("Quantari · TheatreSync")
+        Eyebrow(stringResource(R.string.brand_eyebrow))
         GradientText(stringResource(R.string.app_name), MaterialTheme.typography.displaySmall)
         Body(subtitle)
     }
@@ -178,9 +274,9 @@ private fun Brand(subtitle: String) {
 @Composable
 private fun Message(text: String?, onDismiss: () -> Unit) {
     AnimatedVisibility(visible = text != null, enter = fadeIn(), exit = fadeOut()) {
-        QCard(highlighted = true) {
+        QCard(Modifier.semantics { liveRegion = LiveRegionMode.Polite }, highlighted = true) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("!", color = Color.Black, modifier = Modifier.size(26.dp).clip(CircleShape).background(Q.Gold).padding(top = 2.dp), textAlign = TextAlign.Center, style = MaterialTheme.typography.titleMedium)
+                Text("!", color = Color.Black, modifier = Modifier.clearAndSetSemantics { }.size(26.dp).clip(CircleShape).background(Q.Gold).padding(top = 2.dp), textAlign = TextAlign.Center, style = MaterialTheme.typography.titleMedium)
                 Text(text ?: "", Modifier.weight(1f), color = Q.Text, style = MaterialTheme.typography.bodyMedium)
                 GhostButton(stringResource(R.string.ok), onDismiss, height = 36.dp)
             }
@@ -197,19 +293,21 @@ internal fun SetupScreen(
     onStart: () -> Unit,
     onCheckHeadphones: () -> Unit,
     onDismiss: () -> Unit,
+    onOpenCasting: (String) -> Unit = {},
+    onCastPlayPause: (String) -> Unit = {},
 ) = Screen {
     Brand(stringResource(R.string.setup_intro))
     Message(ui.message, onDismiss)
+    ui.nowCasting.forEach { item ->
+        NowCastingCard(item, onOpen = { onOpenCasting(item.tvId) }, onPlayPause = { onCastPlayPause(item.tvId) })
+    }
 
     QCard(highlighted = ui.movieTitle == null) {
         StepHeader(1, stringResource(R.string.step_movie), done = ui.movieTitle != null)
         if (ui.movieTitle != null) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("🎬  ${ui.movieTitle}", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, color = Q.Text)
-                GhostButton(stringResource(R.string.change), onChooseMovie, height = 40.dp)
-            }
+            ChosenRow("🎬", ui.movieTitle) { GhostButton(stringResource(R.string.change), onChooseMovie, height = 40.dp) }
         } else {
-            GoldButton(stringResource(R.string.choose_movie), onChooseMovie, Modifier.fillMaxWidth(), leading = "🎬")
+            GoldButton(stringResource(R.string.choose_movie), onChooseMovie, Modifier.fillMaxWidth())
             Hint(stringResource(R.string.movie_hint))
         }
     }
@@ -218,8 +316,7 @@ internal fun SetupScreen(
         StepHeader(2, stringResource(R.string.step_tv), done = ui.connectedTv != null)
         when {
             !ui.castAvailable -> Body(stringResource(R.string.msg_no_cast))
-            ui.connectedTv != null -> Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("📺  ${stringResource(R.string.connected_to, ui.connectedTv)}", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, color = Q.Text)
+            ui.connectedTv != null -> ChosenRow("📺", stringResource(R.string.connected_to, ui.connectedTv)) {
                 GhostButton(stringResource(R.string.disconnect), onDisconnectTv, height = 40.dp)
             }
             ui.tvs.isEmpty() -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -243,9 +340,35 @@ internal fun SetupScreen(
     }
 
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-        GhostButton("🎧  " + stringResource(R.string.check_headphones), onCheckHeadphones)
+        GhostButton("🎧  " + stringResource(R.string.check_headphones), onCheckHeadphones, description = stringResource(R.string.check_headphones))
     }
     Footer()
+}
+
+/**
+ * Icon + text + action. Side by side normally; with large system fonts the action
+ * moves underneath so words never break mid-word (accessibility).
+ */
+@Composable
+private fun ChosenRow(icon: String, text: String, action: @Composable () -> Unit) {
+    val large = LocalDensity.current.fontScale > 1.3f
+    val label: @Composable (Modifier) -> Unit = { m ->
+        Row(m, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(icon, Modifier.clearAndSetSemantics { }, fontSize = 20.sp)
+            Text(text, style = MaterialTheme.typography.titleMedium, color = Q.Text)
+        }
+    }
+    if (large) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            label(Modifier)
+            action()
+        }
+    } else {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            label(Modifier.weight(1f))
+            action()
+        }
+    }
 }
 
 @Composable
@@ -257,7 +380,7 @@ private fun TvRow(name: String, onClick: () -> Unit) {
             .clickable(role = Role.Button, onClick = onClick).padding(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("📺", fontSize = 22.sp)
+        Text("📺", Modifier.clearAndSetSemantics { }, fontSize = 22.sp)
         Text(name, Modifier.weight(1f).padding(start = 12.dp), style = MaterialTheme.typography.titleMedium, color = Q.Text)
         Text(stringResource(R.string.connect), color = Q.Primary, style = MaterialTheme.typography.labelLarge)
     }
@@ -267,7 +390,7 @@ private fun TvRow(name: String, onClick: () -> Unit) {
 private fun Footer() {
     Text(
         stringResource(R.string.footer), Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 8.dp),
-        color = Q.TextFaint.copy(alpha = 0.6f), style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center,
+        color = Q.TextFaint, style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center,
     )
 }
 
@@ -308,9 +431,9 @@ internal fun PlayingScreen(
             Text(if (ui.durationMs > 0) formatTime(ui.durationMs) else "--:--", color = Q.TextFaint, style = MaterialTheme.typography.labelLarge)
         }
         Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-            GhostButton("−10s", { onSkip(-10_000) }, Modifier.testTag("back10"), height = 52.dp)
+            GhostButton(stringResource(R.string.skip_back_short), { onSkip(-10_000) }, Modifier.testTag("back10"), height = 52.dp, description = stringResource(R.string.skip_back))
             PlayButton(playing = ui.phase == Phase.PLAYING, onClick = onPlayPause)
-            GhostButton("+10s", { onSkip(10_000) }, Modifier.testTag("fwd10"), height = 52.dp)
+            GhostButton(stringResource(R.string.skip_fwd_short), { onSkip(10_000) }, Modifier.testTag("fwd10"), height = 52.dp, description = stringResource(R.string.skip_forward))
         }
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { SyncPill(ui) }
     }
@@ -335,7 +458,7 @@ internal fun PlayingScreen(
 
     QCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(stringResource(R.string.friends_heading), Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, color = Q.Text)
+            Text(stringResource(R.string.friends_heading), Modifier.weight(1f).semantics { heading() }, style = MaterialTheme.typography.titleLarge, color = Q.Text)
             Box(Modifier.size(36.dp).clip(CircleShape).background(if (ui.friends > 0) Q.Gold else androidx.compose.ui.graphics.SolidColor(Q.Border)), contentAlignment = Alignment.Center) {
                 Text(ui.friends.toString(), color = if (ui.friends > 0) Color.Black else Q.TextFaint, style = MaterialTheme.typography.titleMedium)
             }
@@ -350,20 +473,24 @@ internal fun PlayingScreen(
         }
     }
 
-    GhostButton("■  " + stringResource(R.string.stop_movie), onStop, Modifier.fillMaxWidth(), height = 52.dp)
+    GhostButton("■  " + stringResource(R.string.stop_movie), onStop, Modifier.fillMaxWidth(), height = 52.dp, description = stringResource(R.string.stop_movie))
     Footer()
 }
 
 @Composable
 private fun PlayButton(playing: Boolean, onClick: () -> Unit) {
+    val label = stringResource(if (playing) R.string.pause else R.string.play)
     val glow = rememberInfiniteTransition(label = "glow")
     val pulse by glow.animateFloat(14f, 28f, infiniteRepeatable(tween(1400), RepeatMode.Reverse), label = "p")
     Box(
         Modifier.size(92.dp)
             .shadow(if (playing) pulse.dp else 14.dp, CircleShape, ambientColor = Q.Glow, spotColor = Q.Glow)
             .clip(CircleShape).background(Q.Gold)
+            // Order matters: clearAndSetSemantics wipes everything *after* it in the chain,
+            // so the test tag and click action must come before it.
+            .testTag("playpause")
             .clickable(role = Role.Button, onClick = onClick)
-            .testTag("playpause"),
+            .clearAndSetSemantics { contentDescription = label },
         contentAlignment = Alignment.Center,
     ) {
         Text(if (playing) "❚❚" else "▶", color = Color.Black, fontSize = 30.sp)
@@ -386,7 +513,7 @@ private fun SyncPill(ui: MovieSession.Ui) {
 @Composable
 private fun SwitchRow(icon: String, label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(icon, fontSize = 20.sp)
+        Text(icon, Modifier.clearAndSetSemantics { }, fontSize = 20.sp)
         Text(label, Modifier.weight(1f).padding(horizontal = 12.dp), color = Q.Text, style = MaterialTheme.typography.bodyLarge)
         Switch(
             checked = checked, onCheckedChange = onChange,
@@ -398,16 +525,200 @@ private fun SwitchRow(icon: String, label: String, checked: Boolean, onChange: (
     }
 }
 
-@Composable
-internal fun DiagnosticsScreen(report: String, onAllow: () -> Unit, onBack: () -> Unit) = Screen {
-    Eyebrow(stringResource(R.string.app_name))
-    GradientText(stringResource(R.string.check_headphones), MaterialTheme.typography.headlineMedium)
-    Body(stringResource(R.string.check_hint))
-    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        GoldButton(stringResource(R.string.allow_bluetooth), onAllow, height = 48.dp)
-        GhostButton(stringResource(R.string.back), onBack)
+
+// ---------------------------------------------------------------- now casting
+
+private fun CastActivity.label(): String = when (kind) {
+    CastActivity.Kind.YOUTUBE -> "YouTube" // brand name, not translated
+    CastActivity.Kind.MIRRORING -> mirroringLabel
+    else -> appName
+}
+
+/** Set from resources at startup so non-Composable helpers stay translatable. */
+internal var mirroringLabel = "Screen mirroring"
+internal var mirroringHeadline = "Mirroring a screen"
+
+private fun CastActivity.headline(): String = title
+    ?: when (kind) {
+        CastActivity.Kind.MIRRORING -> statusText ?: mirroringHeadline
+        else -> statusText ?: appName
     }
+
+@Composable
+private fun Thumb(a: CastActivity, modifier: Modifier, big: Boolean = false) {
+    val shape = RoundedCornerShape(if (big) 18.dp else 12.dp)
+    Box(modifier.clip(shape).border(BorderStroke(1.dp, Q.BorderAccent), shape)) {
+        RemoteImage(a.imageUrl, a.title, Modifier.fillMaxSize()) {
+            Box(
+                Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Q.BackgroundAlt, Q.Border, Q.Card))),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    when (a.kind) { CastActivity.Kind.YOUTUBE -> "▶"; CastActivity.Kind.MIRRORING -> "⧉"; else -> "♪" },
+                    style = MaterialTheme.typography.headlineMedium.copy(brush = Q.Gold, fontSize = if (big) 56.sp else 26.sp),
+                )
+            }
+        }
+        if (a.kind == CastActivity.Kind.YOUTUBE) {
+            Text(
+                "YouTube", color = Color.White, style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier.align(Alignment.BottomStart).padding(6.dp)
+                    .clip(RoundedCornerShape(6.dp)).background(Color(0xCCE62117)).padding(horizontal = 6.dp, vertical = 2.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun NowCastingCard(item: TvWatchers.NowCasting, onOpen: () -> Unit, onPlayPause: () -> Unit) {
+    val a = item.activity
+    QCard(Modifier.clickable(role = Role.Button, onClick = onOpen).testTag("nowcasting"), highlighted = true) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Thumb(a, Modifier.width(128.dp).aspectRatio(16f / 9f))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    stringResource(R.string.now_casting).uppercase(),
+                    color = Q.Primary, style = MaterialTheme.typography.labelMedium, maxLines = 1,
+                )
+                Text(a.headline(), color = Q.Text, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(
+                    listOfNotNull(a.subtitle ?: a.label(), item.tvName).joinToString(" · "),
+                    color = Q.TextFaint, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (a.canControl) RoundIconButton(if (a.isPlaying) "❚❚" else "▶", stringResource(R.string.play_pause), onPlayPause)
+        }
+        val d = a.durationSec
+        val t = a.currentTimeSec
+        if (d != null && t != null && d > 0) GoldProgress((t / d).toFloat())
+    }
+}
+
+@Composable
+internal fun NowCastingScreen(
+    item: TvWatchers.NowCasting,
+    onPlayPause: () -> Unit,
+    onSkip: (Double) -> Unit,
+    onBack: () -> Unit,
+) = Screen {
+    val a = item.activity
+    TopBar(stringResource(R.string.now_casting), onBack)
+    Thumb(a, Modifier.fillMaxWidth().aspectRatio(16f / 9f).shadow(22.dp, RoundedCornerShape(18.dp), ambientColor = Q.Glow, spotColor = Q.Glow), big = true)
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        StatusPill(a.label(), if (a.isPlaying || a.kind == CastActivity.Kind.MIRRORING) Q.Success else Q.TextMuted, pulsing = a.isPlaying)
+        Text(stringResource(R.string.on_tv, item.tvName), color = Q.TextFaint, style = MaterialTheme.typography.bodyMedium)
+    }
+    GradientText(a.headline(), MaterialTheme.typography.headlineSmall)
+    a.subtitle?.let { Body(it) }
+
+    if (a.canControl) {
+        QCard {
+            val d = a.durationSec
+            val t = a.currentTimeSec ?: 0.0
+            if (d != null && d > 0) {
+                GoldProgress((t / d).toFloat())
+                Row {
+                    Text(formatTime((t * 1000).toLong()), color = Q.TextMuted, style = MaterialTheme.typography.labelLarge)
+                    Spacer1()
+                    Text(formatTime((d * 1000).toLong()), color = Q.TextFaint, style = MaterialTheme.typography.labelLarge)
+                }
+            }
+            Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+                GhostButton(stringResource(R.string.skip_back_short), { onSkip(-10.0) }, height = 52.dp, description = stringResource(R.string.skip_back))
+                PlayButton(playing = a.isPlaying, onClick = onPlayPause)
+                GhostButton(stringResource(R.string.skip_fwd_short), { onSkip(10.0) }, height = 52.dp, description = stringResource(R.string.skip_forward))
+            }
+        }
+    } else {
+        QCard {
+            Text(stringResource(R.string.mirroring_title), style = MaterialTheme.typography.titleMedium, color = Q.Text)
+            Hint(stringResource(R.string.mirroring_hint))
+        }
+    }
+
     QCard {
-        Text(report, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall, color = Q.TextMuted)
+        Text(stringResource(R.string.cast_sound_title), style = MaterialTheme.typography.titleMedium, color = Q.Text)
+        Hint(stringResource(R.string.cast_sound_hint))
+    }
+    Footer()
+}
+
+// ---------------------------------------------------------------- headphones
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun HeadphonesScreen(
+    outputs: List<DiagnosticsReport.Output>,
+    details: String,
+    namesAllowed: Boolean,
+    onAllow: () -> Unit,
+    onOpenBluetooth: () -> Unit,
+    onBack: () -> Unit,
+    showDetailsInitially: Boolean = false,
+) {
+    var showDetails by remember { mutableStateOf(showDetailsInitially) }
+    val headphones = outputs.filter { it.kind != DiagnosticsReport.Kind.SPEAKER }
+    Screen {
+        TopBar(stringResource(R.string.headphones), onBack) {
+            RoundIconButton("i", stringResource(R.string.technical_details), { showDetails = true }, Modifier.testTag("info"))
+        }
+        Box(Modifier.fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
+            val connected = headphones.isNotEmpty()
+            val glow = rememberInfiniteTransition(label = "hp")
+            val pulse by glow.animateFloat(12f, 30f, infiniteRepeatable(tween(1600), RepeatMode.Reverse), label = "hp")
+            Box(
+                Modifier.size(132.dp)
+                    .shadow(if (connected) pulse.dp else 0.dp, CircleShape, ambientColor = Q.Glow, spotColor = Q.Glow)
+                    .clip(CircleShape)
+                    .background(if (connected) Q.Gold else SolidColor(Q.Card))
+                    .border(BorderStroke(1.dp, if (connected) Q.Secondary else Q.BorderAccent), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) { Text("🎧", Modifier.clearAndSetSemantics { }, fontSize = 56.sp) }
+        }
+        if (headphones.isEmpty()) {
+            Text(stringResource(R.string.no_headphones), Modifier.fillMaxWidth(), style = MaterialTheme.typography.headlineSmall, color = Q.Text, textAlign = TextAlign.Center)
+            Text(stringResource(R.string.no_headphones_hint), Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodyLarge, color = Q.TextMuted, textAlign = TextAlign.Center)
+            GoldButton(stringResource(R.string.open_bluetooth), onOpenBluetooth, Modifier.fillMaxWidth())
+        } else {
+            headphones.forEach { o ->
+                QCard(highlighted = true) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            GradientText(o.name, MaterialTheme.typography.headlineSmall)
+                            Hint(stringResource(if (o.kind == DiagnosticsReport.Kind.WIRED) R.string.wired else R.string.bluetooth))
+                        }
+                        StatusPill(stringResource(R.string.connected), Q.Success)
+                    }
+                    Body(stringResource(R.string.sound_plays_here))
+                }
+            }
+            GhostButton(stringResource(R.string.open_bluetooth), onOpenBluetooth, Modifier.fillMaxWidth())
+        }
+        if (!namesAllowed) {
+            QCard {
+                Text(stringResource(R.string.see_names_title), style = MaterialTheme.typography.titleMedium, color = Q.Text)
+                Hint(stringResource(R.string.see_names_hint))
+                GoldButton(stringResource(R.string.allow_bluetooth), onAllow, height = 48.dp)
+            }
+        }
+        Footer()
+    }
+    if (showDetails) {
+        ModalBottomSheet(onDismissRequest = { showDetails = false }, containerColor = Q.Card) {
+            TechnicalDetails(details)
+        }
+    }
+}
+
+@Composable
+internal fun TechnicalDetails(details: String) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Eyebrow(stringResource(R.string.technical_details))
+        Hint(stringResource(R.string.check_hint))
+        Text(
+            details, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall, color = Q.TextMuted,
+            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Q.Background)
+                .border(BorderStroke(1.dp, Q.BorderAccent), RoundedCornerShape(12.dp)).padding(12.dp),
+        )
     }
 }

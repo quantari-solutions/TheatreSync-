@@ -21,6 +21,13 @@ class HostService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            ACTION_PLAY_PAUSE -> (application as TheatreSyncApplication).session.notificationPlayPause()
+            ACTION_STOP -> {
+                (application as TheatreSyncApplication).session.stopMovie()
+                return START_NOT_STICKY
+            }
+        }
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(
             NotificationChannel(CHANNEL, getString(R.string.notif_channel), NotificationManager.IMPORTANCE_LOW),
@@ -35,13 +42,26 @@ class HostService : Service() {
             .setContentText(getString(R.string.notif_text))
             .setContentIntent(open)
             .setOngoing(true)
+            .setColor(getColor(R.color.brand_gold))
+            .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .addAction(0, getString(R.string.notif_play_pause), action(ACTION_PLAY_PAUSE, 1))
+            .addAction(0, getString(R.string.notif_stop), action(ACTION_STOP, 2))
             .build()
         ServiceCompat.startForeground(this, 1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
         return START_NOT_STICKY
     }
 
+    /** Notification buttons go back to this (non-exported) service only. */
+    private fun action(name: String, requestCode: Int): PendingIntent = PendingIntent.getService(
+        this, requestCode, Intent(this, HostService::class.java).setAction(name),
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+    )
+
     companion object {
         private const val CHANNEL = "movie"
+        private const val ACTION_PLAY_PAUSE = "com.theatresync.app.PLAY_PAUSE"
+        private const val ACTION_STOP = "com.theatresync.app.STOP"
         fun start(context: Context) = ContextCompat.startForegroundService(context, Intent(context, HostService::class.java))
         fun stop(context: Context) = context.stopService(Intent(context, HostService::class.java))
     }

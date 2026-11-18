@@ -80,7 +80,7 @@ struct JoinView: View {
                         NavigationLink {
                             DiagnosticsView()
                         } label: {
-                            Label("Check headphones", systemImage: "headphones")
+                            Label("Headphones", systemImage: "headphones")
                         }
                         .buttonStyle(GhostButtonStyle())
                         Spacer()
@@ -88,7 +88,7 @@ struct JoinView: View {
 
                     Text("TheatreSync · by Quantari Solutions")
                         .font(.caption2)
-                        .foregroundStyle(Q.textFaint.opacity(0.6))
+                        .foregroundStyle(Q.textFaint)
                         .frame(maxWidth: .infinity)
                 }
                 .padding(20)

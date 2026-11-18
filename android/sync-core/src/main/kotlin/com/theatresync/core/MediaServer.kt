@@ -86,6 +86,8 @@ class MediaServer(
 
     private fun handle(socket: Socket) {
         socket.use { s ->
+            // Security: the movie is only ever for devices on the same home network.
+            if (!isLocalNetwork(s.inetAddress)) return
             try {
                 s.soTimeout = 20_000
                 s.tcpNoDelay = true
@@ -201,6 +203,14 @@ class MediaServer(
 
     companion object {
         private const val MAX_LINE = 8 * 1024
+
+        /** Loopback, link-local, or private (RFC 1918 / IPv6 ULA) addresses only. */
+        fun isLocalNetwork(a: java.net.InetAddress?): Boolean {
+            if (a == null) return false
+            if (a.isLoopbackAddress || a.isLinkLocalAddress || a.isSiteLocalAddress) return true
+            if (a is java.net.Inet6Address) return (a.address[0].toInt() and 0xFE) == 0xFC // fc00::/7
+            return false
+        }
 
         internal fun readLine(input: InputStream): String? {
             val sb = StringBuilder()

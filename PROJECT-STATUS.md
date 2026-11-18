@@ -1,6 +1,6 @@
 # Project status
 
-_Last updated: 2026-11-18. Milestone 1.1: Quantari design + bug hunt_
+_Last updated: 2026-11-18. Milestone 1.3: audit against industry standards (see [docs/QUALITY-AUDIT.md](docs/QUALITY-AUDIT.md))_
 
 ## Audit: what actually works
 
@@ -20,6 +20,14 @@ _Last updated: 2026-11-18. Milestone 1.1: Quantari design + bug hunt_
 
 What the cloud sandbox cannot do: run an Android emulator (no virtualisation here; GitHub
 Actions runs it instead), talk to a real Chromecast or Bluetooth device, or build iOS apps.
+
+## New in 1.2
+
+| Feature | Status | How it was checked |
+|---|---|---|
+| **Now casting** card + page: shows what any Chromecast is playing (YouTube title, channel, thumbnail; "Screen mirroring" for Chrome tabs), with play/pause/skip for YouTube | Built | Cast v2 protocol encoder/decoder and status parser unit-tested against real receiver payloads; end-to-end test against a fake Chromecast (idle → YouTube → Pause sent correctly). **Needs HW-05 on the real TV** |
+| Headphones page: plain-language status, technical details behind ⓘ | Built | Paparazzi screenshots; emulator test that details are hidden until ⓘ is tapped |
+| Back arrow + system back on inner pages, animated transitions, haptic taps | Built | Emulator tests for both back paths |
 
 ## Design
 

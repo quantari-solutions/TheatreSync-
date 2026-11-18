@@ -11,6 +11,35 @@ import com.theatresync.core.PROTOCOL_VERSION
 
 /** Text report used by the "Check headphones" screen and physical test HW-01. */
 object DiagnosticsReport {
+    enum class Kind { BLUETOOTH, WIRED, SPEAKER }
+
+    /** A friendly view of where sound can go. */
+    data class Output(val name: String, val kind: Kind)
+
+    /** Headphones first, then the phone speaker. Hides earpiece, telephony and other internal outputs. */
+    @android.annotation.SuppressLint("InlinedApi")
+    fun friendlyOutputs(context: Context): List<Output> {
+        val am = context.getSystemService(AudioManager::class.java)
+        val canReadNames = bluetoothNamesAllowed(context)
+        return am.getDevices(AudioManager.GET_DEVICES_OUTPUTS).mapNotNull { d ->
+            val kind = when (d.type) {
+                AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, AudioDeviceInfo.TYPE_BLE_HEADSET, AudioDeviceInfo.TYPE_BLE_SPEAKER -> Kind.BLUETOOTH
+                AudioDeviceInfo.TYPE_WIRED_HEADPHONES, AudioDeviceInfo.TYPE_WIRED_HEADSET, AudioDeviceInfo.TYPE_USB_HEADSET -> Kind.WIRED
+                AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> Kind.SPEAKER
+                else -> null
+            } ?: return@mapNotNull null
+            val raw = d.productName?.toString()?.trim().orEmpty()
+            val name = when {
+                kind == Kind.SPEAKER -> context.getString(R.string.phone_speaker)
+                kind == Kind.BLUETOOTH && !canReadNames -> context.getString(R.string.bluetooth_headphones)
+                raw.isBlank() || raw == Build.MODEL ->
+                    context.getString(if (kind == Kind.WIRED) R.string.wired_headphones else R.string.bluetooth_headphones)
+                else -> raw
+            }
+            Output(name, kind)
+        }.distinct().sortedBy { it.kind.ordinal }
+    }
+
     fun bluetoothNamesAllowed(context: Context) =
         Build.VERSION.SDK_INT < Build.VERSION_CODES.S || granted(context, Manifest.permission.BLUETOOTH_CONNECT)
 

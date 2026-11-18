@@ -22,6 +22,7 @@ struct ListeningView: View {
                             .foregroundStyle(.black)
                     }
                     .padding(.vertical, 8)
+                    .accessibilityHidden(true)
 
                     GradientTitle(text: session.movieTitle.isEmpty ? session.hostName : session.movieTitle, size: 28)
                         .multilineTextAlignment(.center)
@@ -38,8 +39,10 @@ struct ListeningView: View {
                         HStack(spacing: 10) {
                             Button("Sound is early") { session.adjustSoundDelay(by: 20) }
                                 .buttonStyle(GoldButtonStyle())
+                                .accessibilityHint("Delays the sound a little")
                             Button("Sound is late") { session.adjustSoundDelay(by: -20) }
                                 .buttonStyle(GoldButtonStyle())
+                                .accessibilityHint("Plays the sound a little earlier")
                         }
                         Text("Sound delay: \(session.soundDelayMs) ms")
                             .font(.caption.weight(.semibold))

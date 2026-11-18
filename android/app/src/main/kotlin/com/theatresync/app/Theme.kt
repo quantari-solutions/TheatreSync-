@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -43,6 +44,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
@@ -52,6 +57,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalView
+import android.view.HapticFeedbackConstants
 
 /**
  * Quantari Solutions look (quantari-solutions.vercel.app):
@@ -146,7 +153,7 @@ fun GridBackground(modifier: Modifier = Modifier, content: @Composable BoxScope.
 
 @Composable
 fun GradientText(text: String, style: TextStyle, modifier: Modifier = Modifier) {
-    Text(text, modifier, style = style.copy(brush = Q.Gold))
+    Text(text, modifier.semantics { heading() }, style = style.copy(brush = Q.Gold))
 }
 
 /** Small uppercase gold label with the site's little gradient rules either side. */
@@ -154,7 +161,7 @@ fun GradientText(text: String, style: TextStyle, modifier: Modifier = Modifier) 
 fun Eyebrow(text: String) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Box(Modifier.size(width = 20.dp, height = 1.dp).background(Brush.horizontalGradient(listOf(Q.Secondary, Q.Primary))))
-        Text(text.uppercase(), style = MaterialTheme.typography.labelMedium, color = Q.Primary)
+        Text(text.uppercase(), Modifier.weight(1f, fill = false), style = MaterialTheme.typography.labelMedium, color = Q.Primary)
         Box(Modifier.size(width = 20.dp, height = 1.dp).background(Brush.horizontalGradient(listOf(Q.Primary, Q.Secondary))))
     }
 }
@@ -187,13 +194,17 @@ fun GoldButton(
     shape: Shape = RoundedCornerShape(50),
     leading: String? = null,
 ) {
+    val view = LocalView.current
     Box(
         modifier
-            .heightIn(min = height)
+            .sizeIn(minHeight = maxOf(height, 48.dp), minWidth = 48.dp)
             .then(if (enabled) Modifier.shadow(14.dp, shape, ambientColor = Q.Glow, spotColor = Q.Glow) else Modifier)
             .clip(shape)
             .background(if (enabled) Q.Gold else Brush.linearGradient(listOf(Color(0xFF1A1A1A), Color(0xFF1A1A18))))
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .clickable(enabled = enabled, role = Role.Button) {
+                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                onClick()
+            }
             .padding(PaddingValues(horizontal = 22.dp, vertical = 12.dp)),
         contentAlignment = Alignment.Center,
     ) {
@@ -207,15 +218,21 @@ fun GoldButton(
 
 /** Outlined pill button. */
 @Composable
-fun GhostButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, height: Dp = 48.dp) {
+fun GhostButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, height: Dp = 48.dp, description: String? = null) {
     val shape = RoundedCornerShape(50)
+    val view = LocalView.current
     Box(
         modifier
-            .heightIn(min = height)
+            // Accessibility: never smaller than the 48 dp minimum touch target.
+            .sizeIn(minHeight = maxOf(height, 48.dp), minWidth = 48.dp)
+            .then(if (description != null) Modifier.semantics { contentDescription = description } else Modifier)
             .clip(shape)
             .background(Q.Card.copy(alpha = 0.6f))
             .border(BorderStroke(1.dp, Q.BorderAccent), shape)
-            .clickable(role = Role.Button, onClick = onClick)
+            .clickable(role = Role.Button) {
+                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                onClick()
+            }
             .padding(horizontal = 18.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center,
     ) {
@@ -238,8 +255,8 @@ fun StepBadge(number: Int, done: Boolean) {
 @Composable
 fun StepHeader(number: Int, title: String, done: Boolean) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        StepBadge(number, done)
-        Text(title, style = MaterialTheme.typography.titleLarge, color = Q.Text)
+        Box(Modifier.clearAndSetSemantics { }) { StepBadge(number, done) }
+        Text(title, Modifier.semantics { heading() }, style = MaterialTheme.typography.titleLarge, color = Q.Text)
     }
 }
 

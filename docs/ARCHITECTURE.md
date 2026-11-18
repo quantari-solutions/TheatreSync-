@@ -37,6 +37,16 @@
 | Android host app | `android/app` | Unit tests, lint, emulator tests (UI, on-device server, real audio locking onto a simulated TV clock) |
 | iOS listener app | `ios/TheatreSync.swiftpm` | Shared code compiled + tested with Swift on Linux; UI statically checked. App compile only in Swift Playgrounds |
 
+## Now casting
+
+`TvWatchers` opens one Cast v2 connection (TLS, port 8009) per Chromecast found by
+MediaRouter and asks the receiver what it's running (`RECEIVER_STATUS`), then joins the
+running app's media channel for `MEDIA_STATUS` (title, artwork, position). This is the
+same public protocol that Google Home and open-source clients such as
+[pychromecast](https://github.com/home-assistant-libs/pychromecast) use, so it works for
+casts started from any device. Code: [`CastV2.kt`](../android/sync-core/src/main/kotlin/com/theatresync/core/CastV2.kt),
+[`CastWatcher.kt`](../android/sync-core/src/main/kotlin/com/theatresync/core/CastWatcher.kt).
+
 ## Limits
 
 * Streaming apps (Netflix etc.) can't be handled in software: see [STREAMING-APPS.md](STREAMING-APPS.md).
