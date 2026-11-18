@@ -1,6 +1,21 @@
 # Project status
 
-_Last updated: 2026-11-18. Milestone 1.5 (0.4.2): the real crash fixed, crash safety net, crash timeline, cast indicator_
+_Last updated: 2026-11-18. 0.4.6: TV-compatible quality (conversion), working room-speaker mute, TV volume for YouTube, new icons_
+
+## 0.4.6: picture missing for phone movies, mute had no effect
+
+Owner report: sound in the headphones but no picture on the TV for a movie from the phone; YouTube and mirroring fine;
+the mute toggle did nothing; no controls in YouTube mode; wanted a quality choice and a better TV icon.
+
+| Issue | Fix | Verified |
+|---|---|---|
+| Sound but no picture | Likely cause: the older Chromecast (max 1080p, H.264/VP8 only) can't decode 4K or H.265/HEVC phone videos, while the Default Media Receiver still plays the audio. The app now reads the movie's format and tells you whether your TV can show it | Unit tests (CastCompat); needs HW-10 |
+| Quality choice | **Original / 1080p / 720p** chips. 1080p/720p convert once on the phone (Media3 Transformer → H.264 + AAC, hardware encoder) with a progress bar and Cancel; the result is kept so the next play is instant. Default picks what the TV can show | Builds and unit tests (size maths); conversion speed and output need HW-10 |
+| Loads slowly | Smaller converted files stream far faster over Wi-Fi than 40–60 Mbit/s originals. (Your 5G only matters for YouTube; movies from the phone go over the home Wi-Fi) | needs HW-10 |
+| Mute room speakers did nothing | Now also sets the movie stream volume to 0 and the TV's volume mute, then checks 2 s later and says plainly whether the TV accepted it | needs HW-10 |
+| No controls in YouTube mode | Now casting page: **TV volume** slider + Mute/Unmute (sent straight to the Chromecast; works for YouTube, mirroring and movies) | Protocol unit tests; needs HW-10 |
+| TV emoji icon | Material cast / speaker / film icons in gold tiles | Screenshot tests |
+| Sound test placement | Already in the Headphones page ("Test headphone sound") | Screenshot tests |
 
 ## 0.4.5: owner's media-room test (headphones work; TV keeps buffering)
 

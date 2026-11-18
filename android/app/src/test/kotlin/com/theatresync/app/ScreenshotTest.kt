@@ -29,6 +29,17 @@ class ScreenshotTest {
     @Test fun setup1_empty() = setup(Ui())
     @Test fun setup2_movieChosen_tvsFound() = setup(Ui(movieTitle = "Interstellar", tvs = listOf(Tv("1", "Theatre Room TV"), Tv("2", "Bedroom TV"))))
     @Test fun setup3_ready() = setup(Ui(movieTitle = "Interstellar", connectedTv = "Theatre Room TV"))
+    @Test fun setup8_needsConversion() = setup(
+        Ui(
+            movieTitle = "Interstellar", connectedTv = "Media Room TV",
+            movieInfo = CastCompat.Media("video/hevc", 3840, 2160, 24f, "audio/eac3", 48.0).label,
+            movieVerdict = CastCompat.Verdict(false, listOf(CastCompat.Problem.CODEC, CastCompat.Problem.RESOLUTION)),
+            quality = Quality.P1080,
+        ),
+    )
+    @Test fun setup9_preparing() = setup(
+        Ui(movieTitle = "Interstellar", connectedTv = "Media Room TV", quality = Quality.P1080, prepareProgress = 42),
+    )
     @Test fun setup4_error() = setup(Ui(movieTitle = "Interstellar", message = "Connect this phone to the same Wi-Fi as the Chromecast."))
 
     @Test fun playing1_inSync() = playing(
@@ -64,6 +75,7 @@ class ScreenshotTest {
 
     @Test fun setup5_nowCastingYouTube() = setup(Ui(nowCasting = listOf(youtube), tvs = listOf(Tv("1", "Theatre Room TV"))))
     @Test fun casting1_youtube() = shot { NowCastingScreen(youtube, {}, {}, {}) }
+    @Test fun casting3_youtubeVolume() = shot { NowCastingScreen(youtube.copy(activity = youtube.activity.copy(volumeLevel = 0.6, muted = false)), {}, {}, {}) }
     @Test fun casting2_mirroring() = shot { NowCastingScreen(mirroring, {}, {}, {}) }
     @Test fun headphones1_connected() = shot {
         HeadphonesScreen(

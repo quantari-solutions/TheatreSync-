@@ -149,6 +149,9 @@ data class CastActivity(
     val hasMedia: Boolean = false,
     /** Receiver session ID, needed to stop the app on the TV. */
     val sessionId: String? = null,
+    /** TV (receiver) volume 0..1 and mute, as reported by the Chromecast. */
+    val volumeLevel: Double? = null,
+    val muted: Boolean? = null,
 ) {
     enum class Kind { YOUTUBE, MIRRORING, THEATRESYNC, MEDIA, OTHER }
 
@@ -172,6 +175,7 @@ object CastStatus {
     /** From RECEIVER_STATUS: the app in the foreground, or null if the TV is idle (ambient/backdrop). */
     fun parseReceiver(payload: String): CastActivity? {
         val root = try { json.parseToJsonElement(payload).jsonObject } catch (_: Exception) { return null }
+        val volume = (root["status"] as? JsonObject)?.get("volume") as? JsonObject
         val apps = (root["status"] as? JsonObject)?.get("applications") as? JsonArray ?: return null
         val app = apps.mapNotNull { it as? JsonObject }.firstOrNull { a ->
             val id = a.str("appId")
@@ -194,6 +198,8 @@ object CastStatus {
             transportId = app.str("transportId"),
             hasMedia = namespaces.contains(CastMessage.NS_MEDIA),
             sessionId = app.str("sessionId"),
+            volumeLevel = volume?.num("level"),
+            muted = volume?.bool("muted"),
         )
     }
 

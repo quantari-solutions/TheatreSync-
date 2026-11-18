@@ -133,3 +133,13 @@ How to report: reply in Claude Code with the test ID, *Pass/Fail*, and a screens
 2. Choose movie → connect Media Room TV → **Start movie**. Wait 30 seconds.
 
 **Expected:** the picture appears within ~10 s. **If not:** after 20 s TheatreSync shows a message. Open **Headphones → ⓘ** and send a screenshot of "Last movie sent to TV": it shows the address given to the TV and whether the TV ever asked for the movie.
+
+## HW-10 — Movie quality, mute and TV volume (0.4.6)
+
+1. Choose the same movie that showed no picture. Under it, note the line (e.g. "4K · H.265 …") and the coloured message.
+2. Pick **1080p** (or leave the suggested one) → **Start movie**. A "Preparing for your TV… %" bar appears; wait for it.
+3. Turn on **Mute room speakers**. A line under it says whether the TV accepted it.
+4. Start a YouTube video, open **Now casting**, move the **TV volume** slider and press **Mute**.
+
+**Expected:** the picture appears on the projector; the room speakers go quiet (or the app tells you they couldn't);
+the YouTube volume changes. Send one screenshot of step 1 and one of step 3, and say roughly how long step 2 took.

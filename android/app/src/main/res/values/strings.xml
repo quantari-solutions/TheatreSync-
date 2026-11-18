@@ -180,4 +180,25 @@
     <string name="use_for_movie">Use for movie</string>
     <string name="tv_loading">TV is loading…</string>
     <string name="msg_wifi_too_slow">The TV keeps stopping to load. This video needs about %1$.0f Mbit/s but the Wi-Fi is only getting %2$.0f Mbit/s to the TV. Move the phone closer to the router, or use a smaller video (720p or 1080p at 30 fps).</string>
+    <string name="msg_convert_failed">Couldn\'t prepare this movie for the TV (%1$s). Try another quality.</string>
+    <string name="preparing">Preparing for your TV… %1$d%%</string>
+    <string name="preparing_hint">Converting once on your phone. Next time this movie plays instantly.</string>
+    <string name="cancel">Cancel</string>
+    <string name="quality">Quality</string>
+    <string name="quality_original">Original</string>
+    <string name="quality_1080">1080p</string>
+    <string name="quality_720">720p</string>
+    <string name="quality_original_hint">Plays straight away, exactly as recorded.</string>
+    <string name="quality_convert_hint">Converted once on your phone for smooth playback on your Chromecast. Lower = loads faster.</string>
+    <string name="verdict_ok">Plays on your TV as it is</string>
+    <string name="verdict_codec">Your Chromecast can\'t show this video format. Pick 1080p or 720p</string>
+    <string name="verdict_resolution">Too sharp for your Chromecast (max 1080p). Pick 1080p or 720p</string>
+    <string name="verdict_audio">Your Chromecast can\'t play this sound format. Pick 1080p or 720p</string>
+    <string name="verdict_bitrate">Very large video. 1080p loads faster on Wi-Fi</string>
+    <string name="mute_confirmed">Room speakers muted</string>
+    <string name="mute_ignored">The TV didn\'t accept the mute. Turn the receiver\'s volume down for now.</string>
+    <string name="tv_volume">TV volume</string>
+    <string name="tv_volume_hint">Controls the Chromecast\'s volume (room speakers). YouTube sound can\'t go to your headphones.</string>
+    <string name="mute">Mute</string>
+    <string name="unmute">Unmute</string>
 </resources>

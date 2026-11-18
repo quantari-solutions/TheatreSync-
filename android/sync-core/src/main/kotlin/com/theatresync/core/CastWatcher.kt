@@ -68,6 +68,25 @@ class CastWatcher(
         }.start()
     }
 
+    /** Sets the TV's volume (0..1). Works for anything playing: YouTube, mirroring, movies. */
+    fun setVolume(level: Double) = receiverCommand(""""volume":{"level":${level.coerceIn(0.0, 1.0)}}""")
+
+    /** Mutes or unmutes the TV. */
+    fun setMuted(muted: Boolean) = receiverCommand(""""volume":{"muted":$muted}""")
+
+    private fun receiverCommand(volumeJson: String) {
+        val s = socket ?: return
+        Thread {
+            try {
+                synchronized(this) {
+                    CastMessage.write(s.getOutputStream(), CastMessage(sender, "receiver-0", CastMessage.NS_RECEIVER,
+                        """{"type":"SET_VOLUME",$volumeJson,"requestId":${requestId.incrementAndGet()}}"""))
+                }
+            } catch (_: IOException) {}
+        }.start()
+        pollNow()
+    }
+
     /** Seeks the media session to [seconds]. */
     fun seekTo(seconds: Double) = mediaCommand("""{"type":"SEEK","currentTime":$seconds""")
 
@@ -153,7 +172,9 @@ class CastWatcher(
                         publish(null)
                     } else {
                         val sameApp = base?.appId == app.appId && base?.transportId == app.transportId
-                        base = if (sameApp) current?.copy(statusText = app.statusText, appName = app.appName) ?: app else app
+                        base = if (sameApp) {
+                            current?.copy(statusText = app.statusText, appName = app.appName, volumeLevel = app.volumeLevel, muted = app.muted) ?: app
+                        } else app
                         if (app.hasMedia && app.transportId != null && app.transportId != connectedTransport) {
                             connectedTransport = app.transportId
                             send(s, app.transportId, CastMessage.NS_CONNECTION, """{"type":"CONNECT"}""")

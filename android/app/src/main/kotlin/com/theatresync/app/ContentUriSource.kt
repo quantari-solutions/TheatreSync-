@@ -18,6 +18,9 @@ class ContentUriSource(
     override val sizeBytes: Long,
 ) : MediaSource {
 
+    /** Same file, shown with another title (converted copies keep the movie's name). */
+    fun withTitle(t: String) = ContentUriSource(resolver, uri, t, mimeType, sizeBytes)
+
     override fun open(offset: Long): InputStream {
         val pfd = resolver.openFileDescriptor(uri, "r") ?: throw IOException("cannot open $uri")
         val stream = ParcelFileDescriptor.AutoCloseInputStream(pfd)

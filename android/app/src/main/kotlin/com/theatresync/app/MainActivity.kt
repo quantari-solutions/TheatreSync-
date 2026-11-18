@@ -56,6 +56,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -63,6 +66,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -77,6 +81,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -254,6 +259,8 @@ class MainActivity : ComponentActivity() {
                                     onSkip = { session.castSkip(c.tvId, it) },
                                     onBack = { page = Page.HOME },
                                     onStop = { session.castStop(c.tvId); page = Page.HOME },
+                                    onVolume = { session.castVolume(c.tvId, it) },
+                                    onMute = { session.castMute(c.tvId, it) },
                                 )
                             }
                             "setup" -> SetupScreen(
@@ -265,6 +272,8 @@ class MainActivity : ComponentActivity() {
                                     session.connectTv(id)
                                 },
                                 onMenu = { page = Page.SETTINGS },
+                                onQuality = session::setQuality,
+                                onCancelPrepare = session::cancelPrepare,
                                 onDisconnectTv = session::disconnectTv,
                                 onStart = {
                                     askPermissions.launch(runtimePermissions())
@@ -528,6 +537,8 @@ internal fun SetupScreen(
     onYouTube: () -> Unit = {},
     onMirror: () -> Unit = {},
     onMenu: () -> Unit = {},
+    onQuality: (Quality) -> Unit = {},
+    onCancelPrepare: () -> Unit = {},
     pendingCrash: CrashReporter.Entry? = null,
     onSendCrash: (CrashReporter.Entry) -> Unit = {},
     onShareCrash: (CrashReporter.Entry) -> Unit = {},
@@ -553,7 +564,8 @@ internal fun SetupScreen(
     QCard(highlighted = ui.movieTitle == null) {
         StepHeader(1, stringResource(R.string.step_movie), done = ui.movieTitle != null)
         if (ui.movieTitle != null) {
-            ChosenRow("🎬", ui.movieTitle) { GhostButton(stringResource(R.string.change), onChooseMovie, height = 40.dp) }
+            ChosenRow(R.drawable.ic_movie, ui.movieTitle) { GhostButton(stringResource(R.string.change), onChooseMovie, height = 40.dp) }
+            MovieQuality(ui, onQuality)
         } else {
             GoldButton(stringResource(R.string.choose_movie), onChooseMovie, Modifier.fillMaxWidth())
             Hint(stringResource(R.string.movie_hint))
@@ -564,7 +576,7 @@ internal fun SetupScreen(
         StepHeader(2, stringResource(R.string.step_tv), done = ui.connectedTv != null)
         when {
             !ui.castAvailable -> Body(stringResource(R.string.msg_no_cast))
-            ui.connectedTv != null -> ChosenRow("📺", stringResource(R.string.connected_to, ui.connectedTv)) {
+            ui.connectedTv != null -> ChosenRow(R.drawable.ic_device_cast, stringResource(R.string.connected_to, ui.connectedTv)) {
                 GhostButton(stringResource(R.string.disconnect), onDisconnectTv, height = 40.dp)
             }
             ui.tvs.isEmpty() -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -573,7 +585,7 @@ internal fun SetupScreen(
             }
             else -> ui.tvs.forEach { tv ->
                 val busy = ui.nowCasting.firstOrNull { it.tvId == tv.id }?.activity
-                TvRow(tv.name, busy?.label()) { onConnectTv(tv.id) }
+                TvRow(tv.name, busy?.label(), tv.isSpeaker) { onConnectTv(tv.id) }
             }
         }
     }
@@ -581,11 +593,20 @@ internal fun SetupScreen(
     QCard(highlighted = ui.canStart) {
         StepHeader(3, stringResource(R.string.step_play), done = false)
         Hint(stringResource(R.string.headphones_hint))
-        GoldButton(
-            stringResource(R.string.start_movie), onStart,
-            Modifier.fillMaxWidth().testTag("start"),
-            enabled = ui.canStart, height = 64.dp, leading = "▶",
-        )
+        val preparing = ui.prepareProgress
+        if (preparing != null) {
+            // Converting the movie for the TV (one time per movie and quality).
+            StatusPill(stringResource(R.string.preparing, preparing), Q.Primary, pulsing = true)
+            GoldProgress(preparing / 100f)
+            Hint(stringResource(R.string.preparing_hint))
+            GhostButton(stringResource(R.string.cancel), onCancelPrepare, Modifier.fillMaxWidth())
+        } else {
+            GoldButton(
+                stringResource(R.string.start_movie), onStart,
+                Modifier.fillMaxWidth().testTag("start"),
+                enabled = ui.canStart, height = 64.dp, leading = "▶",
+            )
+        }
     }
 
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -853,11 +874,11 @@ internal fun MirrorScreen(onStart: () -> Unit, onBack: () -> Unit) = Screen {
  * moves underneath so words never break mid-word (accessibility).
  */
 @Composable
-private fun ChosenRow(icon: String, text: String, action: @Composable () -> Unit) {
+private fun ChosenRow(icon: Int, text: String, action: @Composable () -> Unit) {
     val large = LocalDensity.current.fontScale > 1.3f
     val label: @Composable (Modifier) -> Unit = { m ->
         Row(m, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(icon, Modifier.clearAndSetSemantics { }, fontSize = 20.sp)
+            DeviceIcon(icon)
             Text(text, style = MaterialTheme.typography.titleMedium, color = Q.Text)
         }
     }
@@ -874,8 +895,20 @@ private fun ChosenRow(icon: String, text: String, action: @Composable () -> Unit
     }
 }
 
+/** Modern device icon in a small gold-tinted tile. */
 @Composable
-private fun TvRow(name: String, busyWith: String? = null, onClick: () -> Unit) {
+private fun DeviceIcon(res: Int, modifier: Modifier = Modifier) {
+    Box(
+        modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(Q.Primary.copy(alpha = 0.12f))
+            .border(BorderStroke(1.dp, Q.Primary.copy(alpha = 0.3f)), RoundedCornerShape(12.dp)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(painterResource(res), contentDescription = null, tint = Q.Primary, modifier = Modifier.size(22.dp))
+    }
+}
+
+@Composable
+private fun TvRow(name: String, busyWith: String? = null, isSpeaker: Boolean = false, onClick: () -> Unit) {
     val shape = RoundedCornerShape(14.dp)
     Row(
         Modifier.fillMaxWidth().clip(shape).background(Q.Background.copy(alpha = 0.6f))
@@ -883,7 +916,7 @@ private fun TvRow(name: String, busyWith: String? = null, onClick: () -> Unit) {
             .clickable(role = Role.Button, onClick = onClick).padding(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("📺", Modifier.clearAndSetSemantics { }, fontSize = 22.sp)
+        DeviceIcon(if (isSpeaker) R.drawable.ic_device_speaker else R.drawable.ic_device_cast)
         Column(Modifier.weight(1f).padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(name, style = MaterialTheme.typography.titleMedium, color = Q.Text)
             // The TV is already showing something (e.g. YouTube from TheatreSync or another phone).
@@ -961,6 +994,11 @@ internal fun PlayingScreen(
     QCard {
         SwitchRow("🎧", stringResource(R.string.sound_here, ui.headphoneName ?: stringResource(R.string.this_phone)), ui.headphonesHere, onHeadphonesHere)
         SwitchRow("🔇", stringResource(R.string.mute_tv), ui.muteTv, onMuteTv)
+        if (ui.muteTv) when (ui.tvMuteConfirmed) {
+            true -> StatusPill(stringResource(R.string.mute_confirmed), Q.Success)
+            false -> Hint(stringResource(R.string.mute_ignored))
+            null -> Unit
+        }
     }
 
     QCard {
@@ -1113,6 +1151,8 @@ internal fun NowCastingScreen(
     onSkip: (Double) -> Unit,
     onBack: () -> Unit,
     onStop: () -> Unit = {},
+    onVolume: (Double) -> Unit = {},
+    onMute: (Boolean) -> Unit = {},
 ) = Screen {
     val a = item.activity
     TopBar(stringResource(R.string.now_casting), onBack)
@@ -1149,6 +1189,26 @@ internal fun NowCastingScreen(
         }
     }
 
+    // TV volume works for YouTube, mirroring and movies alike.
+    a.volumeLevel?.let { level ->
+        QCard {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.tv_volume), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, color = Q.Text)
+                GhostButton(
+                    stringResource(if (a.muted == true) R.string.unmute else R.string.mute),
+                    { onMute(a.muted != true) }, height = 40.dp,
+                    description = stringResource(if (a.muted == true) R.string.unmute else R.string.mute),
+                )
+            }
+            var local by remember(level) { mutableFloatStateOf(level.toFloat()) }
+            Slider(
+                value = local, onValueChange = { local = it }, onValueChangeFinished = { onVolume(local.toDouble()) },
+                modifier = Modifier.testTag("tv_volume"),
+                colors = SliderDefaults.colors(thumbColor = Q.Primary, activeTrackColor = Q.Primary, inactiveTrackColor = Q.Border),
+            )
+            Hint(stringResource(R.string.tv_volume_hint))
+        }
+    }
     if (a.sessionId != null) {
         GhostButton("■  " + stringResource(R.string.stop_casting), onStop, Modifier.fillMaxWidth().testTag("stop_casting"), height = 52.dp, description = stringResource(R.string.stop_casting))
     }
@@ -1376,4 +1436,44 @@ private fun SoundTestRoute(r: SoundTest.Result) {
             StatusPill(where, if (r.isHeadphones) Q.Success else Q.Error)
         }
     }
+}
+
+
+/** What the chosen movie is, whether the TV can show it, and the quality to cast it at. */
+@Composable
+private fun MovieQuality(ui: MovieSession.Ui, onQuality: (Quality) -> Unit) {
+    ui.movieInfo?.let { Hint(it) }
+    val verdict = ui.movieVerdict
+    if (verdict != null) {
+        val text = when {
+            !verdict.playable && CastCompat.Problem.CODEC in verdict.problems -> stringResource(R.string.verdict_codec)
+            !verdict.playable && CastCompat.Problem.RESOLUTION in verdict.problems -> stringResource(R.string.verdict_resolution)
+            !verdict.playable -> stringResource(R.string.verdict_audio)
+            CastCompat.Problem.BITRATE in verdict.problems -> stringResource(R.string.verdict_bitrate)
+            else -> stringResource(R.string.verdict_ok)
+        }
+        StatusPill(text, if (verdict.playable && verdict.problems.isEmpty()) Q.Success else Q.Primary)
+    }
+    Text(stringResource(R.string.quality), style = MaterialTheme.typography.titleMedium, color = Q.Text)
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Quality.values().forEach { q ->
+            val selected = ui.quality == q
+            val shape = RoundedCornerShape(50)
+            Box(
+                Modifier.weight(1f).height(48.dp).clip(shape)
+                    .background(if (selected) Q.Gold else SolidColor(Q.Card))
+                    .border(BorderStroke(1.dp, if (selected) Q.Secondary else Q.BorderAccent), shape)
+                    .clickable(role = Role.RadioButton) { onQuality(q) }
+                    .semantics { stateDescription = if (selected) "Selected" else "Not selected" }
+                    .testTag("quality_${q.name}"),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    stringResource(when (q) { Quality.ORIGINAL -> R.string.quality_original; Quality.P1080 -> R.string.quality_1080; Quality.P720 -> R.string.quality_720 }),
+                    color = if (selected) Color.Black else Q.PrimaryLight, style = MaterialTheme.typography.labelLarge,
+                )
+            }
+        }
+    }
+    Hint(stringResource(if (ui.quality == Quality.ORIGINAL) R.string.quality_original_hint else R.string.quality_convert_hint))
 }
