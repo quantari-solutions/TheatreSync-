@@ -2,6 +2,7 @@ package com.theatresync.app
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -29,12 +30,14 @@ class CrashSafetyTest {
             rule.activityRule.scenario.moveToState(Lifecycle.State.CREATED) // onStop
             rule.activityRule.scenario.moveToState(Lifecycle.State.RESUMED) // onStart/onResume
         }
+        rule.waitUntil(5_000) { rule.onAllNodesWithText("Choose movie", substring = true).fetchSemanticsNodes().isNotEmpty() }
         rule.onNodeWithText("Choose movie", substring = true).performScrollTo().assertIsDisplayed()
     }
 
     @Test
     fun recreatingTheScreenNeverCrashes() {
         repeat(5) { rule.activityRule.scenario.recreate() }
+        rule.waitUntil(5_000) { rule.onAllNodesWithText("Choose movie", substring = true).fetchSemanticsNodes().isNotEmpty() }
         rule.onNodeWithText("Choose movie", substring = true).performScrollTo().assertIsDisplayed()
     }
 

@@ -3,6 +3,7 @@ package com.theatresync.app
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -26,6 +27,10 @@ class SetupScreenTest {
     }
 
     private fun assertHome() {
+        // Pages slide in and out; wait (up to 5 s) for the home screen to be composed.
+        rule.waitUntil(5_000) {
+            rule.onAllNodesWithText("Choose movie", substring = true).fetchSemanticsNodes().isNotEmpty()
+        }
         rule.onNodeWithText("Choose movie", substring = true).performScrollTo().assertIsDisplayed()
     }
 
