@@ -1,6 +1,21 @@
 # Project status
 
-_Last updated: 2026-11-18. Milestone 1.4: crash fix, YouTube, screen mirroring, stop casting_
+_Last updated: 2026-11-18. Milestone 1.5 (0.4.2): the real crash fixed, crash safety net, crash timeline, cast indicator_
+
+## 0.4.2: root cause from the owner's crash report
+
+The on-phone crash reporter captured it (motorola edge 40, Android 15):
+`NetworkOnMainThreadException` in `MainActivity.onStop` → `TvWatchers.stopAll` → `CastWatcher.close` →
+closing the TLS socket to a Chromecast sends close_notify, which is network I/O on the main thread.
+`onStop` runs whenever the app goes to the background, e.g. opening Files to choose a movie, so this was the
+"crashes when I pick a movie" bug. It was never reproduced on the emulator because no Chromecast connection exists there.
+
+Fixes: the socket is closed on a background thread (regression test asserts close never runs on the caller's thread);
+every TV/network/file action goes through a guard that records the problem and keeps the app running;
+crash timeline under ☰ → Settings → Crash reports (Send to GitHub opens a pre-filled issue the owner submits,
+or Share); cast icon in the status bar with a Stop casting action while connected.
+Crash tests: monkey (3000 random events on the optimised build), 15× background/foreground, 5× recreate.
+
 
 ## 0.4.0 — field-test fixes (from the owner's media-room test)
 

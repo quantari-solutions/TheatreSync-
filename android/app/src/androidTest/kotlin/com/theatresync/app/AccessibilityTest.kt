@@ -58,4 +58,13 @@ class AccessibilityTest {
     }
 
     @Test fun mirrorScreen() = check { MirrorScreen({}, {}) }
+
+    @Test fun settingsScreen() = check { SettingsScreen(1, {}, {}, {}) }
+
+    @Test fun crashTimeline() = check {
+        CrashReportsScreen(
+            listOf(CrashReporter.Entry("1", 1_763_456_941_000, "0.4.2", CrashReporter.Kind.CRASH, "Test", "report", CrashReporter.Status.SAVED, null)),
+            {}, {}, {},
+        )
+    }
 }

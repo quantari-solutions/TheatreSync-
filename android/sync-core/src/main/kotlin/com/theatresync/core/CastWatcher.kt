@@ -30,10 +30,20 @@ class CastWatcher(
 
     fun start(): CastWatcher { thread.start(); return this }
 
+    /**
+     * Stops watching. Safe to call from the main thread: closing a TLS socket sends a
+     * close_notify message to the Chromecast, which is network I/O, and Android kills
+     * apps that do network I/O on the main thread (NetworkOnMainThreadException: the
+     * 0.4.0 crash when opening the file picker). So the socket is closed on a background
+     * thread, never on the caller's.
+     */
     override fun close() {
         running = false
-        try { socket?.close() } catch (_: IOException) {}
+        val s = socket
         thread.interrupt()
+        if (s != null) {
+            Thread({ try { s.close() } catch (_: Exception) {} }, "cast-watcher-close").apply { isDaemon = true }.start()
+        }
     }
 
     /** Sends PLAY or PAUSE to the media session on the TV (works for YouTube and other media apps). */

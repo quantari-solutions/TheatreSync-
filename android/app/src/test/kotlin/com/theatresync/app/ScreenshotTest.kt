@@ -80,7 +80,14 @@ class ScreenshotTest {
         YouTubeScreen(Ui(tvs = listOf(Tv("1", "Media Room TV"), Tv("2", "Alfred")), youTube = MovieSession.YouTubeState.FAILED), "https://youtu.be/dQw4w9WgXcQ", { _, _ -> }, {}, {})
     }
     @Test fun mirror() = shot { MirrorScreen({}, {}) }
-    @Test fun setup6_crashCard() = shot { SetupScreen(Ui(), {}, {}, {}, {}, {}, {}, crashReport = "trace") }
+    private val crash = CrashReporter.Entry("1", 1_763_456_941_000, "0.4.0", CrashReporter.Kind.CRASH,
+        "NetworkOnMainThreadException", "TheatreSync 0.4.0 (5) crash report\n…", CrashReporter.Status.SAVED, null)
+    private val handled = CrashReporter.Entry("2", 1_763_457_000_000, "0.4.2", CrashReporter.Kind.HANDLED,
+        "IOException: YouTube answered 403", "…", CrashReporter.Status.SENT_GITHUB, 1_763_457_100_000)
+    @Test fun setup6_crashCard() = shot { SetupScreen(Ui(), {}, {}, {}, {}, {}, {}, pendingCrash = crash) }
+    @Test fun settings() = shot { SettingsScreen(2, {}, {}, {}) }
+    @Test fun crashTimeline() = shot { CrashReportsScreen(listOf(handled, crash), {}, {}, {}) }
+    @Test fun crashTimelineEmpty() = shot { CrashReportsScreen(emptyList(), {}, {}, {}) }
 }
 
 /** Accessibility: the largest system font size (200 %) must not clip or overlap anything. */

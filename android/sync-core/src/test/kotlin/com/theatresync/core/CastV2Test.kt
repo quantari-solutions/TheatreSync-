@@ -156,4 +156,33 @@ class CastV2Test {
             watcher.close()
         }
     }
+
+    /** Regression for the 0.4.0 crash: close() must never touch the socket on the caller's thread. */
+    @Test(timeout = 10_000)
+    fun closeNeverClosesSocketOnCallerThread() {
+        val server = ServerSocket(0).also { fake = it }
+        val connected = CountDownLatch(1)
+        val closedOn = java.util.concurrent.atomic.AtomicReference<Thread>()
+        val closedLatch = CountDownLatch(1)
+        Thread { runCatching { server.accept().use { c -> c.getInputStream().read() } } }.apply { isDaemon = true }.start()
+        val watcher = CastWatcher(
+            connect = {
+                object : Socket("127.0.0.1", server.localPort) {
+                    override fun close() {
+                        closedOn.compareAndSet(null, Thread.currentThread())
+                        closedLatch.countDown()
+                        super.close()
+                    }
+                }.also { connected.countDown() }
+            },
+            onUpdate = {},
+            pollMs = 10_000,
+        ).start()
+        assertTrue(connected.await(5, TimeUnit.SECONDS))
+        Thread.sleep(200) // let the watcher store the socket
+        val caller = Thread.currentThread()
+        watcher.close()
+        assertTrue("socket was never closed", closedLatch.await(5, TimeUnit.SECONDS))
+        assertTrue("socket closed on the caller (main) thread", closedOn.get() !== caller)
+    }
 }

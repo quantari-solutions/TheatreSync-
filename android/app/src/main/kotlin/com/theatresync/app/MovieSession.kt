@@ -113,6 +113,10 @@ class MovieSession(private val app: Application) {
 
     @Volatile var lastDiagnostics: Diagnostics? = null
         private set
+
+    /** Why the last YouTube cast failed, for the ⓘ technical details. */
+    @Volatile var lastYouTubeError: String? = null
+        private set
     private var startedAtMs = 0L
     private var tvEverPlayed = false
 
@@ -126,7 +130,7 @@ class MovieSession(private val app: Application) {
 
     // ---------------------------------------------------------------- setup
 
-    fun chooseMovie(uri: Uri) {
+    private fun chooseMovieUnsafe(uri: Uri) {
         // Some file providers throw (permission revoked, cloud file offline): never crash for that.
         val source = try { ContentUriSource.from(app, uri) } catch (_: Exception) { null }
         if (source == null) {
@@ -138,13 +142,13 @@ class MovieSession(private val app: Application) {
     }
 
     private val routerCallback = object : MediaRouter.Callback() {
-        override fun onRouteAdded(router: MediaRouter, route: MediaRouter.RouteInfo) = refreshTvs()
-        override fun onRouteRemoved(router: MediaRouter, route: MediaRouter.RouteInfo) = refreshTvs()
-        override fun onRouteChanged(router: MediaRouter, route: MediaRouter.RouteInfo) = refreshTvs()
+        override fun onRouteAdded(router: MediaRouter, route: MediaRouter.RouteInfo) = guard("routes") { refreshTvs() }
+        override fun onRouteRemoved(router: MediaRouter, route: MediaRouter.RouteInfo) = guard("routes") { refreshTvs() }
+        override fun onRouteChanged(router: MediaRouter, route: MediaRouter.RouteInfo) = guard("routes") { refreshTvs() }
     }
 
     /** Call while the setup screen is visible. */
-    fun startTvSearch() {
+    private fun startTvSearchUnsafe() {
         if (castContext == null) return
         applyScanMode()
         refreshTvs()
@@ -162,7 +166,7 @@ class MovieSession(private val app: Application) {
         )
     }
 
-    fun stopTvSearch() {
+    private fun stopTvSearchUnsafe() {
         router.removeCallback(routerCallback)
         tvWatchers.stopAll()
     }
@@ -196,15 +200,14 @@ class MovieSession(private val app: Application) {
         _ui.update { it.copy(nowCasting = visible) }
     }
 
-    fun castPlayPause(tvId: String) {
+    private fun castPlayPauseUnsafe(tvId: String) {
         val a = rawNowCasting.firstOrNull { it.tvId == tvId }?.activity ?: return
         tvWatchers.playPause(tvId, play = !a.isPlaying)
     }
 
-    fun castSkip(tvId: String, deltaSec: Double) = tvWatchers.seekBy(tvId, deltaSec)
 
     /** Stops whatever is on that TV. If it's our own Cast session, end that cleanly too. */
-    fun castStop(tvId: String) {
+    private fun castStopUnsafe(tvId: String) {
         val a = rawNowCasting.firstOrNull { it.tvId == tvId }?.activity
         // Close the card immediately; the TV goes back to its "Ready to cast" screen.
         a?.sessionId?.let { stoppedSessions += it }
@@ -215,26 +218,35 @@ class MovieSession(private val app: Application) {
         }
         tvWatchers.stopCasting(tvId)
         if (a?.appId == CastStatus.APP_YOUTUBE) resetYouTube()
+        if (castSession == null) CastIndicator.hide(app)
     }
 
     /**
      * Plays a YouTube video on the chosen TV: starts the YouTube app on the Chromecast and
      * tells it which video to play (Lounge API). Runs off the main thread.
      */
-    fun castYouTube(videoId: String, tvId: String) {
+    fun castYouTube(videoId: String, tvId: String) = guard("castYouTube") { castYouTubeUnsafe(videoId, tvId) }
+
+    private fun castYouTubeUnsafe(videoId: String, tvId: String) {
         if (server != null) return say(R.string.yt_stop_movie_first)
         val tv = knownTvs.firstOrNull { it.id == tvId } ?: return say(R.string.yt_no_tv)
         _ui.update { it.copy(youTube = YouTubeState.STARTING, youTubeVideoId = videoId, message = null) }
         Thread({
+            var step = "starting YouTube on the TV"
             val ok = try {
                 val screenId = YouTubeScreenFinder({ TvWatchers.openTls(tv.address, tv.port) }).screenId()
+                step = "asking YouTube to play the video"
                 YouTubeLounge().play(screenId, videoId)
+                lastYouTubeError = null
                 true
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                lastYouTubeError = "Failed while $step: ${e.javaClass.simpleName}: ${e.message}"
+                CrashReporter.handled(app, "YouTube cast ($step)", e)
                 false
             }
             main.post {
                 _ui.update { it.copy(youTube = if (ok) YouTubeState.PLAYING else YouTubeState.FAILED) }
+                if (ok) CastIndicator.show(app, app.getString(R.string.casting_youtube_to, tv.name), tv.id)
             }
         }, "youtube-cast").start()
     }
@@ -242,18 +254,18 @@ class MovieSession(private val app: Application) {
     fun resetYouTube() = _ui.update { it.copy(youTube = YouTubeState.IDLE) }
 
 
-    fun connectTv(id: String) {
+    private fun connectTvUnsafe(id: String) {
         router.routes.firstOrNull { it.id == id }?.select()
     }
 
-    fun disconnectTv() {
+    private fun disconnectTvUnsafe() {
         castContext?.sessionManager?.endCurrentSession(true)
     }
 
     private fun sessionListener() = object : SessionManagerListener<CastSession> {
-        override fun onSessionStarted(session: CastSession, sessionId: String) = onTvConnected(session)
-        override fun onSessionResumed(session: CastSession, wasSuspended: Boolean) = onTvConnected(session)
-        override fun onSessionEnded(session: CastSession, error: Int) = onTvDisconnected()
+        override fun onSessionStarted(session: CastSession, sessionId: String) = guard("tv connected") { onTvConnected(session) }
+        override fun onSessionResumed(session: CastSession, wasSuspended: Boolean) = guard("tv resumed") { onTvConnected(session) }
+        override fun onSessionEnded(session: CastSession, error: Int) = guard("tv disconnected") { onTvDisconnected() }
         override fun onSessionStartFailed(session: CastSession, error: Int) = say(R.string.msg_tv_failed)
         override fun onSessionStarting(session: CastSession) {}
         override fun onSessionEnding(session: CastSession) {}
@@ -265,19 +277,22 @@ class MovieSession(private val app: Application) {
     private fun onTvConnected(session: CastSession) {
         castSession = session
         restoreTvSoundIfWeMutedIt(session)
-        _ui.update { it.copy(connectedTv = session.castDevice?.friendlyName ?: "Chromecast", message = null) }
+        val tvName = session.castDevice?.friendlyName ?: "Chromecast"
+        _ui.update { it.copy(connectedTv = tvName, message = null) }
+        if (server == null) CastIndicator.show(app, app.getString(R.string.casting_to, tvName))
         if (castContext != null) applyScanMode()
     }
 
     private fun onTvDisconnected() {
         castSession = null
+        CastIndicator.hide(app)
         if (_ui.value.phase != Phase.SETUP) teardown()
         _ui.update { it.copy(connectedTv = null, phase = Phase.SETUP) }
     }
 
     // ---------------------------------------------------------------- the movie
 
-    fun startMovie() {
+    private fun startMovieUnsafe() {
         val m = movie ?: return
         val session = castSession ?: return
         val client = session.remoteMediaClient ?: return say(R.string.msg_tv_failed)
@@ -319,6 +334,7 @@ class MovieSession(private val app: Application) {
         announcer.announce("TheatreSync · ${m.title}".take(60), ip, port)
         wifiLock = (app.getSystemService(Context.WIFI_SERVICE) as WifiManager)
             .createWifiLock(WifiManager.WIFI_MODE_FULL_LOW_LATENCY, "theatresync").apply { acquire() }
+        CastIndicator.hide(app) // the movie's own notification takes over (same cast icon)
         HostService.start(app)
         interrupted = false
         _ui.update { it.copy(phase = Phase.STARTING, joinAddress = "$ip:$port", message = null, positionMs = 0) }
@@ -326,7 +342,7 @@ class MovieSession(private val app: Application) {
         main.post(tick)
     }
 
-    fun stopMovie() {
+    private fun stopMovieUnsafe() {
         castSession?.remoteMediaClient?.stop()
         teardown()
         // Close the media player on the Chromecast so it returns to "Ready to cast".
@@ -352,12 +368,12 @@ class MovieSession(private val app: Application) {
     /** From the notification: pause or resume the movie on the TV. */
     fun notificationPlayPause() = togglePause()
 
-    fun togglePause() {
+    private fun togglePauseUnsafe() {
         val c = castSession?.remoteMediaClient ?: return
         if (c.isPlaying) c.pause() else c.play()
     }
 
-    fun skip(deltaMs: Long) {
+    private fun skipUnsafe(deltaMs: Long) {
         val c = castSession?.remoteMediaClient ?: return
         val duration = c.streamDuration
         val wanted = (c.approximateStreamPosition + deltaMs).coerceAtLeast(0)
@@ -376,7 +392,7 @@ class MovieSession(private val app: Application) {
 
     fun setHeadphonesHere(on: Boolean) = _ui.update { it.copy(headphonesHere = on) }
 
-    fun setMuteTv(on: Boolean) {
+    private fun setMuteTvUnsafe(on: Boolean) {
         _ui.update { it.copy(muteTv = on) }
         applyTvMute()
     }
@@ -418,7 +434,11 @@ class MovieSession(private val app: Application) {
 
     private val tick = object : Runnable {
         override fun run() {
-            step()
+            try {
+                step()
+            } catch (e: Exception) {
+                CrashReporter.handled(app, "sync loop", e)
+            }
             main.postDelayed(this, TICK_MS)
         }
     }
@@ -492,6 +512,36 @@ class MovieSession(private val app: Application) {
     }
 
     private fun say(res: Int) = _ui.update { it.copy(message = app.getString(res)) }
+
+    // ---------------------------------------------------------------- crash safety
+    //
+    // Every action that talks to the TV, the network or a file provider goes through
+    // guard(): an unexpected problem is recorded in the crash timeline, the user sees a
+    // calm message, and the app keeps running instead of closing.
+
+    fun chooseMovie(uri: Uri) = guard("chooseMovie") { chooseMovieUnsafe(uri) }
+    fun startTvSearch() = guard("startTvSearch") { startTvSearchUnsafe() }
+    fun stopTvSearch() = guard("stopTvSearch") { stopTvSearchUnsafe() }
+    fun connectTv(id: String) = guard("connectTv") { connectTvUnsafe(id) }
+    fun disconnectTv() = guard("disconnectTv") { disconnectTvUnsafe() }
+    fun castPlayPause(tvId: String) = guard("castPlayPause") { castPlayPauseUnsafe(tvId) }
+    fun castStop(tvId: String) = guard("castStop") { castStopUnsafe(tvId) }
+    fun startMovie() = guard("startMovie") { startMovieUnsafe() }
+    fun stopMovie() = guard("stopMovie") { stopMovieUnsafe() }
+    fun togglePause() = guard("togglePause") { togglePauseUnsafe() }
+    fun skip(deltaMs: Long) = guard("skip") { skipUnsafe(deltaMs) }
+    fun setMuteTv(on: Boolean) = guard("setMuteTv") { setMuteTvUnsafe(on) }
+
+    fun castSkip(tvId: String, deltaSec: Double) = guard("castSkip") { tvWatchers.seekBy(tvId, deltaSec) }
+
+    private inline fun guard(where: String, block: () -> Unit) {
+        try {
+            block()
+        } catch (e: Exception) {
+            CrashReporter.handled(app, where, e)
+            _ui.update { it.copy(message = app.getString(R.string.msg_problem_handled)) }
+        }
+    }
 
     companion object {
         private const val TICK_MS = 200L

@@ -97,14 +97,15 @@ import com.theatresync.core.CastActivity
 import com.theatresync.core.YouTubeLinks
 import kotlin.math.abs
 
-enum class Page { HOME, HEADPHONES, NOW_CASTING, YOUTUBE, MIRROR }
+enum class Page { HOME, HEADPHONES, NOW_CASTING, YOUTUBE, MIRROR, SETTINGS, CRASHES }
 
 class MainActivity : ComponentActivity() {
     private val session: MovieSession get() = (application as TheatreSyncApplication).session
     private val outputs = mutableStateOf<List<DiagnosticsReport.Output>>(emptyList())
     private val details = mutableStateOf("")
     private val sharedLink = mutableStateOf<String?>(null)
-    private val crashReport = mutableStateOf<String?>(null)
+    private val pendingCrash = mutableStateOf<CrashReporter.Entry?>(null)
+    private val crashEntries = mutableStateOf<List<CrashReporter.Entry>>(emptyList())
     private lateinit var audioManager: AudioManager
 
     private val pickMovie = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -132,7 +133,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         audioManager = getSystemService(AudioManager::class.java)
-        crashReport.value = CrashReporter.pending(this)
+        refreshCrashes()
         handleShare(intent)
         mirroringLabel = getString(R.string.screen_mirroring)
         mirroringHeadline = getString(R.string.mirroring_a_screen)
@@ -145,7 +146,7 @@ class MainActivity : ComponentActivity() {
                     var castTvId by rememberSaveable { mutableStateOf<String?>(null) }
                     val casting = ui.nowCasting.firstOrNull { it.tvId == castTvId }
 
-                    BackHandler(enabled = page != Page.HOME) { page = Page.HOME }
+                    BackHandler(enabled = page != Page.HOME) { page = if (page == Page.CRASHES) Page.SETTINGS else Page.HOME }
                     // Shared from the YouTube app: jump straight to the YouTube page.
                     LaunchedEffect(sharedLink.value) { if (sharedLink.value != null) page = Page.YOUTUBE }
                     // If the cast we're looking at ends, go back home on its own.
@@ -154,6 +155,8 @@ class MainActivity : ComponentActivity() {
                     }
 
                     val target = when {
+                        page == Page.SETTINGS -> "settings"
+                        page == Page.CRASHES -> "crashes"
                         page == Page.HEADPHONES -> "headphones"
                         page == Page.YOUTUBE -> "youtube"
                         page == Page.MIRROR -> "mirror"
@@ -164,7 +167,7 @@ class MainActivity : ComponentActivity() {
                     AnimatedContent(
                         targetState = target,
                         transitionSpec = {
-                            val forward = targetState in setOf("headphones", "casting", "youtube", "mirror")
+                            val forward = targetState in setOf("headphones", "casting", "youtube", "mirror", "settings", "crashes")
                             (slideInHorizontally { if (forward) it / 3 else -it / 3 } + fadeIn(tween(220)))
                                 .togetherWith(slideOutHorizontally { if (forward) -it / 3 else it / 3 } + fadeOut(tween(180)))
                         },
@@ -178,6 +181,18 @@ class MainActivity : ComponentActivity() {
                                 onAllow = { askPermissions.launch(runtimePermissions()) },
                                 onOpenBluetooth = { startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) },
                                 onBack = { page = Page.HOME },
+                            )
+                            "settings" -> SettingsScreen(
+                                crashCount = crashEntries.value.size,
+                                onCrashes = { refreshCrashes(); page = Page.CRASHES },
+                                onHeadphones = { refreshAudio(); page = Page.HEADPHONES },
+                                onBack = { page = Page.HOME },
+                            )
+                            "crashes" -> CrashReportsScreen(
+                                entries = crashEntries.value,
+                                onSendGitHub = ::sendToGitHub,
+                                onShare = ::shareCrash,
+                                onBack = { page = Page.SETTINGS },
                             )
                             "youtube" -> YouTubeScreen(
                                 ui = ui,
@@ -202,7 +217,12 @@ class MainActivity : ComponentActivity() {
                             "setup" -> SetupScreen(
                                 ui = ui,
                                 onChooseMovie = { pickMovie.launch(arrayOf("video/*")) },
-                                onConnectTv = session::connectTv,
+                                onConnectTv = { id ->
+                                    // Needed for the cast icon in the status bar (Android 13+).
+                                    askPermissions.launch(runtimePermissions())
+                                    session.connectTv(id)
+                                },
+                                onMenu = { page = Page.SETTINGS },
                                 onDisconnectTv = session::disconnectTv,
                                 onStart = {
                                     askPermissions.launch(runtimePermissions())
@@ -218,9 +238,10 @@ class MainActivity : ComponentActivity() {
                                 onCastStop = session::castStop,
                                 onYouTube = { page = Page.YOUTUBE },
                                 onMirror = { page = Page.MIRROR },
-                                crashReport = crashReport.value,
-                                onShareCrash = { shareCrash() },
-                                onDismissCrash = { CrashReporter.clear(this@MainActivity); crashReport.value = null },
+                                pendingCrash = pendingCrash.value,
+                                onSendCrash = { e -> sendToGitHub(e) },
+                                onShareCrash = { e -> shareCrash(e) },
+                                onDismissCrash = { e -> CrashReporter.dismiss(this@MainActivity, e.id); refreshCrashes() },
                             )
                             else -> PlayingScreen(
                                 ui = ui,
@@ -242,6 +263,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        refreshCrashes()
         session.startTvSearch()
         audioManager.registerAudioDeviceCallback(deviceCallback, null)
         refreshAudio()
@@ -299,10 +321,25 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun shareCrash() {
-        val report = crashReport.value ?: return
-        val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, report)
-        runCatching { startActivity(Intent.createChooser(send, getString(R.string.share_crash))) }
+    private fun refreshCrashes() {
+        crashEntries.value = CrashReporter.entries(this)
+        pendingCrash.value = CrashReporter.pendingCrash(this)
+    }
+
+    private fun shareCrash(e: CrashReporter.Entry) {
+        val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, e.report)
+        if (runCatching { startActivity(Intent.createChooser(send, getString(R.string.share_crash))) }.isSuccess) {
+            CrashReporter.mark(this, e.id, CrashReporter.Status.SHARED)
+            refreshCrashes()
+        }
+    }
+
+    /** Opens a pre-filled GitHub issue; the owner taps Submit with their own login. */
+    private fun sendToGitHub(e: CrashReporter.Entry) {
+        if (runCatching { startActivity(Intent(Intent.ACTION_VIEW, CrashReporter.gitHubIssueUri(e))) }.isSuccess) {
+            CrashReporter.mark(this, e.id, CrashReporter.Status.SENT_GITHUB)
+            refreshCrashes()
+        }
     }
 
     private fun runtimePermissions(): Array<String> = buildList {
@@ -385,12 +422,17 @@ internal fun SetupScreen(
     onCastStop: (String) -> Unit = {},
     onYouTube: () -> Unit = {},
     onMirror: () -> Unit = {},
-    crashReport: String? = null,
-    onShareCrash: () -> Unit = {},
-    onDismissCrash: () -> Unit = {},
+    onMenu: () -> Unit = {},
+    pendingCrash: CrashReporter.Entry? = null,
+    onSendCrash: (CrashReporter.Entry) -> Unit = {},
+    onShareCrash: (CrashReporter.Entry) -> Unit = {},
+    onDismissCrash: (CrashReporter.Entry) -> Unit = {},
 ) = Screen {
-    Brand(stringResource(R.string.setup_intro))
-    if (crashReport != null) CrashCard(onShareCrash, onDismissCrash)
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+        Box(Modifier.weight(1f)) { Brand(stringResource(R.string.setup_intro)) }
+        RoundIconButton("☰", stringResource(R.string.menu), onMenu, Modifier.testTag("menu"))
+    }
+    if (pendingCrash != null) CrashCard({ onSendCrash(pendingCrash) }, { onShareCrash(pendingCrash) }, { onDismissCrash(pendingCrash) })
     Message(ui.message, onDismiss)
     ui.nowCasting.forEach { item ->
         NowCastingCard(item, onOpen = { onOpenCasting(item.tvId) }, onPlayPause = { onCastPlayPause(item.tvId) }, onStop = { onCastStop(item.tvId) })
@@ -458,14 +500,112 @@ private fun WatchTile(glyph: String, title: String, hint: String, modifier: Modi
 }
 
 @Composable
-private fun CrashCard(onShare: () -> Unit, onDismiss: () -> Unit) {
-    QCard(Modifier.semantics { liveRegion = LiveRegionMode.Polite }, highlighted = true) {
+private fun CrashCard(onSend: () -> Unit, onShare: () -> Unit, onDismiss: () -> Unit) {
+    QCard(Modifier.semantics { liveRegion = LiveRegionMode.Polite }.testTag("crash_card"), highlighted = true) {
         Text(stringResource(R.string.crash_title), style = MaterialTheme.typography.titleMedium, color = Q.Text)
         Hint(stringResource(R.string.crash_hint))
+        GoldButton(stringResource(R.string.send_github), onSend, Modifier.fillMaxWidth(), height = 48.dp)
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            GoldButton(stringResource(R.string.share_crash), onShare, height = 48.dp)
+            GhostButton(stringResource(R.string.share), onShare)
             GhostButton(stringResource(R.string.ok), onDismiss)
         }
+    }
+}
+
+// ---------------------------------------------------------------- settings & crash timeline
+
+@Composable
+internal fun SettingsScreen(crashCount: Int, onCrashes: () -> Unit, onHeadphones: () -> Unit, onBack: () -> Unit) = Screen {
+    TopBar(stringResource(R.string.settings), onBack)
+    SettingsRow("🧾", stringResource(R.string.crash_reports), if (crashCount > 0) crashCount.toString() else null, onCrashes, "settings_crashes")
+    SettingsRow("🎧", stringResource(R.string.headphones), null, onHeadphones, "settings_headphones")
+    QCard {
+        Text(stringResource(R.string.about), style = MaterialTheme.typography.titleMedium, color = Q.Text)
+        Hint(stringResource(R.string.about_text, BuildConfig.VERSION_NAME))
+    }
+    Footer()
+}
+
+@Composable
+private fun SettingsRow(icon: String, title: String, badge: String?, onClick: () -> Unit, tag: String) {
+    QCard(Modifier.clickable(role = Role.Button, onClick = onClick).testTag(tag)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Text(icon, Modifier.clearAndSetSemantics { }, fontSize = 22.sp)
+            Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, color = Q.Text)
+            badge?.let {
+                Box(Modifier.size(32.dp).clip(CircleShape).background(Q.Gold), contentAlignment = Alignment.Center) {
+                    Text(it, color = Color.Black, style = MaterialTheme.typography.labelLarge)
+                }
+            }
+            Text("›", color = Q.PrimaryLight, style = MaterialTheme.typography.titleLarge, modifier = Modifier.clearAndSetSemantics { })
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun CrashReportsScreen(
+    entries: List<CrashReporter.Entry>,
+    onSendGitHub: (CrashReporter.Entry) -> Unit,
+    onShare: (CrashReporter.Entry) -> Unit,
+    onBack: () -> Unit,
+) {
+    var open by remember { mutableStateOf<CrashReporter.Entry?>(null) }
+    Screen {
+        TopBar(stringResource(R.string.crash_reports), onBack)
+        Hint(stringResource(R.string.crash_reports_hint))
+        if (entries.isEmpty()) {
+            QCard {
+                StatusPill(stringResource(R.string.no_crashes), Q.Success)
+            }
+        }
+        entries.forEach { e ->
+            QCard(Modifier.clickable(role = Role.Button) { open = e }.testTag("crash_entry")) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Box(
+                        Modifier.size(12.dp).clip(CircleShape)
+                            .background(if (e.kind == CrashReporter.Kind.CRASH) Q.Error else Q.Primary)
+                            .clearAndSetSemantics { },
+                    )
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            stringResource(if (e.kind == CrashReporter.Kind.CRASH) R.string.crash_kind_crash else R.string.crash_kind_handled),
+                            style = MaterialTheme.typography.titleMedium, color = Q.Text,
+                        )
+                        Text("${CrashReporter.formatTime(e.timeMs)} · ${e.version}", color = Q.TextFaint, style = MaterialTheme.typography.bodySmall)
+                        Text(e.title, color = Q.TextMuted, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+                CrashStatus(e)
+            }
+        }
+        Footer()
+    }
+    open?.let { e ->
+        ModalBottomSheet(onDismissRequest = { open = null }, containerColor = Q.Card) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Eyebrow(stringResource(if (e.kind == CrashReporter.Kind.CRASH) R.string.crash_kind_crash else R.string.crash_kind_handled))
+                CrashStatus(e)
+                GoldButton(stringResource(R.string.send_github), { onSendGitHub(e); open = null }, Modifier.fillMaxWidth(), height = 48.dp)
+                Hint(stringResource(R.string.send_github_hint))
+                GhostButton(stringResource(R.string.share), { onShare(e); open = null }, Modifier.fillMaxWidth())
+                Text(
+                    e.report, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall, color = Q.TextMuted,
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Q.Background)
+                        .border(BorderStroke(1.dp, Q.BorderAccent), RoundedCornerShape(12.dp)).padding(12.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CrashStatus(e: CrashReporter.Entry) {
+    val t = e.statusTimeMs?.let { CrashReporter.formatTime(it) } ?: ""
+    when (e.status) {
+        CrashReporter.Status.SAVED -> StatusPill(stringResource(R.string.status_saved), Q.TextMuted)
+        CrashReporter.Status.SHARED -> StatusPill(stringResource(R.string.status_shared, t), Q.Primary)
+        CrashReporter.Status.SENT_GITHUB -> StatusPill(stringResource(R.string.status_sent, t), Q.Success)
     }
 }
 
