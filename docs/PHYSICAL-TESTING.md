@@ -49,6 +49,37 @@ How to report: reply in Claude Code with the test ID, *Pass/Fail*, and a screens
 
 ---
 
-Later tests (not yet runnable): AudioPlaybackCapture from a video app, AudioTrack
-delayed output, Bluetooth latency measurement, interruptions (calls/notifications),
-Chromecast discovery and sessions, projector/AV-receiver compatibility.
+## HW-03 — Movie night, one person (Android + Chromecast + WH-1000XM4)
+
+**Objective:** picture on the projector, sound in the headphones, in sync.
+
+**You need:** an MP4 movie file on the phone (any home video recorded on the phone works too), the projector setup switched on.
+
+**Steps**
+1. Install the newest APK from the PR, connect the XM4 to the phone, open TheatreSync.
+2. Choose movie → choose your Chromecast → **Start movie**.
+3. Watch for one minute. Use **Sound is early/late** until voices match lips.
+4. Pause, then play. Skip forward 10 s.
+5. Lock the phone for 2 minutes, then unlock.
+
+**Expected**
+* Picture on the screen within ~10 s; room speakers silent; sound in the headphones.
+* After adjusting, lips and voices match and **stay** matched (including after pause/skip/lock).
+
+**Report:** Pass/Fail per step, the final **Sound delay** value, the **Sync: … ms** number at the bottom, and a screenshot.
+
+---
+
+## HW-04 — Friend joins on iPhone (or you on the iPad)
+
+**Objective:** a second pair of headphones in sync with the same movie.
+
+**Steps**
+1. Do HW-03 steps 1–2.
+2. On the iPhone: install TheatreSync with Swift Playgrounds ([guide](IOS-SWIFT-PLAYGROUNDS.md)), connect its headphones, open it.
+3. Allow **Local Network** when asked. Tap the movie under **Movies on your Wi-Fi**.
+4. Both people compare: does the sound match the picture, and each other?
+
+**Expected:** the Android phone shows **Friends listening: 1**; both hear the movie in sync with the screen.
+
+**Report:** Pass/Fail, any error text, the iPhone's **Sync: … ms** and **Sound delay** values.

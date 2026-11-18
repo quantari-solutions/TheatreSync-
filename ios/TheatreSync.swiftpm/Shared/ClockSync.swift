@@ -36,6 +36,13 @@ struct ClockSync {
         return (best[best.count / 2 - 1] + best[best.count / 2]) / 2.0
     }
 
+    var sampleCount: Int { samples.count }
+
+    func localToHost(_ localMs: Int64) -> Int64? {
+        guard let o = offsetMs else { return nil }
+        return Int64((Double(localMs) + o).rounded())
+    }
+
     func hostToLocal(_ hostMs: Int64) -> Int64? {
         guard let o = offsetMs else { return nil }
         return Int64((Double(hostMs) - o).rounded())

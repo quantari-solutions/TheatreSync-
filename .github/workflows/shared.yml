@@ -5,10 +5,10 @@ name: Contracts & iOS source
 
 on:
   pull_request:
-    paths: ["contracts/**", "ios/**", "scripts/validate-*", "docs/**", "*.md", ".github/workflows/shared.yml"]
+    paths: ["contracts/**", "ios/**", "scripts/validate-*", "scripts/test-ios-shared.sh", "android/sync-core/**", "android/app/src/main/kotlin/com/theatresync/app/HostAnnouncer.kt", "docs/**", "*.md", ".github/workflows/shared.yml"]
   push:
     branches: [main]
-    paths: ["contracts/**", "ios/**", "scripts/validate-*", "docs/**", "*.md", ".github/workflows/shared.yml"]
+    paths: ["contracts/**", "ios/**", "scripts/validate-*", "scripts/test-ios-shared.sh", "android/sync-core/**", "android/app/src/main/kotlin/com/theatresync/app/HostAnnouncer.kt", "docs/**", "*.md", ".github/workflows/shared.yml"]
   workflow_dispatch:
 
 permissions:
@@ -28,5 +28,11 @@ jobs:
         run: ./scripts/validate-contracts.sh
       - name: iOS static source checks (not a compile)
         run: ./scripts/validate-ios-source.sh
+      - name: Compile + test iOS shared code with Swift for Linux (not the app)
+        env:
+          REQUIRE_SWIFT: "1"
+        run: |
+          swiftc --version || true
+          ./scripts/test-ios-shared.sh
       - name: Check doc links
         run: python3 scripts/check-docs.py
