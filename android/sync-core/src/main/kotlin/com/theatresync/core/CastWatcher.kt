@@ -28,16 +28,45 @@ class CastWatcher(
     @Volatile var current: CastActivity? = null
         private set
 
+    @Volatile private var pollRequested = false
+
+    /** Ask the TV for its status right away (e.g. just after we started something on it). */
+    fun pollNow() { pollRequested = true }
+
     fun start(): CastWatcher { thread.start(); return this }
 
+    /**
+     * Stops watching. Safe to call from the main thread: closing a TLS socket sends a
+     * close_notify message to the Chromecast, which is network I/O, and Android kills
+     * apps that do network I/O on the main thread (NetworkOnMainThreadException: the
+     * 0.4.0 crash when opening the file picker). So the socket is closed on a background
+     * thread, never on the caller's.
+     */
     override fun close() {
         running = false
-        try { socket?.close() } catch (_: IOException) {}
+        val s = socket
         thread.interrupt()
+        if (s != null) {
+            Thread({ try { s.close() } catch (_: Exception) {} }, "cast-watcher-close").apply { isDaemon = true }.start()
+        }
     }
 
     /** Sends PLAY or PAUSE to the media session on the TV (works for YouTube and other media apps). */
     fun playPause(play: Boolean) = mediaCommand(if (play) """{"type":"PLAY"""" else """{"type":"PAUSE"""")
+
+    /** Stops whatever is playing on the TV (closes the app there; the TV returns to its idle screen). */
+    fun stopApp() {
+        val session = current?.sessionId ?: return
+        val s = socket ?: return
+        Thread {
+            try {
+                synchronized(this) {
+                    CastMessage.write(s.getOutputStream(), CastMessage(sender, "receiver-0", CastMessage.NS_RECEIVER,
+                        """{"type":"STOP","sessionId":"$session","requestId":${requestId.incrementAndGet()}}"""))
+                }
+            } catch (_: IOException) {}
+        }.start()
+    }
 
     /** Seeks the media session to [seconds]. */
     fun seekTo(seconds: Double) = mediaCommand("""{"type":"SEEK","currentTime":$seconds""")
@@ -97,7 +126,8 @@ class CastWatcher(
         var base: CastActivity? = null
         while (running) {
             val now = System.currentTimeMillis()
-            if (now - lastPoll >= pollMs) {
+            if (pollRequested || now - lastPoll >= pollMs) {
+                pollRequested = false
                 send(s, "receiver-0", CastMessage.NS_RECEIVER, """{"type":"GET_STATUS","requestId":${requestId.incrementAndGet()}}""")
                 connectedTransport?.let { t ->
                     send(s, t, CastMessage.NS_MEDIA, """{"type":"GET_STATUS","requestId":${requestId.incrementAndGet()}}""")

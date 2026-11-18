@@ -1,6 +1,49 @@
 # Project status
 
-_Last updated: 2026-11-18. Milestone 1.3: audit against industry standards (see [docs/QUALITY-AUDIT.md](docs/QUALITY-AUDIT.md))_
+_Last updated: 2026-11-18. Milestone 1.5 (0.4.2): the real crash fixed, crash safety net, crash timeline, cast indicator_
+
+## 0.4.4: owner feedback
+
+| Request | Done |
+|---|---|
+| No crash card; reports should just be on GitHub | Card removed. One-time **Connect GitHub** (device flow, no secret in the app) uploads crashes and handled problems as issues automatically. **Needs the owner's GitHub App Client ID**: see [docs/CRASH-REPORTING.md](docs/CRASH-REPORTING.md) |
+| Coming back from another app shouldn't restart | The main cause was the onStop crash (fixed in 0.4.2). Page is kept across Android reclaiming the app (emulator test); the chosen movie is restored; Now casting waits for the TV instead of bouncing home |
+| Pick headphones without opening Settings | **Choose or connect headphones** opens Android's Output Switcher over the app (connects paired devices) |
+| Two devices connected: choose one | **Play TheatreSync sound on** list (ExoPlayer preferred audio device) |
+
+## 0.4.3: owner's media-room feedback
+
+| Report | Fix |
+|---|---|
+| YouTube: after Cast, the page didn't change (button came back as if nothing happened) | Button shows "Starting on TV…"; on success the Now casting player opens at once with the video thumbnail (optimistic entry until the TV's status arrives); the TV is polled immediately |
+| Movie sound still in the room speakers | Also mute the movie's own stream on the receiver (`setStreamMute`), re-applied when playback starts; device mute is often ignored with HDMI/CEC fixed volume |
+| Nothing in the headphones | Watchdog: if the TV plays for 5 s without headphone sound, say so and record the player state/error (crash timeline + ⓘ details). Cause not yet confirmed on the device |
+| YouTube sound in the room speakers | Expected: YouTube streams straight to the Chromecast; no app can route it to the phone's headphones |
+
+## 0.4.2: root cause from the owner's crash report
+
+The on-phone crash reporter captured it (motorola edge 40, Android 15):
+`NetworkOnMainThreadException` in `MainActivity.onStop` → `TvWatchers.stopAll` → `CastWatcher.close` →
+closing the TLS socket to a Chromecast sends close_notify, which is network I/O on the main thread.
+`onStop` runs whenever the app goes to the background, e.g. opening Files to choose a movie, so this was the
+"crashes when I pick a movie" bug. It was never reproduced on the emulator because no Chromecast connection exists there.
+
+Fixes: the socket is closed on a background thread (regression test asserts close never runs on the caller's thread);
+every TV/network/file action goes through a guard that records the problem and keeps the app running;
+crash timeline under ☰ → Settings → Crash reports (Send to GitHub opens a pre-filled issue the owner submits,
+or Share); cast icon in the status bar with a Stop casting action while connected.
+Crash tests: monkey (3000 random events on the optimised build), 15× background/foreground, 5× recreate.
+
+
+## 0.4.0 — field-test fixes (from the owner's media-room test)
+
+| Report | Cause | Fix |
+|---|---|---|
+| App closes after choosing a movie | (1) MovieSession's `init` ran before `routerCallback` was initialised: a crash whenever a Cast session already existed at start-up, e.g. after Android restarted the app behind the file picker. (2) Any unexpected exception on a movie-server thread killed the whole app, so the TV sat on a spinner. | `init` moved last and deferred, with a regression test; server threads catch everything (tested with a failing file provider); sync engine fully kept by R8; on-device **crash reporter** with "Share crash report" |
+| No way to stop the cast | Missing feature | **Stop casting** on the Now casting card and page (receiver STOP, tested against a fake Chromecast) |
+| Movie starts but nothing appears on the projector (phone joined Wi-Fi just before Start) | Not yet confirmed. Likely: the phone gave the TV an address on the wrong network (phones can have several, e.g. Wi-Fi Direct) | 0.4.1: pick the phone address on the Chromecast's subnet (tested); 20-second check that says plainly if the TV never reached the phone; ⓘ details show the URL, both IPs and how many times the TV fetched the movie |
+| Wants YouTube and mirroring in the app | Missing features | **YouTube** page (paste or share a link → plays on the TV via YouTube's TV remote API, with fallback to the YouTube app) and **Mirror screen** page (opens Android's cast screen or Google Home). TheatreSync appears in YouTube's Share menu |
+
 
 ## Audit: what actually works
 

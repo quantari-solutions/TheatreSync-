@@ -1,0 +1,165 @@
+package com.theatresync.core
+
+import java.io.IOException
+import java.net.HttpURLConnection
+import java.net.Socket
+import java.net.SocketTimeoutException
+import java.net.URL
+import java.net.URLEncoder
+
+/** Finds the 11-character video ID in anything the user pastes or shares from YouTube. */
+object YouTubeLinks {
+    private val ID = "[A-Za-z0-9_-]{11}"
+    private val patterns = listOf(
+        Regex("""(?:youtube\.com|youtube-nocookie\.com)/(?:watch\?(?:[^#\s]*&)?v=|shorts/|live/|embed/|v/)($ID)"""),
+        Regex("""youtu\.be/($ID)"""),
+        Regex("""music\.youtube\.com/watch\?(?:[^#\s]*&)?v=($ID)"""),
+    )
+
+    fun videoId(text: String?): String? {
+        if (text.isNullOrBlank()) return null
+        for (p in patterns) p.find(text)?.let { return it.groupValues[1] }
+        val bare = text.trim()
+        return if (Regex("^$ID$").matches(bare)) bare else null
+    }
+}
+
+/**
+ * Starts the YouTube app on a Chromecast and asks it for its "screen ID" over the
+ * Cast v2 connection (namespace urn:x-cast:com.google.youtube.mdx), as pychromecast does.
+ */
+class YouTubeScreenFinder(private val connect: () -> Socket, private val timeoutMs: Long = 25_000) {
+    fun screenId(): String {
+        connect().use { s ->
+            s.soTimeout = 1_000
+            val out = s.getOutputStream()
+            val input = s.getInputStream()
+            fun send(dest: String, ns: String, payload: String) = CastMessage.write(out, CastMessage(SENDER, dest, ns, payload))
+            send("receiver-0", CastMessage.NS_CONNECTION, """{"type":"CONNECT"}""")
+            send("receiver-0", CastMessage.NS_RECEIVER, """{"type":"LAUNCH","appId":"${CastStatus.APP_YOUTUBE}","requestId":1}""")
+            val deadline = System.currentTimeMillis() + timeoutMs
+            var transport: String? = null
+            var lastAsk = 0L
+            while (System.currentTimeMillis() < deadline) {
+                val now = System.currentTimeMillis()
+                if (transport != null && now - lastAsk > 2_000) {
+                    send(transport, NS_MDX, """{"type":"getMdxSessionStatus"}""")
+                    lastAsk = now
+                } else if (transport == null && now - lastAsk > 2_000) {
+                    send("receiver-0", CastMessage.NS_RECEIVER, """{"type":"GET_STATUS","requestId":2}""")
+                    lastAsk = now
+                }
+                val m = try { CastMessage.read(input) } catch (_: SocketTimeoutException) { continue }
+                when {
+                    m.namespace == CastMessage.NS_HEARTBEAT && CastStatus.type(m.payloadUtf8) == "PING" ->
+                        send(m.sourceId, CastMessage.NS_HEARTBEAT, """{"type":"PONG"}""")
+                    m.namespace == CastMessage.NS_RECEIVER && transport == null -> {
+                        val app = CastStatus.parseReceiver(m.payloadUtf8)
+                        if (app?.appId == CastStatus.APP_YOUTUBE && app.transportId != null) {
+                            transport = app.transportId
+                            send(app.transportId, CastMessage.NS_CONNECTION, """{"type":"CONNECT"}""")
+                            send(app.transportId, NS_MDX, """{"type":"getMdxSessionStatus"}""")
+                            lastAsk = System.currentTimeMillis()
+                        }
+                    }
+                    m.namespace == NS_MDX -> parseScreenId(m.payloadUtf8)?.let { return it }
+                }
+            }
+            throw IOException("YouTube didn't start on the TV")
+        }
+    }
+
+    companion object {
+        const val NS_MDX = "urn:x-cast:com.google.youtube.mdx"
+        private const val SENDER = "sender-ts-yt"
+
+        fun parseScreenId(payload: String): String? =
+            Regex(""""type"\s*:\s*"mdxSessionStatus"""").find(payload)?.let {
+                Regex(""""screenId"\s*:\s*"([^"]+)"""").find(payload)?.groupValues?.get(1)
+            }
+    }
+}
+
+/**
+ * Tells the YouTube app on the TV which video to play, using YouTube's "Lounge"
+ * remote-control API (the same calls as the open-source casttube library).
+ * Undocumented by Google: if it changes, callers fall back to the YouTube app.
+ */
+class YouTubeLounge(private val baseUrl: String = "https://www.youtube.com/") {
+    data class Session(val loungeToken: String, val sid: String, val gsessionId: String)
+
+    private var rid = 0
+    private var reqCount = 0
+
+    fun play(screenId: String, videoId: String) {
+        val token = loungeToken(screenId)
+        val session = bind(token)
+        setPlaylist(session, videoId)
+    }
+
+    fun loungeToken(screenId: String): String {
+        val body = post("api/lounge/pairing/get_lounge_token_batch", emptyMap(), mapOf("screen_ids" to screenId), null)
+        return Regex(""""loungeToken"\s*:\s*"([^"]+)"""").find(body)?.groupValues?.get(1)
+            ?: throw IOException("no lounge token")
+    }
+
+    fun bind(token: String): Session {
+        rid = 0
+        reqCount = 0
+        val body = post("api/lounge/bc/bind", mapOf("RID" to "$rid", "VER" to "8", "CVER" to "1"), BIND_DATA, token)
+        val sid = Regex(""""c","(.*?)",""").find(body)?.groupValues?.get(1) ?: throw IOException("no SID")
+        val gsid = Regex(""""S","(.*?)"]""").find(body)?.groupValues?.get(1) ?: throw IOException("no gsessionid")
+        return Session(token, sid, gsid)
+    }
+
+    fun setPlaylist(s: Session, videoId: String) {
+        rid++
+        val prefix = "req$reqCount"
+        val data = linkedMapOf(
+            "count" to "1",
+            "${prefix}__sc" to "setPlaylist",
+            "${prefix}_videoId" to videoId,
+            "${prefix}_currentTime" to "0",
+            "${prefix}_currentIndex" to "-1",
+            "${prefix}_audioOnly" to "false",
+            "${prefix}_listId" to "",
+        )
+        reqCount++
+        post(
+            "api/lounge/bc/bind",
+            mapOf("SID" to s.sid, "gsessionid" to s.gsessionId, "RID" to "$rid", "VER" to "8", "CVER" to "1"),
+            data, s.loungeToken,
+        )
+    }
+
+    private fun post(path: String, params: Map<String, String>, form: Map<String, String>, token: String?): String {
+        val query = if (params.isEmpty()) "" else "?" + encode(params)
+        val c = URL(baseUrl + path + query).openConnection() as HttpURLConnection
+        c.requestMethod = "POST"
+        c.connectTimeout = 8_000
+        c.readTimeout = 10_000
+        c.doOutput = true
+        c.setRequestProperty("Origin", baseUrl)
+        c.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+        token?.let { c.setRequestProperty("X-YouTube-LoungeId-Token", it) }
+        c.outputStream.use { it.write(encode(form).toByteArray()) }
+        val code = c.responseCode
+        val text = (if (code in 200..299) c.inputStream else c.errorStream)?.use { it.readBytes().decodeToString() }.orEmpty()
+        if (code !in 200..299) throw IOException("YouTube answered $code")
+        return text
+    }
+
+    private fun encode(m: Map<String, String>) =
+        m.entries.joinToString("&") { (k, v) -> URLEncoder.encode(k, "UTF-8") + "=" + URLEncoder.encode(v, "UTF-8") }
+
+    companion object {
+        private val BIND_DATA = linkedMapOf(
+            "device" to "REMOTE_CONTROL",
+            "id" to "theatresyncremote00000000",
+            "name" to "TheatreSync",
+            "mdx-version" to "3",
+            "pairing_type" to "cast",
+            "app" to "android-phone-13.14.55",
+        )
+    }
+}

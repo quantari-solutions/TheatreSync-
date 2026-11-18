@@ -48,6 +48,10 @@ class TvWatchers(private val onChange: (List<NowCasting>) -> Unit) {
 
     fun playPause(tvId: String, play: Boolean) = watchers[tvId]?.second?.playPause(play)
 
+    fun stopCasting(tvId: String) = watchers[tvId]?.second?.stopApp()
+
+    fun pollNow(tvId: String) = watchers[tvId]?.second?.pollNow()
+
     fun seekBy(tvId: String, deltaSec: Double) {
         val w = watchers[tvId]?.second ?: return
         val now = w.current?.currentTimeSec ?: return
@@ -86,7 +90,7 @@ class TvWatchers(private val onChange: (List<NowCasting>) -> Unit) {
             SSLContext.getInstance("TLS").apply { init(null, arrayOf(chromecastTrust), null) }
         }
 
-        private fun openTls(address: InetAddress, port: Int): Socket {
+        fun openTls(address: InetAddress, port: Int): Socket {
             val raw = Socket()
             raw.connect(InetSocketAddress(address, port), 5_000)
             val s = tls.socketFactory.createSocket(raw, address.hostAddress, port, true) as SSLSocket

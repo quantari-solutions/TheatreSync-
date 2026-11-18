@@ -47,6 +47,10 @@ class MediaServer(
         Thread(r, "theatresync-http").apply { isDaemon = true }
     }
     private val listenerLastSeen = ConcurrentHashMap<String, Long>()
+    private val mediaRequestCount = java.util.concurrent.atomic.AtomicInteger(0)
+
+    /** How many times anyone (normally the Chromecast) asked for the movie. 0 = the TV never reached us. */
+    val mediaRequests: Int get() = mediaRequestCount.get()
 
     val port: Int get() = serverSocket?.localPort ?: -1
 
@@ -77,7 +81,9 @@ class MediaServer(
         while (!ss.isClosed) {
             val socket = try { ss.accept() } catch (_: IOException) { break }
             try {
-                pool.execute { handle(socket) }
+                pool.execute {
+                    try { handle(socket) } catch (_: Throwable) { runCatching { socket.close() } }
+                }
             } catch (_: Exception) {
                 socket.close()
             }
@@ -109,8 +115,10 @@ class MediaServer(
                 val query = parseQuery(target.substringAfter('?', ""))
                 val out = BufferedOutputStream(s.getOutputStream(), 64 * 1024)
                 when {
-                    path == "/media" && (method == "GET" || method == "HEAD") ->
+                    path == "/media" && (method == "GET" || method == "HEAD") -> {
+                        mediaRequestCount.incrementAndGet()
                         serveMedia(out, headers["range"], head = method == "HEAD")
+                    }
                     method != "GET" -> respond(out, 405, "Method Not Allowed", "text/plain", "method not allowed")
                     path == "/clock" -> serveClock(out, query, receivedAt)
                     path == "/state" -> serveJson(
@@ -125,6 +133,9 @@ class MediaServer(
             } catch (_: SocketException) {
                 // Client went away mid-response — normal for Chromecast, which abandons ranges when seeking.
             } catch (_: IOException) {
+            } catch (_: Exception) {
+                // Anything else (file provider errors, bad requests): drop this request only.
+                // An uncaught exception here would kill the whole app and stop the movie.
             }
         }
     }

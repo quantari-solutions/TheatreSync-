@@ -72,6 +72,13 @@ class MediaServerTest {
         assertEquals("bytes */300000", c.getHeaderField("Content-Range"))
     }
 
+    @Test fun countsMovieRequests() {
+        assertEquals(0, server.mediaRequests)
+        get("/media", "bytes=0-9").inputStream.readBytes()
+        get("/state").inputStream.readBytes()
+        assertEquals(1, server.mediaRequests)
+    }
+
     @Test fun headHasNoBody() {
         val c = get("/media", method = "HEAD")
         assertEquals(200, c.responseCode)
@@ -98,6 +105,18 @@ class MediaServerTest {
         state = Payload.PlaybackState(Payload.PlaybackState.State.PLAYING, 90_000, 49_900, 1.0, "Test movie")
         val playing = SyncCodec.decode(get("/state").inputStream.readBytes().decodeToString()).payload as Payload.PlaybackState
         assertEquals(state, playing)
+    }
+
+    @Test fun brokenFileProviderDoesNotKillServer() {
+        server.media = object : MediaSource {
+            override val title = "Broken"
+            override val mimeType = "video/mp4"
+            override val sizeBytes = 1000L
+            override fun open(offset: Long): InputStream = throw SecurityException("permission revoked")
+        }
+        runCatching { get("/media").inputStream.readBytes() } // request fails, that's fine
+        server.media = movie
+        assertEquals(200, get("/media").responseCode) // server still alive
     }
 
     @Test fun unknownPathIs404() = assertEquals(404, get("/nope").responseCode)

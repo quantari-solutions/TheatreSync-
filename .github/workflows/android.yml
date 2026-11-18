@@ -107,6 +107,14 @@ jobs:
             adb shell pidof com.theatresync.app || (adb logcat -d -s AndroidRuntime:E; exit 1)
             if adb logcat -d -s AndroidRuntime:E | grep -q "FATAL EXCEPTION"; then adb logcat -d -s AndroidRuntime:E; exit 1; fi
             echo "Release build launched without crashing"
+            # Monkey: thousands of random taps, swipes and rotations on the optimised app.
+            # Stays inside TheatreSync (-p), no system keys. Fails on any crash or ANR.
+            adb logcat -c
+            adb shell monkey -p com.theatresync.app --pct-syskeys 0 --pct-appswitch 0 --throttle 60 -s 4242 -v 3000 > monkey.txt 2>&1 || true
+            tail -5 monkey.txt
+            if grep -qE "// CRASH|// NOT RESPONDING|Monkey aborted" monkey.txt; then cat monkey.txt | grep -A30 -E "// CRASH|NOT RESPONDING"; exit 1; fi
+            if adb logcat -d -s AndroidRuntime:E | grep -q "FATAL EXCEPTION"; then adb logcat -d -s AndroidRuntime:E; exit 1; fi
+            echo "Monkey stress test passed (3000 random events, no crash)"
 
       - name: Upload emulator test reports
         if: always()

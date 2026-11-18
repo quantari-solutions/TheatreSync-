@@ -52,4 +52,28 @@ class AccessibilityTest {
             {}, {}, {},
         )
     }
+
+    @Test fun youTubeScreen() = check {
+        YouTubeScreen(MovieSession.Ui(tvs = listOf(MovieSession.Tv("1", "TV"))), "https://youtu.be/dQw4w9WgXcQ", { _, _ -> }, {}, {})
+    }
+
+    @Test fun mirrorScreen() = check { MirrorScreen({}, {}) }
+
+    @Test fun settingsScreen() = check { SettingsScreen(1, {}, {}, {}) }
+
+    @Test fun crashTimeline() = check {
+        CrashReportsScreen(
+            listOf(CrashReporter.Entry("1", 1_763_456_941_000, "0.4.2", CrashReporter.Kind.CRASH, "Test", "report", CrashReporter.Status.SAVED, null)),
+            {}, {}, {},
+        )
+    }
+
+    @Test fun connectGitHub() = check { ConnectGitHubScreen(true, false, null, GitHubState.IDLE, {}, {}, {}, {}) }
+
+    @Test fun headphonesChooseOutput() = check {
+        HeadphonesScreen(
+            listOf(DiagnosticsReport.Output("WH-1000XM4", DiagnosticsReport.Kind.BLUETOOTH, 1), DiagnosticsReport.Output("Phone speaker", DiagnosticsReport.Kind.SPEAKER, 2)),
+            "details", true, {}, {}, {}, preferredOutputId = 1,
+        )
+    }
 }

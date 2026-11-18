@@ -14,7 +14,7 @@ object DiagnosticsReport {
     enum class Kind { BLUETOOTH, WIRED, SPEAKER }
 
     /** A friendly view of where sound can go. */
-    data class Output(val name: String, val kind: Kind)
+    data class Output(val name: String, val kind: Kind, val id: Int = 0)
 
     /** Headphones first, then the phone speaker. Hides earpiece, telephony and other internal outputs. */
     @android.annotation.SuppressLint("InlinedApi")
@@ -36,8 +36,8 @@ object DiagnosticsReport {
                     context.getString(if (kind == Kind.WIRED) R.string.wired_headphones else R.string.bluetooth_headphones)
                 else -> raw
             }
-            Output(name, kind)
-        }.distinct().sortedBy { it.kind.ordinal }
+            Output(name, kind, d.id)
+        }.distinctBy { it.name to it.kind }.sortedBy { it.kind.ordinal }
     }
 
     fun bluetoothNamesAllowed(context: Context) =
@@ -60,6 +60,18 @@ object DiagnosticsReport {
             appendLine("Device: ${Build.MANUFACTURER} ${Build.MODEL}")
             appendLine("Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
             appendLine("Wi-Fi address: ${NetworkInfo.localIpv4(context) ?: "not on Wi-Fi"}")
+            appendLine("All local addresses: ${NetworkInfo.candidates(context).joinToString { "${it.address.hostAddress}/${it.prefixLength}" }.ifEmpty { "none" }}")
+            val session = (context.applicationContext as? TheatreSyncApplication)?.session
+            session?.lastDiagnostics?.let { d ->
+                appendLine()
+                appendLine("Last movie sent to TV")
+                appendLine("  URL: ${d.movieUrl}")
+                appendLine("  Phone IP given to TV: ${d.phoneIp}")
+                appendLine("  TV IP: ${d.tvIp ?: "unknown"}")
+                appendLine("  TV requests for the movie: ${session.tvMovieRequests}")
+            }
+            session?.lastHeadphoneProblem?.let { appendLine(); appendLine("Last headphone problem"); appendLine("  $it") }
+            session?.lastYouTubeError?.let { appendLine(); appendLine("Last YouTube problem"); appendLine("  $it") }
             appendLine()
             appendLine("Bluetooth names visible: $canReadNames")
             appendLine()

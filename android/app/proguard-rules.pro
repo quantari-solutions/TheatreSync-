@@ -7,3 +7,7 @@
     kotlinx.serialization.KSerializer serializer(...);
 }
 -keep,includedescriptorclasses class com.theatresync.core.**$$serializer { *; }
+
+# The sync engine is small and uses kotlinx.serialization: keep it whole so code
+# shrinking can never break the protocol in the optimised build.
+-keep class com.theatresync.core.** { *; }

@@ -147,6 +147,8 @@ data class CastActivity(
     val mediaSessionId: Int? = null,
     val transportId: String? = null,
     val hasMedia: Boolean = false,
+    /** Receiver session ID, needed to stop the app on the TV. */
+    val sessionId: String? = null,
 ) {
     enum class Kind { YOUTUBE, MIRRORING, THEATRESYNC, MEDIA, OTHER }
 
@@ -191,6 +193,7 @@ object CastStatus {
             statusText = app.str("statusText")?.takeIf { it.isNotBlank() },
             transportId = app.str("transportId"),
             hasMedia = namespaces.contains(CastMessage.NS_MEDIA),
+            sessionId = app.str("sessionId"),
         )
     }
 

@@ -104,6 +104,7 @@ class CastV2Test {
         val server = ServerSocket(0).also { fake = it }
         val received = CopyOnWriteArrayList<CastMessage>()
         val pauseSeen = CountDownLatch(1)
+        val stopSeen = CountDownLatch(1)
         var appRunning = false
         Thread {
             server.accept().use { c ->
@@ -124,6 +125,7 @@ class CastV2Test {
                         m.namespace == CastMessage.NS_MEDIA && type == "GET_STATUS" ->
                             CastMessage.write(out, CastMessage("web-7", m.sourceId, CastMessage.NS_MEDIA, youtubeMedia))
                         m.namespace == CastMessage.NS_MEDIA && type == "PAUSE" -> pauseSeen.countDown()
+                        m.namespace == CastMessage.NS_RECEIVER && type == "STOP" && m.payloadUtf8.contains("\"sessionId\":\"a1b2\"") -> stopSeen.countDown()
                     }
                 }
             }
@@ -146,10 +148,41 @@ class CastV2Test {
             val pause = received.first { CastStatus.type(it.payloadUtf8) == "PAUSE" }
             assertEquals("web-7", pause.destinationId)
             assertTrue(pause.payloadUtf8.contains("\"mediaSessionId\":3"))
+            watcher.stopApp()
+            assertTrue("STOP with the receiver session ID not sent", stopSeen.await(5, TimeUnit.SECONDS))
             assertTrue("must CONNECT to the app transport before media commands",
                 received.any { it.destinationId == "web-7" && it.namespace == CastMessage.NS_CONNECTION })
         } finally {
             watcher.close()
         }
+    }
+
+    /** Regression for the 0.4.0 crash: close() must never touch the socket on the caller's thread. */
+    @Test(timeout = 10_000)
+    fun closeNeverClosesSocketOnCallerThread() {
+        val server = ServerSocket(0).also { fake = it }
+        val connected = CountDownLatch(1)
+        val closedOn = java.util.concurrent.atomic.AtomicReference<Thread>()
+        val closedLatch = CountDownLatch(1)
+        Thread { runCatching { server.accept().use { c -> c.getInputStream().read() } } }.apply { isDaemon = true }.start()
+        val watcher = CastWatcher(
+            connect = {
+                object : Socket("127.0.0.1", server.localPort) {
+                    override fun close() {
+                        closedOn.compareAndSet(null, Thread.currentThread())
+                        closedLatch.countDown()
+                        super.close()
+                    }
+                }.also { connected.countDown() }
+            },
+            onUpdate = {},
+            pollMs = 10_000,
+        ).start()
+        assertTrue(connected.await(5, TimeUnit.SECONDS))
+        Thread.sleep(200) // let the watcher store the socket
+        val caller = Thread.currentThread()
+        watcher.close()
+        assertTrue("socket was never closed", closedLatch.await(5, TimeUnit.SECONDS))
+        assertTrue("socket closed on the caller (main) thread", closedOn.get() !== caller)
     }
 }

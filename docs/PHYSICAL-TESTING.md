@@ -100,3 +100,36 @@ How to report: reply in Claude Code with the test ID, *Pass/Fail*, and a screens
 **Expected:** the card appears and disappears on its own; the thumbnail and title match the video; pause/skip control the TV.
 
 **Report:** Pass/Fail per step and a screenshot of the card.
+
+---
+
+## HW-06 — YouTube from TheatreSync
+
+1. Open TheatreSync → **YouTube**.
+2. In the YouTube app, open a video → **Share** → **Copy link**. Back in TheatreSync tap **Paste**, then **Cast to [your TV]**.
+3. Also try: YouTube app → **Share** → **Cast with TheatreSync**.
+
+**Expected:** the video starts on the projector within ~10 s; the **Now casting** card shows its thumbnail; **Stop casting** returns the TV to its idle screen.
+**If it says YouTube didn't accept it:** tap **Open this video in YouTube** and use YouTube's cast icon. Tell Claude, because this means YouTube changed its remote-control service.
+
+## HW-07 — Screen mirroring
+
+1. TheatreSync → **Mirror screen** → **Start screen mirroring**.
+2. Pick your Chromecast in the list Android shows → **Start now**.
+
+**Expected:** your phone's screen appears on the projector. **Report** which screen opened (Android Cast settings or the Google Home app).
+
+## HW-08 — Crash regression (the 0.3.1 crash)
+
+1. Connect to your Chromecast in TheatreSync.
+2. **Choose movie** → pick an MP4 in Files → **Start movie**. Let it play for 2 minutes.
+3. Lock the phone for 1 minute, unlock, and press **Stop movie**.
+
+**Expected:** no crash. If TheatreSync ever closes, reopen it: a **Share crash report** card appears. Share it to Claude.
+
+## HW-09 — Picture reaches the projector (0.4.1)
+
+1. Wi-Fi on, connected to the same network as the Chromecast.
+2. Choose movie → connect Media Room TV → **Start movie**. Wait 30 seconds.
+
+**Expected:** the picture appears within ~10 s. **If not:** after 20 s TheatreSync shows a message. Open **Headphones → ⓘ** and send a screenshot of "Last movie sent to TV": it shows the address given to the TV and whether the TV ever asked for the movie.

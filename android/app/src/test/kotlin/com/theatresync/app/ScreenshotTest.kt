@@ -53,7 +53,7 @@ class ScreenshotTest {
             appId = "233637DE", appName = "YouTube", kind = CastActivity.Kind.YOUTUBE,
             title = "Interstellar – Official Trailer", subtitle = "Warner Bros. Pictures",
             imageUrl = null, playerState = "PLAYING", currentTimeSec = 84.0, durationSec = 170.0,
-            mediaSessionId = 1, transportId = "web-1", hasMedia = true,
+            mediaSessionId = 1, transportId = "web-1", hasMedia = true, sessionId = "s1",
         ),
     )
     private val mirroring = TvWatchers.NowCasting(
@@ -75,6 +75,34 @@ class ScreenshotTest {
         HeadphonesScreen(listOf(DiagnosticsReport.Output("Phone speaker", DiagnosticsReport.Kind.SPEAKER)), details, namesAllowed = false, onAllow = {}, onOpenBluetooth = {}, onBack = {})
     }
     @Test fun headphones3_technicalDetails() = shot { TechnicalDetails(details) }
+    @Test fun youtube1_paste() = shot { YouTubeScreen(Ui(tvs = listOf(Tv("1", "Media Room TV"))), "https://youtu.be/dQw4w9WgXcQ", { _, _ -> }, {}, {}) }
+    @Test fun youtube2_failed() = shot {
+        YouTubeScreen(Ui(tvs = listOf(Tv("1", "Media Room TV"), Tv("2", "Alfred")), youTube = MovieSession.YouTubeState.FAILED), "https://youtu.be/dQw4w9WgXcQ", { _, _ -> }, {}, {})
+    }
+    @Test fun mirror() = shot { MirrorScreen({}, {}) }
+    private val crash = CrashReporter.Entry("1", 1_763_456_941_000, "0.4.0", CrashReporter.Kind.CRASH,
+        "NetworkOnMainThreadException", "TheatreSync 0.4.0 (5) crash report\n…", CrashReporter.Status.SAVED, null)
+    private val handled = CrashReporter.Entry("2", 1_763_457_000_000, "0.4.2", CrashReporter.Kind.HANDLED,
+        "IOException: YouTube answered 403", "…", CrashReporter.Status.SENT_GITHUB, 1_763_457_100_000)
+    @Test fun setup6_crashCard() = shot { SetupScreen(Ui(), {}, {}, {}, {}, {}, {}, pendingCrash = crash) }
+    @Test fun settings() = shot { SettingsScreen(2, {}, {}, {}, autoReports = true) }
+    @Test fun headphones4_chooseOutput() = shot {
+        HeadphonesScreen(
+            listOf(
+                DiagnosticsReport.Output("WH-1000XM4", DiagnosticsReport.Kind.BLUETOOTH, 11),
+                DiagnosticsReport.Output("Wired headphones", DiagnosticsReport.Kind.WIRED, 12),
+                DiagnosticsReport.Output("Phone speaker", DiagnosticsReport.Kind.SPEAKER, 13),
+            ),
+            details, namesAllowed = true, onAllow = {}, onOpenBluetooth = {}, onBack = {}, preferredOutputId = 11,
+        )
+    }
+    @Test fun github1_connect() = shot { ConnectGitHubScreen(true, false, null, GitHubState.IDLE, {}, {}, {}, {}) }
+    @Test fun github2_code() = shot {
+        ConnectGitHubScreen(true, false, GitHubLink.DeviceCode("WDJB-MJHT", "https://github.com/login/device", "x", 5), GitHubState.WAITING, {}, {}, {}, {})
+    }
+    @Test fun github3_connected() = shot { ConnectGitHubScreen(true, true, null, GitHubState.DONE, {}, {}, {}, {}) }
+    @Test fun crashTimeline() = shot { CrashReportsScreen(listOf(handled.copy(reference = "#3"), crash), autoReports = true, onSendGitHub = {}, onShare = {}, onBack = {}) }
+    @Test fun crashTimelineEmpty() = shot { CrashReportsScreen(emptyList(), {}, {}, {}) }
 }
 
 /** Accessibility: the largest system font size (200 %) must not clip or overlap anything. */

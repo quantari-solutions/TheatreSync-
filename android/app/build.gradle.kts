@@ -14,9 +14,13 @@ android {
         // 29 = Android 10, the first release with AudioPlaybackCapture.
         minSdk = 29
         targetSdk = 35
-        versionCode = 4
-        versionName = "0.3.1"
+        versionCode = 9
+        versionName = "0.4.4"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // Where "Send to GitHub" opens a pre-filled crash issue (the owner submits it).
+        buildConfigField("String", "CRASH_REPO", "\"quantari-solutions/TheatreSync-\"")
+        // Public client ID of the owner's GitHub App (device flow). Not a secret.
+        buildConfigField("String", "GITHUB_CLIENT_ID", "\"${project.findProperty("githubClientId") ?: ""}\"")
     }
 
     buildTypes {
@@ -44,6 +48,8 @@ android {
         checkDependencies = true
         // Newer-library nags are tracked by Dependabot instead of failing builds.
         disable += setOf("GradleDependency", "NewerVersionAvailable", "AndroidGradlePluginVersion", "OldTargetApi")
+        // Adaptive icons must stay in mipmap-anydpi-v26 (aapt2 rejects them in plain anydpi).
+        disable += "ObsoleteSdkInt"
         xmlReport = true
         htmlReport = true
     }
