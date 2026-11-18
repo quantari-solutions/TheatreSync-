@@ -30,15 +30,15 @@ class CrashSafetyTest {
             rule.activityRule.scenario.moveToState(Lifecycle.State.CREATED) // onStop
             rule.activityRule.scenario.moveToState(Lifecycle.State.RESUMED) // onStart/onResume
         }
-        rule.waitUntil(5_000) { rule.onAllNodesWithText("Choose movie", substring = true).fetchSemanticsNodes().isNotEmpty() }
-        rule.onNodeWithText("Choose movie", substring = true).performScrollTo().assertIsDisplayed()
+        rule.waitUntil(5_000) { rule.onAllNodesWithText("Choose a movie").fetchSemanticsNodes().isNotEmpty() }
+        rule.onNodeWithText("Choose a movie").performScrollTo().assertIsDisplayed()
     }
 
     @Test
     fun recreatingTheScreenNeverCrashes() {
         repeat(5) { rule.activityRule.scenario.recreate() }
-        rule.waitUntil(5_000) { rule.onAllNodesWithText("Choose movie", substring = true).fetchSemanticsNodes().isNotEmpty() }
-        rule.onNodeWithText("Choose movie", substring = true).performScrollTo().assertIsDisplayed()
+        rule.waitUntil(5_000) { rule.onAllNodesWithText("Choose a movie").fetchSemanticsNodes().isNotEmpty() }
+        rule.onNodeWithText("Choose a movie").performScrollTo().assertIsDisplayed()
     }
 
     /** A handled problem lands in the timeline and the GitHub link is built correctly. */

@@ -29,9 +29,9 @@ class SetupScreenTest {
     private fun assertHome() {
         // Pages slide in and out; wait (up to 5 s) for the home screen to be composed.
         rule.waitUntil(5_000) {
-            rule.onAllNodesWithText("Choose movie", substring = true).fetchSemanticsNodes().isNotEmpty()
+            rule.onAllNodesWithText("Choose a movie").fetchSemanticsNodes().isNotEmpty()
         }
-        rule.onNodeWithText("Choose movie", substring = true).performScrollTo().assertIsDisplayed()
+        rule.onNodeWithText("Choose a movie").performScrollTo().assertIsDisplayed()
     }
 
     @Test
