@@ -98,6 +98,7 @@ jobs:
           # 1) instrumented tests on the debug build, 2) smoke test of the optimised (R8) build:
           #    install, launch, and fail if it crashes within 8 seconds.
           script: |
+            adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS || true
             ./gradlew --no-daemon :app:connectedDebugAndroidTest :app:assembleRelease
             adb install -r app/build/outputs/apk/release/app-release.apk
             adb logcat -c

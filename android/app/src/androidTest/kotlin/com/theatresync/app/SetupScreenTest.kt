@@ -7,8 +7,6 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
-import androidx.test.platform.app.InstrumentationRegistry
-import androidx.test.uiautomator.UiDevice
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Rule
 import org.junit.Test
@@ -49,8 +47,10 @@ class SetupScreenTest {
     @Test
     fun systemBackReturnsFromHeadphones() {
         openHeadphones()
-        // A real Back key press, exactly like the phone's back button/gesture.
-        UiDevice.getInstance(InstrumentationRegistry.getInstrumentation()).pressBack()
+        // System back (button or gesture) reaches the app through its OnBackPressedDispatcher,
+        // which is where BackHandler listens. Dispatch it there directly: a key event on a
+        // headless emulator can be swallowed by whatever system window holds focus.
+        rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }
         rule.waitForIdle()
         assertHome()
     }
