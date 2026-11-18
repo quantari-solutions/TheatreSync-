@@ -67,4 +67,13 @@ class AccessibilityTest {
             {}, {}, {},
         )
     }
+
+    @Test fun connectGitHub() = check { ConnectGitHubScreen(true, false, null, GitHubState.IDLE, {}, {}, {}, {}) }
+
+    @Test fun headphonesChooseOutput() = check {
+        HeadphonesScreen(
+            listOf(DiagnosticsReport.Output("WH-1000XM4", DiagnosticsReport.Kind.BLUETOOTH, 1), DiagnosticsReport.Output("Phone speaker", DiagnosticsReport.Kind.SPEAKER, 2)),
+            "details", true, {}, {}, {}, preferredOutputId = 1,
+        )
+    }
 }

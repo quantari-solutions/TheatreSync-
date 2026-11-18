@@ -85,8 +85,23 @@ class ScreenshotTest {
     private val handled = CrashReporter.Entry("2", 1_763_457_000_000, "0.4.2", CrashReporter.Kind.HANDLED,
         "IOException: YouTube answered 403", "…", CrashReporter.Status.SENT_GITHUB, 1_763_457_100_000)
     @Test fun setup6_crashCard() = shot { SetupScreen(Ui(), {}, {}, {}, {}, {}, {}, pendingCrash = crash) }
-    @Test fun settings() = shot { SettingsScreen(2, {}, {}, {}) }
-    @Test fun crashTimeline() = shot { CrashReportsScreen(listOf(handled, crash), {}, {}, {}) }
+    @Test fun settings() = shot { SettingsScreen(2, {}, {}, {}, autoReports = true) }
+    @Test fun headphones4_chooseOutput() = shot {
+        HeadphonesScreen(
+            listOf(
+                DiagnosticsReport.Output("WH-1000XM4", DiagnosticsReport.Kind.BLUETOOTH, 11),
+                DiagnosticsReport.Output("Wired headphones", DiagnosticsReport.Kind.WIRED, 12),
+                DiagnosticsReport.Output("Phone speaker", DiagnosticsReport.Kind.SPEAKER, 13),
+            ),
+            details, namesAllowed = true, onAllow = {}, onOpenBluetooth = {}, onBack = {}, preferredOutputId = 11,
+        )
+    }
+    @Test fun github1_connect() = shot { ConnectGitHubScreen(true, false, null, GitHubState.IDLE, {}, {}, {}, {}) }
+    @Test fun github2_code() = shot {
+        ConnectGitHubScreen(true, false, GitHubLink.DeviceCode("WDJB-MJHT", "https://github.com/login/device", "x", 5), GitHubState.WAITING, {}, {}, {}, {})
+    }
+    @Test fun github3_connected() = shot { ConnectGitHubScreen(true, true, null, GitHubState.DONE, {}, {}, {}, {}) }
+    @Test fun crashTimeline() = shot { CrashReportsScreen(listOf(handled.copy(reference = "#3"), crash), autoReports = true, onSendGitHub = {}, onShare = {}, onBack = {}) }
     @Test fun crashTimelineEmpty() = shot { CrashReportsScreen(emptyList(), {}, {}, {}) }
 }
 

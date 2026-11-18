@@ -2,6 +2,15 @@
 
 _Last updated: 2026-11-18. Milestone 1.5 (0.4.2): the real crash fixed, crash safety net, crash timeline, cast indicator_
 
+## 0.4.4: owner feedback
+
+| Request | Done |
+|---|---|
+| No crash card; reports should just be on GitHub | Card removed. One-time **Connect GitHub** (device flow, no secret in the app) uploads crashes and handled problems as issues automatically. **Needs the owner's GitHub App Client ID**: see [docs/CRASH-REPORTING.md](docs/CRASH-REPORTING.md) |
+| Coming back from another app shouldn't restart | The main cause was the onStop crash (fixed in 0.4.2). Page is kept across Android reclaiming the app (emulator test); the chosen movie is restored; Now casting waits for the TV instead of bouncing home |
+| Pick headphones without opening Settings | **Choose or connect headphones** opens Android's Output Switcher over the app (connects paired devices) |
+| Two devices connected: choose one | **Play TheatreSync sound on** list (ExoPlayer preferred audio device) |
+
 ## 0.4.3: owner's media-room feedback
 
 | Report | Fix |

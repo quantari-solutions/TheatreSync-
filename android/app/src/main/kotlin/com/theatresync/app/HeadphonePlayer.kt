@@ -16,6 +16,7 @@ import com.theatresync.core.DriftCorrector
  * Must be created and used on the main thread.
  */
 class HeadphonePlayer(context: Context, uri: Uri, private val events: Events) {
+    private val contextRef: Context = context.applicationContext
     interface Events {
         /** Headphones disconnected or another app took the sound: the movie should pause. */
         fun onShouldPause()
@@ -103,6 +104,14 @@ class HeadphonePlayer(context: Context, uri: Uri, private val events: Events) {
             }
             DriftCorrector.Action.None -> Unit
         }
+    }
+
+    /** Play on a specific output (e.g. one of two connected headphones), or null for Android's choice. */
+    @androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
+    fun setPreferredOutput(id: Int?) {
+        val am = contextRef.getSystemService(android.media.AudioManager::class.java)
+        val device = id?.let { wanted -> am?.getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS)?.firstOrNull { it.id == wanted } }
+        exo.setPreferredAudioDevice(device)
     }
 
     /** The user changed the sound delay: apply it smoothly even if it's small. */

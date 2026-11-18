@@ -1,5 +1,7 @@
 package com.theatresync.app
 
+import androidx.core.net.toUri
+import androidx.core.content.edit
 import android.content.Context
 import android.net.Uri
 import android.os.Build
@@ -31,6 +33,8 @@ object CrashReporter {
         val report: String,
         val status: Status,
         val statusTimeMs: Long?,
+        /** e.g. "#12" once uploaded to GitHub. */
+        val reference: String? = null,
     )
 
     private const val FILE = "crash_timeline.json"
@@ -52,7 +56,10 @@ object CrashReporter {
 
     /** A problem that was caught and survived: recorded so it can still be fixed. */
     fun handled(context: Context, where: String, error: Throwable) {
-        runCatching { record(context.applicationContext, Kind.HANDLED, error, "Where: $where") }
+        runCatching {
+            record(context.applicationContext, Kind.HANDLED, error, "Where: $where")
+            GitHubLink.uploadPending(context)
+        }
     }
 
     fun entries(context: Context): List<Entry> = synchronized(lock) { load(context) }.sortedByDescending { it.timeMs }
@@ -62,14 +69,16 @@ object CrashReporter {
         entries(context).firstOrNull { it.kind == Kind.CRASH && it.status == Status.SAVED && !isDismissed(context, it.id) }
 
     fun dismiss(context: Context, id: String) {
-        context.getSharedPreferences("crash", Context.MODE_PRIVATE).edit().putBoolean("dismissed_$id", true).apply()
+        context.getSharedPreferences("crash", Context.MODE_PRIVATE).edit { putBoolean("dismissed_$id", true) }
     }
 
     private fun isDismissed(context: Context, id: String) =
         context.getSharedPreferences("crash", Context.MODE_PRIVATE).getBoolean("dismissed_$id", false)
 
-    fun mark(context: Context, id: String, status: Status) = synchronized(lock) {
-        val list = load(context).map { if (it.id == id) it.copy(status = status, statusTimeMs = System.currentTimeMillis()) else it }
+    fun mark(context: Context, id: String, status: Status, reference: String? = null) = synchronized(lock) {
+        val list = load(context).map {
+            if (it.id == id) it.copy(status = status, statusTimeMs = System.currentTimeMillis(), reference = reference ?: it.reference) else it
+        }
         save(context, list)
     }
 
@@ -84,7 +93,7 @@ object CrashReporter {
             appendLine()
             appendLine("```")
         }
-        return Uri.parse("https://github.com/${BuildConfig.CRASH_REPO}/issues/new").buildUpon()
+        return "https://github.com/${BuildConfig.CRASH_REPO}/issues/new".toUri().buildUpon()
             .appendQueryParameter("title", title)
             .appendQueryParameter("labels", "crash")
             .appendQueryParameter("body", body)
@@ -121,6 +130,7 @@ object CrashReporter {
                     o.getString("id"), o.getLong("time"), o.optString("version"),
                     Kind.valueOf(o.getString("kind")), o.optString("title"), o.optString("report"),
                     Status.valueOf(o.getString("status")), if (o.has("statusTime")) o.getLong("statusTime") else null,
+                    o.optString("ref").ifBlank { null },
                 )
             }
         } catch (_: Exception) {
@@ -135,6 +145,7 @@ object CrashReporter {
                 put("id", e.id); put("time", e.timeMs); put("version", e.version); put("kind", e.kind.name)
                 put("title", e.title); put("report", e.report); put("status", e.status.name)
                 e.statusTimeMs?.let { put("statusTime", it) }
+                e.reference?.let { put("ref", it) }
             })
         }
         val f = File(context.filesDir, FILE)

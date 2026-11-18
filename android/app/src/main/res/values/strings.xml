@@ -61,7 +61,6 @@
     <string name="technical_details">Technical details</string>
     <string name="no_headphones">No headphones connected</string>
     <string name="no_headphones_hint">Turn your headphones on and connect them to this phone in Bluetooth settings.</string>
-    <string name="open_bluetooth">Open Bluetooth settings</string>
     <string name="wired">Wired</string>
     <string name="bluetooth">Bluetooth</string>
     <string name="connected">Connected</string>
@@ -140,4 +139,27 @@
     <string name="about_text">TheatreSync %1$s · by Quantari Solutions. No data leaves your phone unless you share it.</string>
     <string name="msg_headphones_silent">The TV is playing but the headphone sound didn\'t start. Check the headphones are connected to this phone, then tap pause and play. Details: Headphones → ⓘ.</string>
     <string name="yt_starting_button">Starting on TV…</string>
+    <string name="auto_reports">Automatic crash reports</string>
+    <string name="auto_reports_on">On · reports go to GitHub automatically</string>
+    <string name="auto_reports_off">Off · tap to connect GitHub (one time)</string>
+    <string name="crash_reports_hint_auto">Everything here uploads to GitHub automatically. Just tell Claude what you were doing.</string>
+    <string name="status_uploaded">On GitHub %1$s · %2$s</string>
+    <string name="github_intro_title">Send crash reports automatically</string>
+    <string name="github_intro_text">Connect once and every crash or problem is uploaded to the TheatreSync GitHub project by itself. You never need to copy or share anything again.</string>
+    <string name="github_connect">Connect GitHub</string>
+    <string name="github_enter_code">Enter this code on GitHub</string>
+    <string name="github_open">Open GitHub</string>
+    <string name="github_waiting">Waiting for you to approve on GitHub…</string>
+    <string name="github_failed">That didn\'t work. Please try again.</string>
+    <string name="github_connected_text">Crash reports and problems upload to GitHub as soon as they happen (or when the app next opens after a crash).</string>
+    <string name="github_disconnect">Disconnect</string>
+    <string name="github_not_ready_title">Almost ready</string>
+    <string name="github_not_ready_text">This version doesn\'t have its GitHub app ID yet. Claude adds it in the next build once the GitHub App is set up.</string>
+    <string name="github_privacy">Only crash reports are sent, to your own GitHub project. The approval is stored encrypted on this phone.</string>
+    <string name="pick_headphones">Choose or connect headphones</string>
+    <string name="play_sound_on">Play TheatreSync sound on</string>
+    <string name="play_sound_on_hint">Your choice is used for movie sound. To switch which Bluetooth device is connected, use Choose or connect headphones.</string>
+    <string name="this_phone_speaker">This phone</string>
+    <string name="reconnecting">Reconnecting to the TV…</string>
+    <string name="reconnecting_hint">Getting the latest from your Chromecast.</string>
 </resources>

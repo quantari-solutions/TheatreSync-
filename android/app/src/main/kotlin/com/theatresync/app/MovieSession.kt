@@ -1,5 +1,6 @@
 package com.theatresync.app
 
+import androidx.core.net.toUri
 import android.app.Application
 import android.content.Context
 import android.media.AudioDeviceInfo
@@ -75,6 +76,8 @@ class MovieSession(private val app: Application) {
         val youTubeVideoId: String? = null,
         /** The TV the YouTube video was sent to (so the app can open its player at once). */
         val youTubeTvId: String? = null,
+        /** Output the owner picked for TheatreSync's sound (AudioDeviceInfo id), or null. */
+        val preferredOutputId: Int? = null,
     ) {
         val canStart: Boolean get() = movieTitle != null && connectedTv != null
     }
@@ -150,6 +153,7 @@ class MovieSession(private val app: Application) {
             return
         }
         movie = source
+        prefs.edit { putString(KEY_MOVIE_URI, uri.toString()) }
         _ui.update { it.copy(movieTitle = source.title, message = null) }
     }
 
@@ -342,7 +346,7 @@ class MovieSession(private val app: Application) {
         val port = try { srv.start() } catch (_: Exception) { return say(R.string.msg_no_wifi) }
         server = srv
 
-        player = HeadphonePlayer(app, m.uri, playerEvents)
+        player = HeadphonePlayer(app, m.uri, playerEvents).also { it.setPreferredOutput(preferredOutputId) }
 
         val url = "http://$ip:$port/media?t=${System.currentTimeMillis()}"
         lastDiagnostics = Diagnostics(url, ip, tvAddress?.hostAddress)
@@ -601,8 +605,29 @@ class MovieSession(private val app: Application) {
 
     companion object {
         private const val TICK_MS = 200L
+        private const val KEY_MOVIE_URI = "movieUri"
         private const val TV_START_TIMEOUT_MS = 20_000L
         private const val KEY_WE_MUTED = "weMutedTv"
+    }
+
+    /** If Android closed the app in the background, bring back the movie the owner had chosen. */
+    private fun restoreMovie() {
+        val saved = prefs.getString(KEY_MOVIE_URI, null) ?: return
+        val uri = saved.toUri()
+        val stillAllowed = app.contentResolver.persistedUriPermissions.any { it.uri == uri && it.isReadPermission }
+        if (!stillAllowed) return
+        val source = try { ContentUriSource.from(app, uri) } catch (_: Exception) { null } ?: return
+        movie = source
+        _ui.update { it.copy(movieTitle = source.title) }
+    }
+
+    /** Which output TheatreSync's sound plays on (null = Android decides). */
+    private var preferredOutputId: Int? = null
+
+    fun setPreferredOutput(id: Int?) = guard("choose output") {
+        preferredOutputId = id
+        _ui.update { it.copy(preferredOutputId = id) }
+        player?.setPreferredOutput(id)
     }
 
     // IMPORTANT: this init block must stay LAST in the class. Kotlin runs property
@@ -611,12 +636,13 @@ class MovieSession(private val app: Application) {
     // crash on start-up whenever a Chromecast was already connected (e.g. after Android
     // restarted the app while the file picker was open).
     init {
+        main.post { guard("restore movie") { restoreMovie() } }
         if (castContext == null) {
             _ui.update { it.copy(castAvailable = false, message = app.getString(R.string.msg_no_cast)) }
         } else {
             castContext.sessionManager.addSessionManagerListener(sessionListener(), CastSession::class.java)
             // Defer: let construction finish before reacting to an already-running session.
-            main.post { castContext.sessionManager.currentCastSession?.let { onTvConnected(it) } }
+            main.post { guard("resume tv") { castContext.sessionManager.currentCastSession?.let { onTvConnected(it) } } }
         }
     }
 }

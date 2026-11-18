@@ -69,4 +69,24 @@ class CrashSafetyTest {
         rule.waitForIdle()
         rule.onNodeWithText("Settings").assertIsDisplayed()
     }
+
+    /** Owner request: leaving for another app and coming back keeps the page you were on. */
+    @Test
+    fun pageSurvivesBeingRecreatedInTheBackground() {
+        rule.onNodeWithText("Check headphones", substring = true).performScrollTo().performClick()
+        rule.onNodeWithText("Headphones").assertIsDisplayed()
+        rule.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
+        rule.activityRule.scenario.recreate() // what Android does when it reclaims the app in the background
+        rule.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+        rule.waitUntil(5_000) { rule.onAllNodesWithText("Headphones").fetchSemanticsNodes().isNotEmpty() }
+        rule.onNodeWithText("Headphones").assertIsDisplayed()
+        rule.onNodeWithTag("pick_device").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun settingsShowsAutomaticCrashReports() {
+        rule.onNodeWithTag("menu").performClick()
+        rule.onNodeWithTag("settings_github").performClick()
+        rule.onNodeWithText("Automatic crash reports").assertIsDisplayed()
+    }
 }

@@ -14,7 +14,7 @@ object DiagnosticsReport {
     enum class Kind { BLUETOOTH, WIRED, SPEAKER }
 
     /** A friendly view of where sound can go. */
-    data class Output(val name: String, val kind: Kind)
+    data class Output(val name: String, val kind: Kind, val id: Int = 0)
 
     /** Headphones first, then the phone speaker. Hides earpiece, telephony and other internal outputs. */
     @android.annotation.SuppressLint("InlinedApi")
@@ -36,8 +36,8 @@ object DiagnosticsReport {
                     context.getString(if (kind == Kind.WIRED) R.string.wired_headphones else R.string.bluetooth_headphones)
                 else -> raw
             }
-            Output(name, kind)
-        }.distinct().sortedBy { it.kind.ordinal }
+            Output(name, kind, d.id)
+        }.distinctBy { it.name to it.kind }.sortedBy { it.kind.ordinal }
     }
 
     fun bluetoothNamesAllowed(context: Context) =

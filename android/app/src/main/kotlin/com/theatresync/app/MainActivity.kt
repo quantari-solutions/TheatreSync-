@@ -1,5 +1,6 @@
 package com.theatresync.app
 
+import androidx.core.net.toUri
 import android.Manifest
 import android.content.Intent
 import android.media.AudioDeviceCallback
@@ -97,7 +98,7 @@ import com.theatresync.core.CastActivity
 import com.theatresync.core.YouTubeLinks
 import kotlin.math.abs
 
-enum class Page { HOME, HEADPHONES, NOW_CASTING, YOUTUBE, MIRROR, SETTINGS, CRASHES }
+enum class Page { HOME, HEADPHONES, NOW_CASTING, YOUTUBE, MIRROR, SETTINGS, CRASHES, GITHUB }
 
 class MainActivity : ComponentActivity() {
     private val session: MovieSession get() = (application as TheatreSyncApplication).session
@@ -106,6 +107,9 @@ class MainActivity : ComponentActivity() {
     private val sharedLink = mutableStateOf<String?>(null)
     private val pendingCrash = mutableStateOf<CrashReporter.Entry?>(null)
     private val crashEntries = mutableStateOf<List<CrashReporter.Entry>>(emptyList())
+    private val gitHubCode = mutableStateOf<GitHubLink.DeviceCode?>(null)
+    private val gitHubState = mutableStateOf(GitHubState.IDLE)
+    private val gitHubConnected = mutableStateOf(false)
     private lateinit var audioManager: AudioManager
 
     private val pickMovie = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -146,7 +150,9 @@ class MainActivity : ComponentActivity() {
                     var castTvId by rememberSaveable { mutableStateOf<String?>(null) }
                     val casting = ui.nowCasting.firstOrNull { it.tvId == castTvId }
 
-                    BackHandler(enabled = page != Page.HOME) { page = if (page == Page.CRASHES) Page.SETTINGS else Page.HOME }
+                    BackHandler(enabled = page != Page.HOME) {
+                        page = if (page == Page.CRASHES || page == Page.GITHUB) Page.SETTINGS else Page.HOME
+                    }
                     // YouTube accepted the video: open its Now casting player at once.
                     LaunchedEffect(ui.youTube, ui.youTubeTvId) {
                         if (ui.youTube == MovieSession.YouTubeState.PLAYING && page == Page.YOUTUBE && ui.youTubeTvId != null) {
@@ -160,10 +166,17 @@ class MainActivity : ComponentActivity() {
                     LaunchedEffect(sharedLink.value) { if (sharedLink.value != null) page = Page.YOUTUBE }
                     // If the cast we're looking at ends, go back home on its own.
                     LaunchedEffect(page, casting == null) {
-                        if (page == Page.NOW_CASTING && casting == null) page = Page.HOME
+                        if (page == Page.NOW_CASTING && casting == null) {
+                            // After returning from another app the TV status takes a moment to
+                            // come back: wait before deciding the cast really ended.
+                            kotlinx.coroutines.delay(6_000)
+                            page = Page.HOME
+                        }
                     }
 
                     val target = when {
+                        page == Page.NOW_CASTING && casting == null -> "reconnecting"
+                        page == Page.GITHUB -> "github"
                         page == Page.SETTINGS -> "settings"
                         page == Page.CRASHES -> "crashes"
                         page == Page.HEADPHONES -> "headphones"
@@ -176,7 +189,7 @@ class MainActivity : ComponentActivity() {
                     AnimatedContent(
                         targetState = target,
                         transitionSpec = {
-                            val forward = targetState in setOf("headphones", "casting", "youtube", "mirror", "settings", "crashes")
+                            val forward = targetState in setOf("headphones", "casting", "youtube", "mirror", "settings", "crashes", "github")
                             (slideInHorizontally { if (forward) it / 3 else -it / 3 } + fadeIn(tween(220)))
                                 .togetherWith(slideOutHorizontally { if (forward) -it / 3 else it / 3 } + fadeOut(tween(180)))
                         },
@@ -188,17 +201,33 @@ class MainActivity : ComponentActivity() {
                                 details = details.value,
                                 namesAllowed = DiagnosticsReport.bluetoothNamesAllowed(this@MainActivity),
                                 onAllow = { askPermissions.launch(runtimePermissions()) },
-                                onOpenBluetooth = { startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) },
+                                onOpenBluetooth = ::pickAudioDevice,
                                 onBack = { page = Page.HOME },
+                                preferredOutputId = ui.preferredOutputId,
+                                onSelectOutput = session::setPreferredOutput,
+                            )
+                            "reconnecting" -> ReconnectingScreen(onBack = { page = Page.HOME })
+                            "github" -> ConnectGitHubScreen(
+                                configured = GitHubLink.isConfigured,
+                                connected = gitHubConnected.value,
+                                code = gitHubCode.value,
+                                state = gitHubState.value,
+                                onStart = ::startGitHubConnect,
+                                onOpenGitHub = { c -> runCatching { startActivity(Intent(Intent.ACTION_VIEW, c.verificationUri.toUri())) } },
+                                onDisconnect = { GitHubLink.disconnect(this@MainActivity); gitHubConnected.value = false },
+                                onBack = { page = Page.SETTINGS },
                             )
                             "settings" -> SettingsScreen(
                                 crashCount = crashEntries.value.size,
+                                autoReports = gitHubConnected.value,
+                                onAutoReports = { page = Page.GITHUB },
                                 onCrashes = { refreshCrashes(); page = Page.CRASHES },
                                 onHeadphones = { refreshAudio(); page = Page.HEADPHONES },
                                 onBack = { page = Page.HOME },
                             )
                             "crashes" -> CrashReportsScreen(
                                 entries = crashEntries.value,
+                                autoReports = gitHubConnected.value,
                                 onSendGitHub = ::sendToGitHub,
                                 onShare = ::shareCrash,
                                 onBack = { page = Page.SETTINGS },
@@ -284,6 +313,18 @@ class MainActivity : ComponentActivity() {
         super.onStop()
     }
 
+    /**
+     * Android's own device sheet (Output Switcher), shown over TheatreSync: lists paired
+     * headphones and connects them with one tap. Apps can't connect Bluetooth audio
+     * devices themselves. Falls back to Bluetooth settings on phones without it.
+     */
+    private fun pickAudioDevice() {
+        val shown = runCatching {
+            androidx.mediarouter.app.SystemOutputSwitcherDialogController.showDialog(this)
+        }.getOrDefault(false)
+        if (!shown) runCatching { startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleShare(intent)
@@ -297,7 +338,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun openYouTubeApp(link: String?) {
-        val uri = Uri.parse(link?.takeIf { YouTubeLinks.videoId(it) != null } ?: "https://www.youtube.com/")
+        val uri = (link?.takeIf { YouTubeLinks.videoId(it) != null } ?: "https://www.youtube.com/").toUri()
         val inApp = Intent(Intent.ACTION_VIEW, uri).setPackage("com.google.android.youtube")
         try {
             startActivity(inApp)
@@ -326,13 +367,43 @@ class MainActivity : ComponentActivity() {
             }
         }
         runCatching {
-            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=com.google.android.apps.chromecast.app")))
+            startActivity(Intent(Intent.ACTION_VIEW, "https://play.google.com/store/apps/details?id=com.google.android.apps.chromecast.app".toUri()))
         }
     }
 
     private fun refreshCrashes() {
         crashEntries.value = CrashReporter.entries(this)
         pendingCrash.value = CrashReporter.pendingCrash(this)
+        gitHubConnected.value = GitHubLink.isConnected(this)
+    }
+
+    /** One-time GitHub approval (device flow): show a code, poll until the owner approves. */
+    private fun startGitHubConnect() {
+        if (!GitHubLink.isConfigured) return
+        gitHubState.value = GitHubState.WAITING
+        Thread({
+            try {
+                val code = GitHubLink.requestCode()
+                runOnUiThread { gitHubCode.value = code }
+                val deadline = System.currentTimeMillis() + 15 * 60_000
+                while (System.currentTimeMillis() < deadline) {
+                    Thread.sleep(code.intervalSec * 1000L + 500)
+                    if (GitHubLink.poll(this, code)) {
+                        runOnUiThread {
+                            gitHubConnected.value = true
+                            gitHubState.value = GitHubState.DONE
+                            gitHubCode.value = null
+                        }
+                        GitHubLink.uploadPending(this)
+                        return@Thread
+                    }
+                }
+                runOnUiThread { gitHubState.value = GitHubState.FAILED }
+            } catch (e: Exception) {
+                CrashReporter.handled(this, "connect GitHub", e)
+                runOnUiThread { gitHubState.value = GitHubState.FAILED; gitHubCode.value = null }
+            }
+        }, "github-connect").apply { isDaemon = true }.start()
     }
 
     private fun shareCrash(e: CrashReporter.Entry) {
@@ -441,7 +512,7 @@ internal fun SetupScreen(
         Box(Modifier.weight(1f)) { Brand(stringResource(R.string.setup_intro)) }
         RoundIconButton("☰", stringResource(R.string.menu), onMenu, Modifier.testTag("menu"))
     }
-    if (pendingCrash != null) CrashCard({ onSendCrash(pendingCrash) }, { onShareCrash(pendingCrash) }, { onDismissCrash(pendingCrash) })
+    // No crash card here any more: reports upload to GitHub automatically (Settings → Crash reports).
     Message(ui.message, onDismiss)
     ui.nowCasting.forEach { item ->
         NowCastingCard(item, onOpen = { onOpenCasting(item.tvId) }, onPlayPause = { onCastPlayPause(item.tvId) }, onStop = { onCastStop(item.tvId) })
@@ -524,8 +595,21 @@ private fun CrashCard(onSend: () -> Unit, onShare: () -> Unit, onDismiss: () -> 
 // ---------------------------------------------------------------- settings & crash timeline
 
 @Composable
-internal fun SettingsScreen(crashCount: Int, onCrashes: () -> Unit, onHeadphones: () -> Unit, onBack: () -> Unit) = Screen {
+internal fun SettingsScreen(
+    crashCount: Int,
+    onCrashes: () -> Unit,
+    onHeadphones: () -> Unit,
+    onBack: () -> Unit,
+    autoReports: Boolean = false,
+    onAutoReports: () -> Unit = {},
+) = Screen {
     TopBar(stringResource(R.string.settings), onBack)
+    SettingsRow(
+        "☁", stringResource(R.string.auto_reports),
+        null, onAutoReports, "settings_github",
+        status = stringResource(if (autoReports) R.string.auto_reports_on else R.string.auto_reports_off),
+        statusOk = autoReports,
+    )
     SettingsRow("🧾", stringResource(R.string.crash_reports), if (crashCount > 0) crashCount.toString() else null, onCrashes, "settings_crashes")
     SettingsRow("🎧", stringResource(R.string.headphones), null, onHeadphones, "settings_headphones")
     QCard {
@@ -536,11 +620,17 @@ internal fun SettingsScreen(crashCount: Int, onCrashes: () -> Unit, onHeadphones
 }
 
 @Composable
-private fun SettingsRow(icon: String, title: String, badge: String?, onClick: () -> Unit, tag: String) {
+private fun SettingsRow(
+    icon: String, title: String, badge: String?, onClick: () -> Unit, tag: String,
+    status: String? = null, statusOk: Boolean = false,
+) {
     QCard(Modifier.clickable(role = Role.Button, onClick = onClick).testTag(tag)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Text(icon, Modifier.clearAndSetSemantics { }, fontSize = 22.sp)
-            Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, color = Q.Text)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(title, style = MaterialTheme.typography.titleMedium, color = Q.Text)
+                status?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = if (statusOk) Q.Success else Q.TextFaint) }
+            }
             badge?.let {
                 Box(Modifier.size(32.dp).clip(CircleShape).background(Q.Gold), contentAlignment = Alignment.Center) {
                     Text(it, color = Color.Black, style = MaterialTheme.typography.labelLarge)
@@ -558,11 +648,12 @@ internal fun CrashReportsScreen(
     onSendGitHub: (CrashReporter.Entry) -> Unit,
     onShare: (CrashReporter.Entry) -> Unit,
     onBack: () -> Unit,
+    autoReports: Boolean = false,
 ) {
     var open by remember { mutableStateOf<CrashReporter.Entry?>(null) }
     Screen {
         TopBar(stringResource(R.string.crash_reports), onBack)
-        Hint(stringResource(R.string.crash_reports_hint))
+        Hint(stringResource(if (autoReports) R.string.crash_reports_hint_auto else R.string.crash_reports_hint))
         if (entries.isEmpty()) {
             QCard {
                 StatusPill(stringResource(R.string.no_crashes), Q.Success)
@@ -595,8 +686,10 @@ internal fun CrashReportsScreen(
             Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Eyebrow(stringResource(if (e.kind == CrashReporter.Kind.CRASH) R.string.crash_kind_crash else R.string.crash_kind_handled))
                 CrashStatus(e)
-                GoldButton(stringResource(R.string.send_github), { onSendGitHub(e); open = null }, Modifier.fillMaxWidth(), height = 48.dp)
-                Hint(stringResource(R.string.send_github_hint))
+                if (!autoReports && e.status != CrashReporter.Status.SENT_GITHUB) {
+                    GoldButton(stringResource(R.string.send_github), { onSendGitHub(e); open = null }, Modifier.fillMaxWidth(), height = 48.dp)
+                    Hint(stringResource(R.string.send_github_hint))
+                }
                 GhostButton(stringResource(R.string.share), { onShare(e); open = null }, Modifier.fillMaxWidth())
                 Text(
                     e.report, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall, color = Q.TextMuted,
@@ -614,7 +707,8 @@ private fun CrashStatus(e: CrashReporter.Entry) {
     when (e.status) {
         CrashReporter.Status.SAVED -> StatusPill(stringResource(R.string.status_saved), Q.TextMuted)
         CrashReporter.Status.SHARED -> StatusPill(stringResource(R.string.status_shared, t), Q.Primary)
-        CrashReporter.Status.SENT_GITHUB -> StatusPill(stringResource(R.string.status_sent, t), Q.Success)
+        CrashReporter.Status.SENT_GITHUB ->
+            StatusPill(e.reference?.let { stringResource(R.string.status_uploaded, it, t) } ?: stringResource(R.string.status_sent, t), Q.Success)
     }
 }
 
@@ -1046,6 +1140,8 @@ internal fun HeadphonesScreen(
     onOpenBluetooth: () -> Unit,
     onBack: () -> Unit,
     showDetailsInitially: Boolean = false,
+    preferredOutputId: Int? = null,
+    onSelectOutput: (Int?) -> Unit = {},
 ) {
     var showDetails by remember { mutableStateOf(showDetailsInitially) }
     val headphones = outputs.filter { it.kind != DiagnosticsReport.Kind.SPEAKER }
@@ -1069,7 +1165,34 @@ internal fun HeadphonesScreen(
         if (headphones.isEmpty()) {
             Text(stringResource(R.string.no_headphones), Modifier.fillMaxWidth(), style = MaterialTheme.typography.headlineSmall, color = Q.Text, textAlign = TextAlign.Center)
             Text(stringResource(R.string.no_headphones_hint), Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodyLarge, color = Q.TextMuted, textAlign = TextAlign.Center)
-            GoldButton(stringResource(R.string.open_bluetooth), onOpenBluetooth, Modifier.fillMaxWidth())
+            GoldButton(stringResource(R.string.pick_headphones), onOpenBluetooth, Modifier.fillMaxWidth().testTag("pick_device"))
+        } else if (outputs.size > 1) {
+            // Two or more places the sound could go: let the owner choose.
+            Text(stringResource(R.string.play_sound_on), style = MaterialTheme.typography.titleLarge, color = Q.Text)
+            outputs.forEach { o ->
+                val selected = preferredOutputId == o.id || (preferredOutputId == null && o == headphones.first())
+                QCard(
+                    Modifier.clickable(role = Role.RadioButton) { onSelectOutput(o.id) }
+                        .semantics { stateDescription = if (selected) "Selected" else "Not selected" }
+                        .testTag("output_${o.id}"),
+                    highlighted = selected,
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(if (selected) "◉" else "○", color = Q.Primary, modifier = Modifier.clearAndSetSemantics { }, fontSize = 20.sp)
+                        Column(Modifier.weight(1f)) {
+                            Text(o.name, style = MaterialTheme.typography.titleMedium, color = Q.Text)
+                            Hint(stringResource(when (o.kind) {
+                                DiagnosticsReport.Kind.BLUETOOTH -> R.string.bluetooth
+                                DiagnosticsReport.Kind.WIRED -> R.string.wired
+                                DiagnosticsReport.Kind.SPEAKER -> R.string.this_phone_speaker
+                            }))
+                        }
+                        if (o.kind != DiagnosticsReport.Kind.SPEAKER) StatusPill(stringResource(R.string.connected), Q.Success)
+                    }
+                }
+            }
+            Hint(stringResource(R.string.play_sound_on_hint))
+            GoldButton(stringResource(R.string.pick_headphones), onOpenBluetooth, Modifier.fillMaxWidth().testTag("pick_device"))
         } else {
             headphones.forEach { o ->
                 QCard(highlighted = true) {
@@ -1083,7 +1206,7 @@ internal fun HeadphonesScreen(
                     Body(stringResource(R.string.sound_plays_here))
                 }
             }
-            GhostButton(stringResource(R.string.open_bluetooth), onOpenBluetooth, Modifier.fillMaxWidth())
+            GhostButton(stringResource(R.string.pick_headphones), onOpenBluetooth, Modifier.fillMaxWidth().testTag("pick_device"))
         }
         if (!namesAllowed) {
             QCard {
@@ -1111,5 +1234,58 @@ internal fun TechnicalDetails(details: String) {
             modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Q.Background)
                 .border(BorderStroke(1.dp, Q.BorderAccent), RoundedCornerShape(12.dp)).padding(12.dp),
         )
+    }
+}
+
+
+enum class GitHubState { IDLE, WAITING, DONE, FAILED }
+
+@Composable
+internal fun ConnectGitHubScreen(
+    configured: Boolean,
+    connected: Boolean,
+    code: GitHubLink.DeviceCode?,
+    state: GitHubState,
+    onStart: () -> Unit,
+    onOpenGitHub: (GitHubLink.DeviceCode) -> Unit,
+    onDisconnect: () -> Unit,
+    onBack: () -> Unit,
+) = Screen {
+    TopBar(stringResource(R.string.auto_reports), onBack)
+    when {
+        connected -> QCard(highlighted = true) {
+            StatusPill(stringResource(R.string.auto_reports_on), Q.Success)
+            Body(stringResource(R.string.github_connected_text))
+            GhostButton(stringResource(R.string.github_disconnect), onDisconnect)
+        }
+        !configured -> QCard {
+            Text(stringResource(R.string.github_not_ready_title), style = MaterialTheme.typography.titleMedium, color = Q.Text)
+            Hint(stringResource(R.string.github_not_ready_text))
+        }
+        code != null -> QCard(highlighted = true) {
+            Text(stringResource(R.string.github_enter_code), style = MaterialTheme.typography.titleMedium, color = Q.Text)
+            GradientText(code.userCode, MaterialTheme.typography.displaySmall.copy(fontFamily = FontFamily.Monospace))
+            GoldButton(stringResource(R.string.github_open), { onOpenGitHub(code) }, Modifier.fillMaxWidth(), height = 56.dp)
+            StatusPill(stringResource(R.string.github_waiting), Q.Primary, pulsing = true)
+        }
+        else -> QCard(highlighted = true) {
+            Text(stringResource(R.string.github_intro_title), style = MaterialTheme.typography.titleMedium, color = Q.Text)
+            Body(stringResource(R.string.github_intro_text))
+            GoldButton(stringResource(R.string.github_connect), onStart, Modifier.fillMaxWidth().testTag("github_connect"),
+                enabled = state != GitHubState.WAITING, height = 56.dp)
+            if (state == GitHubState.FAILED) Hint(stringResource(R.string.github_failed))
+        }
+    }
+    Hint(stringResource(R.string.github_privacy))
+    Footer()
+}
+
+
+@Composable
+internal fun ReconnectingScreen(onBack: () -> Unit) = Screen {
+    TopBar(stringResource(R.string.now_casting), onBack)
+    QCard(highlighted = true) {
+        StatusPill(stringResource(R.string.reconnecting), Q.Primary, pulsing = true)
+        Hint(stringResource(R.string.reconnecting_hint))
     }
 }
