@@ -28,6 +28,11 @@ class CastWatcher(
     @Volatile var current: CastActivity? = null
         private set
 
+    @Volatile private var pollRequested = false
+
+    /** Ask the TV for its status right away (e.g. just after we started something on it). */
+    fun pollNow() { pollRequested = true }
+
     fun start(): CastWatcher { thread.start(); return this }
 
     /**
@@ -121,7 +126,8 @@ class CastWatcher(
         var base: CastActivity? = null
         while (running) {
             val now = System.currentTimeMillis()
-            if (now - lastPoll >= pollMs) {
+            if (pollRequested || now - lastPoll >= pollMs) {
+                pollRequested = false
                 send(s, "receiver-0", CastMessage.NS_RECEIVER, """{"type":"GET_STATUS","requestId":${requestId.incrementAndGet()}}""")
                 connectedTransport?.let { t ->
                     send(s, t, CastMessage.NS_MEDIA, """{"type":"GET_STATUS","requestId":${requestId.incrementAndGet()}}""")

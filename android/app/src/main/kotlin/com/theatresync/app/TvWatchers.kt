@@ -50,6 +50,8 @@ class TvWatchers(private val onChange: (List<NowCasting>) -> Unit) {
 
     fun stopCasting(tvId: String) = watchers[tvId]?.second?.stopApp()
 
+    fun pollNow(tvId: String) = watchers[tvId]?.second?.pollNow()
+
     fun seekBy(tvId: String, deltaSec: Double) {
         val w = watchers[tvId]?.second ?: return
         val now = w.current?.currentTimeSec ?: return

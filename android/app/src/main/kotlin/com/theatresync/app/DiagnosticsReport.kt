@@ -70,6 +70,7 @@ object DiagnosticsReport {
                 appendLine("  TV IP: ${d.tvIp ?: "unknown"}")
                 appendLine("  TV requests for the movie: ${session.tvMovieRequests}")
             }
+            session?.lastHeadphoneProblem?.let { appendLine(); appendLine("Last headphone problem"); appendLine("  $it") }
             session?.lastYouTubeError?.let { appendLine(); appendLine("Last YouTube problem"); appendLine("  $it") }
             appendLine()
             appendLine("Bluetooth names visible: $canReadNames")

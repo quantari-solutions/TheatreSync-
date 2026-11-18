@@ -138,4 +138,6 @@
     <string name="share">Share</string>
     <string name="about">About</string>
     <string name="about_text">TheatreSync %1$s · by Quantari Solutions. No data leaves your phone unless you share it.</string>
+    <string name="msg_headphones_silent">The TV is playing but the headphone sound didn\'t start. Check the headphones are connected to this phone, then tap pause and play. Details: Headphones → ⓘ.</string>
+    <string name="yt_starting_button">Starting on TV…</string>
 </resources>

@@ -26,6 +26,10 @@ class HeadphonePlayer(context: Context, uri: Uri, private val events: Events) {
 
     private val corrector = DriftCorrector()
 
+    /** Last player error, for diagnostics. */
+    @Volatile var lastError: String? = null
+        private set
+
     val exo: ExoPlayer = ExoPlayer.Builder(context)
         .setAudioAttributes(
             AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(),
@@ -55,6 +59,7 @@ class HeadphonePlayer(context: Context, uri: Uri, private val events: Events) {
                 }
 
                 override fun onPlayerError(error: PlaybackException) {
+                    lastError = "${error.errorCodeName}: ${error.cause?.message ?: error.message}"
                     events.onError("This phone can't play the sound of this file (${error.errorCodeName}).")
                 }
             })

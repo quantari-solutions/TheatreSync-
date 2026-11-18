@@ -2,6 +2,15 @@
 
 _Last updated: 2026-11-18. Milestone 1.5 (0.4.2): the real crash fixed, crash safety net, crash timeline, cast indicator_
 
+## 0.4.3: owner's media-room feedback
+
+| Report | Fix |
+|---|---|
+| YouTube: after Cast, the page didn't change (button came back as if nothing happened) | Button shows "Starting on TV…"; on success the Now casting player opens at once with the video thumbnail (optimistic entry until the TV's status arrives); the TV is polled immediately |
+| Movie sound still in the room speakers | Also mute the movie's own stream on the receiver (`setStreamMute`), re-applied when playback starts; device mute is often ignored with HDMI/CEC fixed volume |
+| Nothing in the headphones | Watchdog: if the TV plays for 5 s without headphone sound, say so and record the player state/error (crash timeline + ⓘ details). Cause not yet confirmed on the device |
+| YouTube sound in the room speakers | Expected: YouTube streams straight to the Chromecast; no app can route it to the phone's headphones |
+
 ## 0.4.2: root cause from the owner's crash report
 
 The on-phone crash reporter captured it (motorola edge 40, Android 15):

@@ -147,6 +147,15 @@ class MainActivity : ComponentActivity() {
                     val casting = ui.nowCasting.firstOrNull { it.tvId == castTvId }
 
                     BackHandler(enabled = page != Page.HOME) { page = if (page == Page.CRASHES) Page.SETTINGS else Page.HOME }
+                    // YouTube accepted the video: open its Now casting player at once.
+                    LaunchedEffect(ui.youTube, ui.youTubeTvId) {
+                        if (ui.youTube == MovieSession.YouTubeState.PLAYING && page == Page.YOUTUBE && ui.youTubeTvId != null) {
+                            castTvId = ui.youTubeTvId
+                            page = Page.NOW_CASTING
+                            sharedLink.value = null // don't cast the same shared link again next time
+                            session.resetYouTube()
+                        }
+                    }
                     // Shared from the YouTube app: jump straight to the YouTube page.
                     LaunchedEffect(sharedLink.value) { if (sharedLink.value != null) page = Page.YOUTUBE }
                     // If the cast we're looking at ends, go back home on its own.
@@ -671,7 +680,8 @@ internal fun YouTubeScreen(
             }
         }
         GoldButton(
-            stringResource(R.string.yt_cast_to, chosenTv?.name ?: "TV"),
+            if (ui.youTube == MovieSession.YouTubeState.STARTING) stringResource(R.string.yt_starting_button)
+            else stringResource(R.string.yt_cast_to, chosenTv?.name ?: "TV"),
             { if (videoId != null && chosenTv != null) onCast(videoId, chosenTv.id) },
             Modifier.fillMaxWidth().testTag("yt_cast"),
             enabled = videoId != null && chosenTv != null && ui.youTube != MovieSession.YouTubeState.STARTING,

@@ -73,6 +73,8 @@ class MovieSession(private val app: Application) {
         /** YouTube casting started from TheatreSync. */
         val youTube: YouTubeState = YouTubeState.IDLE,
         val youTubeVideoId: String? = null,
+        /** The TV the YouTube video was sent to (so the app can open its player at once). */
+        val youTubeTvId: String? = null,
     ) {
         val canStart: Boolean get() = movieTitle != null && connectedTv != null
     }
@@ -108,6 +110,10 @@ class MovieSession(private val app: Application) {
     /** Cast sessions the user just stopped: hidden at once, before the TV confirms. */
     private val stoppedSessions = mutableSetOf<String>()
 
+    /** Shown at once after a YouTube cast succeeds, until the TV's own status arrives. */
+    private var optimistic: TvWatchers.NowCasting? = null
+    private var optimisticUntilMs = 0L
+
     /** What we told the TV, for the ⓘ technical details if the picture never appears. */
     data class Diagnostics(val movieUrl: String, val phoneIp: String, val tvIp: String?)
 
@@ -118,6 +124,12 @@ class MovieSession(private val app: Application) {
     @Volatile var lastYouTubeError: String? = null
         private set
     private var startedAtMs = 0L
+    private var playingSinceMs = 0L
+    private var headphoneWarned = false
+
+    /** Why headphone sound didn't start, for the ⓘ technical details. */
+    @Volatile var lastHeadphoneProblem: String? = null
+        private set
     private var tvEverPlayed = false
 
     /** Number of times the TV fetched the movie in this session (0 = it never reached the phone). */
@@ -192,7 +204,11 @@ class MovieSession(private val app: Application) {
         rawNowCasting = list
         // Our own movie is shown on the playing screen, not as "now casting".
         // Also hide Google's media player left open with nothing loaded after a movie ends.
-        val visible = list.filterNot {
+        val withOptimistic = optimistic?.let { o ->
+            val real = list.any { it.tvId == o.tvId && it.activity.appId == o.activity.appId }
+            if (real || SystemClock.elapsedRealtime() > optimisticUntilMs) { optimistic = null; list } else list.filterNot { it.tvId == o.tvId } + o
+        } ?: list
+        val visible = withOptimistic.filterNot {
             val a = it.activity
             (a.appId == CastStatus.APP_DEFAULT_MEDIA_RECEIVER && server != null) ||
                 (a.sessionId != null && a.sessionId in stoppedSessions)
@@ -230,7 +246,7 @@ class MovieSession(private val app: Application) {
     private fun castYouTubeUnsafe(videoId: String, tvId: String) {
         if (server != null) return say(R.string.yt_stop_movie_first)
         val tv = knownTvs.firstOrNull { it.id == tvId } ?: return say(R.string.yt_no_tv)
-        _ui.update { it.copy(youTube = YouTubeState.STARTING, youTubeVideoId = videoId, message = null) }
+        _ui.update { it.copy(youTube = YouTubeState.STARTING, youTubeVideoId = videoId, youTubeTvId = tv.id, message = null) }
         Thread({
             var step = "starting YouTube on the TV"
             val ok = try {
@@ -245,8 +261,22 @@ class MovieSession(private val app: Application) {
                 false
             }
             main.post {
+                if (ok) {
+                    // Show the player straight away with the video's thumbnail; the TV's real
+                    // status (title, channel, position) replaces it within a couple of seconds.
+                    optimistic = TvWatchers.NowCasting(
+                        tv.id, tv.name,
+                        CastActivity(
+                            appId = CastStatus.APP_YOUTUBE, appName = "YouTube", kind = CastActivity.Kind.YOUTUBE,
+                            imageUrl = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg", playerState = "BUFFERING",
+                        ),
+                    )
+                    optimisticUntilMs = SystemClock.elapsedRealtime() + 20_000
+                    publishNowCasting(rawNowCasting)
+                    tvWatchers.pollNow(tv.id)
+                    CastIndicator.show(app, app.getString(R.string.casting_youtube_to, tv.name), tv.id)
+                }
                 _ui.update { it.copy(youTube = if (ok) YouTubeState.PLAYING else YouTubeState.FAILED) }
-                if (ok) CastIndicator.show(app, app.getString(R.string.casting_youtube_to, tv.name), tv.id)
             }
         }, "youtube-cast").start()
     }
@@ -318,6 +348,8 @@ class MovieSession(private val app: Application) {
         lastDiagnostics = Diagnostics(url, ip, tvAddress?.hostAddress)
         startedAtMs = SystemClock.elapsedRealtime()
         tvEverPlayed = false
+        playingSinceMs = 0L
+        headphoneWarned = false
         val meta = MediaMetadata(MediaMetadata.MEDIA_TYPE_MOVIE).apply { putString(MediaMetadata.KEY_TITLE, m.title) }
         val info = MediaInfo.Builder(url)
             .setContentUrl(url)
@@ -402,6 +434,9 @@ class MovieSession(private val app: Application) {
     private fun applyTvMute() {
         val s = castSession ?: return
         val mute = _ui.value.muteTv && server != null // only while a movie is running
+        // Many Chromecasts on an AV receiver have fixed (HDMI/CEC) device volume and ignore
+        // device mute, so also mute the movie's own audio stream on the receiver.
+        runCatching { s.remoteMediaClient?.setStreamMute(mute) }
         if (runCatching { s.setMute(mute) }.isSuccess) prefs.edit { putBoolean(KEY_WE_MUTED, mute) }
     }
 
@@ -429,7 +464,11 @@ class MovieSession(private val app: Application) {
             }
         }
 
-        override fun onError(message: String) = _ui.update { it.copy(message = message) }
+        override fun onError(message: String) {
+            lastHeadphoneProblem = message
+            CrashReporter.handled(app, "headphone player", IllegalStateException(message))
+            _ui.update { it.copy(message = message) }
+        }
     }
 
     private val tick = object : Runnable {
@@ -478,7 +517,24 @@ class MovieSession(private val app: Application) {
         if (failed && ui.message == null) say(R.string.msg_tv_cant_play)
 
         // Watchdog: the TV says nothing when it can't reach the phone; it just waits.
+        if (playing && !tvEverPlayed) applyTvMute() // stream mute needs loaded media
         if (playing) tvEverPlayed = true
+
+        // Headphone watchdog: the TV is playing but no sound in the headphones.
+        if (playing && ui.headphonesHere) {
+            if (playingSinceMs == 0L) playingSinceMs = SystemClock.elapsedRealtime()
+            val p = player
+            val silent = p == null || !p.exo.isPlaying
+            if (silent && SystemClock.elapsedRealtime() - playingSinceMs > 5_000 && !headphoneWarned) {
+                headphoneWarned = true
+                val why = p?.lastError ?: "player state ${p?.exo?.playbackState}, suppression ${p?.exo?.playbackSuppressionReason}"
+                lastHeadphoneProblem = why
+                CrashReporter.handled(app, "headphone sound didn't start", IllegalStateException(why))
+                say(R.string.msg_headphones_silent)
+            }
+        } else {
+            playingSinceMs = 0L
+        }
         val waitedMs = SystemClock.elapsedRealtime() - startedAtMs
         if (!tvEverPlayed && waitedMs > TV_START_TIMEOUT_MS && ui.message == null) {
             say(if ((server?.mediaRequests ?: 0) == 0) R.string.msg_tv_cant_reach else R.string.msg_tv_cant_play)
