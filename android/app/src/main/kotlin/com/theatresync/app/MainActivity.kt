@@ -486,9 +486,11 @@ private fun PlayButton(playing: Boolean, onClick: () -> Unit) {
         Modifier.size(92.dp)
             .shadow(if (playing) pulse.dp else 14.dp, CircleShape, ambientColor = Q.Glow, spotColor = Q.Glow)
             .clip(CircleShape).background(Q.Gold)
+            // Order matters: clearAndSetSemantics wipes everything *after* it in the chain,
+            // so the test tag and click action must come before it.
+            .testTag("playpause")
             .clickable(role = Role.Button, onClick = onClick)
-            .clearAndSetSemantics { contentDescription = label }
-            .testTag("playpause"),
+            .clearAndSetSemantics { contentDescription = label },
         contentAlignment = Alignment.Center,
     ) {
         Text(if (playing) "❚❚" else "▶", color = Color.Black, fontSize = 30.sp)
