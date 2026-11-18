@@ -89,4 +89,21 @@ class CrashSafetyTest {
         rule.onNodeWithTag("settings_github").performClick()
         rule.onNodeWithText("Automatic crash reports").assertIsDisplayed()
     }
+
+    /** The headphone pre-screening test plays through Android's audio system and reports the device. */
+    @Test
+    fun soundTestPlaysAndReportsWhereSoundWent() {
+        val r = SoundTest.run(rule.activity, null)
+        assertTrue("sound test failed: ${r.error}", r.error == null)
+        assertTrue("no output device reported", r.deviceType != null)
+    }
+
+    @Test
+    fun soundTestButtonAsksIfYouHeardIt() {
+        rule.onNodeWithText("Check headphones", substring = true).performScrollTo().performClick()
+        rule.onNodeWithTag("sound_test_run").performScrollTo().performClick()
+        rule.waitUntil(10_000) { rule.onAllNodesWithText("Did you hear the beeps", substring = true).fetchSemanticsNodes().isNotEmpty() }
+        rule.onNodeWithTag("sound_test_no").performScrollTo().performClick()
+        rule.onNodeWithText("Test again").performScrollTo().assertIsDisplayed()
+    }
 }

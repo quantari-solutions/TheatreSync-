@@ -29,6 +29,17 @@ class ScreenshotTest {
     @Test fun setup1_empty() = setup(Ui())
     @Test fun setup2_movieChosen_tvsFound() = setup(Ui(movieTitle = "Interstellar", tvs = listOf(Tv("1", "Theatre Room TV"), Tv("2", "Bedroom TV"))))
     @Test fun setup3_ready() = setup(Ui(movieTitle = "Interstellar", connectedTv = "Theatre Room TV"))
+    @Test fun setup8_needsConversion() = setup(
+        Ui(
+            movieTitle = "Interstellar", connectedTv = "Media Room TV",
+            movieInfo = CastCompat.Media("video/hevc", 3840, 2160, 24f, "audio/eac3", 48.0).label,
+            movieVerdict = CastCompat.Verdict(false, listOf(CastCompat.Problem.CODEC, CastCompat.Problem.RESOLUTION)),
+            quality = Quality.P1080,
+        ),
+    )
+    @Test fun setup9_preparing() = setup(
+        Ui(movieTitle = "Interstellar", connectedTv = "Media Room TV", quality = Quality.P1080, prepareProgress = 42),
+    )
     @Test fun setup4_error() = setup(Ui(movieTitle = "Interstellar", message = "Connect this phone to the same Wi-Fi as the Chromecast."))
 
     @Test fun playing1_inSync() = playing(
@@ -64,6 +75,7 @@ class ScreenshotTest {
 
     @Test fun setup5_nowCastingYouTube() = setup(Ui(nowCasting = listOf(youtube), tvs = listOf(Tv("1", "Theatre Room TV"))))
     @Test fun casting1_youtube() = shot { NowCastingScreen(youtube, {}, {}, {}) }
+    @Test fun casting3_youtubeVolume() = shot { NowCastingScreen(youtube.copy(activity = youtube.activity.copy(volumeLevel = 0.6, muted = false)), {}, {}, {}) }
     @Test fun casting2_mirroring() = shot { NowCastingScreen(mirroring, {}, {}, {}) }
     @Test fun headphones1_connected() = shot {
         HeadphonesScreen(
@@ -96,11 +108,27 @@ class ScreenshotTest {
             details, namesAllowed = true, onAllow = {}, onOpenBluetooth = {}, onBack = {}, preferredOutputId = 11,
         )
     }
+    @Test fun headphones5_soundTestHeadphones() = shot {
+        HeadphonesScreen(
+            listOf(DiagnosticsReport.Output("WH-1000XM4", DiagnosticsReport.Kind.BLUETOOTH, 11)),
+            details, namesAllowed = true, onAllow = {}, onOpenBluetooth = {}, onBack = {},
+            soundTest = SoundTestUi.Done(SoundTest.Result("WH-1000XM4", android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, "BLUETOOTH_A2DP")),
+        )
+    }
+    @Test fun headphones6_soundTestWrongDevice() = shot {
+        HeadphonesScreen(
+            listOf(DiagnosticsReport.Output("WH-1000XM4", DiagnosticsReport.Kind.BLUETOOTH, 11)),
+            details, namesAllowed = true, onAllow = {}, onOpenBluetooth = {}, onBack = {},
+            soundTest = SoundTestUi.Answered(SoundTest.Result("Phone speaker", android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER, "SPEAKER"), heard = false),
+        )
+    }
+    @Test fun setup7_tvBusy() = setup(Ui(movieTitle = "Interstellar", tvs = listOf(Tv("1", "Media Room TV"), Tv("2", "Alfred")), nowCasting = listOf(youtube.copy(tvId = "1", tvName = "Media Room TV"))))
     @Test fun github1_connect() = shot { ConnectGitHubScreen(true, false, null, GitHubState.IDLE, {}, {}, {}, {}) }
     @Test fun github2_code() = shot {
         ConnectGitHubScreen(true, false, GitHubLink.DeviceCode("WDJB-MJHT", "https://github.com/login/device", "x", 5), GitHubState.WAITING, {}, {}, {}, {})
     }
-    @Test fun github3_connected() = shot { ConnectGitHubScreen(true, true, null, GitHubState.DONE, {}, {}, {}, {}) }
+    @Test fun github3_connected() = shot { ConnectGitHubScreen(true, true, null, GitHubState.DONE, {}, {}, {}, {}, lastUpload = "Uploaded #21 · 18 Nov 2026, 22:14") }
+    @Test fun github4_setup() = shot { ConnectGitHubScreen(false, false, null, GitHubState.IDLE, {}, {}, {}, {}) }
     @Test fun crashTimeline() = shot { CrashReportsScreen(listOf(handled.copy(reference = "#3"), crash), autoReports = true, onSendGitHub = {}, onShare = {}, onBack = {}) }
     @Test fun crashTimelineEmpty() = shot { CrashReportsScreen(emptyList(), {}, {}, {}) }
 }

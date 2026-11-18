@@ -74,6 +74,12 @@ class CastV2Test {
         assertEquals("https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg", CastStatus.mergeMedia(app, media).imageUrl)
     }
 
+    @Test fun parsesTvVolume() {
+        val app = CastStatus.parseReceiver(youtubeReceiver)!!
+        assertEquals(0.5, app.volumeLevel!!, 1e-9)
+        assertEquals(false, app.muted)
+    }
+
     @Test fun parsesTabMirroring() {
         val app = CastStatus.parseReceiver(mirroringReceiver)!!
         assertEquals(CastActivity.Kind.MIRRORING, app.kind)
@@ -105,6 +111,7 @@ class CastV2Test {
         val received = CopyOnWriteArrayList<CastMessage>()
         val pauseSeen = CountDownLatch(1)
         val stopSeen = CountDownLatch(1)
+        val volumeSeen = CountDownLatch(1)
         var appRunning = false
         Thread {
             server.accept().use { c ->
@@ -125,6 +132,7 @@ class CastV2Test {
                         m.namespace == CastMessage.NS_MEDIA && type == "GET_STATUS" ->
                             CastMessage.write(out, CastMessage("web-7", m.sourceId, CastMessage.NS_MEDIA, youtubeMedia))
                         m.namespace == CastMessage.NS_MEDIA && type == "PAUSE" -> pauseSeen.countDown()
+                        m.namespace == CastMessage.NS_RECEIVER && type == "SET_VOLUME" && m.payloadUtf8.contains("\"muted\":true") -> volumeSeen.countDown()
                         m.namespace == CastMessage.NS_RECEIVER && type == "STOP" && m.payloadUtf8.contains("\"sessionId\":\"a1b2\"") -> stopSeen.countDown()
                     }
                 }
@@ -148,6 +156,8 @@ class CastV2Test {
             val pause = received.first { CastStatus.type(it.payloadUtf8) == "PAUSE" }
             assertEquals("web-7", pause.destinationId)
             assertTrue(pause.payloadUtf8.contains("\"mediaSessionId\":3"))
+            watcher.setMuted(true)
+            assertTrue("SET_VOLUME (mute) not sent", volumeSeen.await(5, TimeUnit.SECONDS))
             watcher.stopApp()
             assertTrue("STOP with the receiver session ID not sent", stopSeen.await(5, TimeUnit.SECONDS))
             assertTrue("must CONNECT to the app transport before media commands",

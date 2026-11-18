@@ -108,11 +108,14 @@ jobs:
             if adb logcat -d -s AndroidRuntime:E | grep -q "FATAL EXCEPTION"; then adb logcat -d -s AndroidRuntime:E; exit 1; fi
             echo "Release build launched without crashing"
             # Monkey: thousands of random taps, swipes and rotations on the optimised app.
-            # Stays inside TheatreSync (-p), no system keys. Fails on any crash or ANR.
+            # Stays inside TheatreSync (-p), no system keys. Fails on any TheatreSync crash or ANR, or if it
+            # stops early. A freeze of another app (e.g. the keyboard on the slow emulator) is logged, not fatal.
             adb logcat -c
-            adb shell monkey -p com.theatresync.app --pct-syskeys 0 --pct-appswitch 0 --throttle 60 -s 4242 -v 3000 > monkey.txt 2>&1 || true
+            adb shell monkey -p com.theatresync.app --pct-syskeys 0 --pct-appswitch 0 --ignore-timeouts --throttle 60 -s 4242 -v 3000 > monkey.txt 2>&1 || true
             tail -5 monkey.txt
-            if grep -qE "// CRASH|// NOT RESPONDING|Monkey aborted" monkey.txt; then cat monkey.txt | grep -A30 -E "// CRASH|NOT RESPONDING"; exit 1; fi
+            if grep -qE "// (CRASH|NOT RESPONDING): com\.theatresync|Monkey aborted" monkey.txt; then grep -A30 -E "// (CRASH|NOT RESPONDING): com\.theatresync|Monkey aborted" monkey.txt; exit 1; fi
+            if grep -E "// NOT RESPONDING" monkey.txt; then echo "Another app (not TheatreSync) froze on the slow emulator; ignored"; fi
+            grep -q "Events injected: 3000" monkey.txt || (echo "Monkey stopped early"; tail -40 monkey.txt; exit 1)
             if adb logcat -d -s AndroidRuntime:E | grep -q "FATAL EXCEPTION"; then adb logcat -d -s AndroidRuntime:E; exit 1; fi
             echo "Monkey stress test passed (3000 random events, no crash)"
 

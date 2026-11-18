@@ -72,6 +72,48 @@ class MediaServerTest {
         assertEquals("bytes */300000", c.getHeaderField("Content-Range"))
     }
 
+    /** Speed fix: several range requests on ONE connection, as the Chromecast does. */
+    @Test(timeout = 10_000)
+    fun keepAliveServesSeveralRequestsOnOneConnection() {
+        java.net.Socket("127.0.0.1", base.substringAfterLast(':').toInt()).use { sock ->
+            val out = sock.getOutputStream()
+            val input = java.io.BufferedInputStream(sock.getInputStream())
+            fun request(range: String): Pair<Map<String, String>, ByteArray> {
+                out.write("GET /media HTTP/1.1\r\nHost: x\r\nRange: bytes=$range\r\n\r\n".toByteArray())
+                out.flush()
+                val status = MediaServer.readLine(input)!!
+                assertTrue(status, status.startsWith("HTTP/1.1 206"))
+                val h = HashMap<String, String>()
+                while (true) {
+                    val line = MediaServer.readLine(input)!!
+                    if (line.isEmpty()) break
+                    h[line.substringBefore(':').lowercase()] = line.substringAfter(':').trim()
+                }
+                val body = ByteArray(h["content-length"]!!.toInt())
+                var read = 0
+                while (read < body.size) read += input.read(body, read, body.size - read)
+                return h to body
+            }
+            val (h1, b1) = request("0-999")
+            assertEquals("keep-alive", h1["connection"])
+            assertArrayEquals(bytes.copyOfRange(0, 1000), b1)
+            val (_, b2) = request("5000-5999")
+            assertArrayEquals(bytes.copyOfRange(5000, 6000), b2)
+            val (_, b3) = request("299000-")
+            assertArrayEquals(bytes.copyOfRange(299000, 300000), b3)
+        }
+        assertEquals(3, server.mediaRequests)
+        assertTrue(server.totalBytesSent >= 3000L)
+    }
+
+    @Test fun http10ClientsStillGetConnectionClose() {
+        java.net.Socket("127.0.0.1", base.substringAfterLast(':').toInt()).use { sock ->
+            sock.getOutputStream().write("GET /hello HTTP/1.0\r\n\r\n".toByteArray())
+            val text = sock.getInputStream().readBytes().decodeToString()
+            assertTrue(text.contains("Connection: close"))
+        }
+    }
+
     @Test fun countsMovieRequests() {
         assertEquals(0, server.mediaRequests)
         get("/media", "bytes=0-9").inputStream.readBytes()

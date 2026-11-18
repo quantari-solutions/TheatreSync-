@@ -69,6 +69,8 @@ class AccessibilityTest {
     }
 
     @Test fun connectGitHub() = check { ConnectGitHubScreen(true, false, null, GitHubState.IDLE, {}, {}, {}, {}) }
+    @Test fun gitHubSetup() = check { ConnectGitHubScreen(false, false, null, GitHubState.IDLE, {}, {}, {}, {}) }
+    @Test fun gitHubConnected() = check { ConnectGitHubScreen(true, true, null, GitHubState.DONE, {}, {}, {}, {}, lastUpload = "Uploaded #21") }
 
     @Test fun headphonesChooseOutput() = check {
         HeadphonesScreen(

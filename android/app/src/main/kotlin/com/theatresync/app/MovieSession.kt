@@ -51,7 +51,7 @@ class MovieSession(private val app: Application) {
 
     enum class YouTubeState { IDLE, STARTING, PLAYING, FAILED }
 
-    data class Tv(val id: String, val name: String)
+    data class Tv(val id: String, val name: String, val isSpeaker: Boolean = false)
 
     data class Ui(
         val castAvailable: Boolean = true,
@@ -78,6 +78,16 @@ class MovieSession(private val app: Application) {
         val youTubeTvId: String? = null,
         /** Output the owner picked for TheatreSync's sound (AudioDeviceInfo id), or null. */
         val preferredOutputId: Int? = null,
+        /** The Chromecast is loading (buffering) the movie right now. */
+        val tvBuffering: Boolean = false,
+        /** e.g. "4K · H.265 · 30 fps · 48 Mbit/s" for the chosen movie. */
+        val movieInfo: String? = null,
+        val movieVerdict: CastCompat.Verdict? = null,
+        val quality: Quality = Quality.ORIGINAL,
+        /** 0–100 while converting the movie for the TV; null when not converting. */
+        val prepareProgress: Int? = null,
+        /** true = TV confirmed muted, false = TV ignored the mute, null = unknown / not muting. */
+        val tvMuteConfirmed: Boolean? = null,
     ) {
         val canStart: Boolean get() = movieTitle != null && connectedTv != null
     }
@@ -128,7 +138,29 @@ class MovieSession(private val app: Application) {
         private set
     private var startedAtMs = 0L
     private var playingSinceMs = 0L
+    // Streaming speed check
+    private var lastBytes = 0L
+    private var lastBytesAtMs = 0L
+    private val speedSamples = ArrayDeque<Double>()
+    private val bufferingStarts = ArrayDeque<Long>()
+    private var wasBuffering = false
+    private var speedWarned = false
+
+    /** Average speed the movie reached the TV recently (Mbit/s), and what the video needs. */
+    @Volatile var streamMbps: Double? = null
+        private set
+    @Volatile var videoMbps: Double? = null
+        private set
     private var headphoneWarned = false
+
+    /** Result of the last headphone sound test, for the ⓘ technical details. */
+    @Volatile var lastSoundTest: String? = null
+        private set
+
+    fun recordSoundTest(summary: String) { lastSoundTest = summary }
+
+    @Volatile var lastSpeedProblem: String? = null
+        private set
 
     /** Why headphone sound didn't start, for the ⓘ technical details. */
     @Volatile var lastHeadphoneProblem: String? = null
@@ -153,8 +185,11 @@ class MovieSession(private val app: Application) {
             return
         }
         movie = source
+        movieMedia = null
+        qualityChosenByUser = false
         prefs.edit { putString(KEY_MOVIE_URI, uri.toString()) }
-        _ui.update { it.copy(movieTitle = source.title, message = null) }
+        _ui.update { it.copy(movieTitle = source.title, message = null, movieInfo = null, movieVerdict = null, prepareProgress = null) }
+        inspectMovie(source)
     }
 
     private val routerCallback = object : MediaRouter.Callback() {
@@ -189,7 +224,13 @@ class MovieSession(private val app: Application) {
 
     private fun refreshTvs() {
         val routes = router.routes.filter { !it.isDefault && it.isEnabled && it.matchesSelector(selector) }
-        _ui.update { it.copy(tvs = routes.map { r -> Tv(r.id, r.name) }) }
+        _ui.update {
+            it.copy(tvs = routes.map { r ->
+                val device = CastDevice.getFromBundle(r.extras)
+                // Speakers (e.g. Nest Audio) can't show video: use a speaker icon for them.
+                Tv(r.id, r.name, isSpeaker = device != null && !device.hasCapability(CastDevice.CAPABILITY_VIDEO_OUT))
+            })
+        }
         knownTvs = routes.mapNotNull { r ->
             val device = CastDevice.getFromBundle(r.extras) ?: return@mapNotNull null
             val address = device.inetAddress ?: return@mapNotNull null
@@ -315,6 +356,7 @@ class MovieSession(private val app: Application) {
         _ui.update { it.copy(connectedTv = tvName, message = null) }
         if (server == null) CastIndicator.show(app, app.getString(R.string.casting_to, tvName))
         if (castContext != null) applyScanMode()
+        refreshVerdict()
     }
 
     private fun onTvDisconnected() {
@@ -327,7 +369,31 @@ class MovieSession(private val app: Application) {
     // ---------------------------------------------------------------- the movie
 
     private fun startMovieUnsafe() {
-        val m = movie ?: return
+        val original = movie ?: return
+        castSession ?: return
+        val q = _ui.value.quality
+        if (q == Quality.ORIGINAL) return castMovie(original)
+        converter.cachedFile(original.uri, q)?.let { f ->
+            return castMovie(ContentUriSource.from(app, Uri.fromFile(f))?.withTitle(original.title) ?: return say(R.string.msg_bad_file))
+        }
+        // Convert once on the phone, then cast. Progress shows on the Start button.
+        _ui.update { it.copy(prepareProgress = 0, message = null) }
+        converter.start(original.uri, q, movieMedia, object : MovieConverter.Listener {
+            override fun onProgress(percent: Int) = _ui.update { it.copy(prepareProgress = percent) }
+            override fun onDone(file: java.io.File) = guard("cast converted movie") {
+                _ui.update { it.copy(prepareProgress = null) }
+                val src = ContentUriSource.from(app, Uri.fromFile(file))?.withTitle(original.title)
+                if (src == null) say(R.string.msg_bad_file) else castMovie(src)
+            }
+            override fun onFailed(reason: String) {
+                CrashReporter.handled(app, "convert movie ($q)", IllegalStateException(reason))
+                _ui.update { it.copy(prepareProgress = null, message = app.getString(R.string.msg_convert_failed, reason)) }
+            }
+        })
+    }
+
+    /** Sends [m] to the TV and starts headphone sound. */
+    private fun castMovie(m: ContentUriSource) {
         val session = castSession ?: return
         val client = session.remoteMediaClient ?: return say(R.string.msg_tv_failed)
         // Give the TV the address on its own network (a phone can have several).
@@ -352,6 +418,11 @@ class MovieSession(private val app: Application) {
         lastDiagnostics = Diagnostics(url, ip, tvAddress?.hostAddress)
         startedAtMs = SystemClock.elapsedRealtime()
         tvEverPlayed = false
+        lastBytes = 0L
+        lastBytesAtMs = startedAtMs
+        speedSamples.clear()
+        bufferingStarts.clear()
+        speedWarned = false
         playingSinceMs = 0L
         headphoneWarned = false
         val meta = MediaMetadata(MediaMetadata.MEDIA_TYPE_MOVIE).apply { putString(MediaMetadata.KEY_TITLE, m.title) }
@@ -441,7 +512,22 @@ class MovieSession(private val app: Application) {
         // Many Chromecasts on an AV receiver have fixed (HDMI/CEC) device volume and ignore
         // device mute, so also mute the movie's own audio stream on the receiver.
         runCatching { s.remoteMediaClient?.setStreamMute(mute) }
+        // Belt and braces: also turn the movie stream's own volume to zero (restore when unmuting).
+        runCatching { s.remoteMediaClient?.setStreamVolume(if (mute) 0.0 else 1.0) }
         if (runCatching { s.setMute(mute) }.isSuccess) prefs.edit { putBoolean(KEY_WE_MUTED, mute) }
+        muteRequestedAtMs = if (mute) SystemClock.elapsedRealtime() else 0L
+        if (!mute) _ui.update { it.copy(tvMuteConfirmed = null) }
+    }
+
+    private var muteRequestedAtMs = 0L
+
+    /** Did the TV actually go quiet? Checked from the Chromecast's own status. */
+    private fun checkMute(client: com.google.android.gms.cast.framework.media.RemoteMediaClient) {
+        if (muteRequestedAtMs == 0L || SystemClock.elapsedRealtime() - muteRequestedAtMs < 2_000) return
+        val status = client.mediaStatus ?: return
+        val session = castSession ?: return
+        val quiet = status.isMute || status.streamVolume <= 0.01 || runCatching { session.isMute }.getOrDefault(false)
+        if (_ui.value.tvMuteConfirmed != quiet) _ui.update { it.copy(tvMuteConfirmed = quiet) }
     }
 
     /** If the app was killed mid-movie, the TV may still be muted by us: undo that. */
@@ -520,6 +606,33 @@ class MovieSession(private val app: Application) {
         val failed = castState == MediaStatus.PLAYER_STATE_IDLE && client.idleReason == MediaStatus.IDLE_REASON_ERROR
         if (failed && ui.message == null) say(R.string.msg_tv_cant_play)
 
+        checkMute(client)
+
+        // Speed check: how fast is the movie reaching the TV, and does it keep stalling?
+        val buffering = castState == MediaStatus.PLAYER_STATE_BUFFERING
+        if (buffering && !wasBuffering && tvEverPlayed) bufferingStarts.addLast(now)
+        wasBuffering = buffering
+        while (bufferingStarts.isNotEmpty() && now - bufferingStarts.first() > 60_000) bufferingStarts.removeFirst()
+        val srv = server
+        if (srv != null && now - lastBytesAtMs >= 2_000) {
+            val bytes = srv.totalBytesSent
+            speedSamples.addLast((bytes - lastBytes) * 8.0 / ((now - lastBytesAtMs) / 1000.0) / 1_000_000)
+            while (speedSamples.size > 10) speedSamples.removeFirst()
+            streamMbps = speedSamples.average()
+            lastBytes = bytes
+            lastBytesAtMs = now
+            val durationSec = client.streamDuration / 1000.0
+            movie?.let { m -> if (durationSec > 0) videoMbps = m.sizeBytes * 8.0 / durationSec / 1_000_000 }
+        }
+        val need = videoMbps
+        val got = streamMbps
+        if (!speedWarned && bufferingStarts.size >= 3 && need != null && got != null && ui.message == null) {
+            speedWarned = true
+            lastSpeedProblem = "TV stalled ${bufferingStarts.size}x in 60 s; video needs %.1f Mbit/s, TV got %.1f Mbit/s".format(need, got)
+            CrashReporter.handled(app, "streaming too slow", IllegalStateException(lastSpeedProblem))
+            _ui.update { it.copy(message = app.getString(R.string.msg_wifi_too_slow, need, got)) }
+        }
+
         // Watchdog: the TV says nothing when it can't reach the phone; it just waits.
         if (playing && !tvEverPlayed) applyTvMute() // stream mute needs loaded media
         if (playing) tvEverPlayed = true
@@ -554,6 +667,7 @@ class MovieSession(private val app: Application) {
         _ui.update {
             it.copy(
                 phase = phase,
+                tvBuffering = buffering || castState == MediaStatus.PLAYER_STATE_LOADING,
                 positionMs = castPos,
                 durationMs = maxOf(0, client.streamDuration),
                 friends = server?.activeListeners() ?: 0,
@@ -593,6 +707,8 @@ class MovieSession(private val app: Application) {
     fun setMuteTv(on: Boolean) = guard("setMuteTv") { setMuteTvUnsafe(on) }
 
     fun castSkip(tvId: String, deltaSec: Double) = guard("castSkip") { tvWatchers.seekBy(tvId, deltaSec) }
+    fun castVolume(tvId: String, level: Double) = guard("castVolume") { tvWatchers.setVolume(tvId, level) }
+    fun castMute(tvId: String, muted: Boolean) = guard("castMute") { tvWatchers.setMuted(tvId, muted) }
 
     private inline fun guard(where: String, block: () -> Unit) {
         try {
@@ -619,6 +735,52 @@ class MovieSession(private val app: Application) {
         val source = try { ContentUriSource.from(app, uri) } catch (_: Exception) { null } ?: return
         movie = source
         _ui.update { it.copy(movieTitle = source.title) }
+        inspectMovie(source)
+    }
+
+    // ---------------------------------------------------------------- quality & conversion
+
+    private var movieMedia: CastCompat.Media? = null
+    private var qualityChosenByUser = false
+    private val converter by lazy { MovieConverter(app) }
+
+    private fun inspectMovie(source: ContentUriSource) {
+        Thread({
+            val media = MovieInspector.inspect(app, source.uri, source.sizeBytes)
+            main.post {
+                if (movie?.uri != source.uri) return@post
+                movieMedia = media
+                refreshVerdict()
+            }
+        }, "inspect-movie").apply { isDaemon = true }.start()
+    }
+
+    /** Re-judge the movie against the connected TV and pick a sensible default quality. */
+    private fun refreshVerdict() {
+        val media = movieMedia ?: return
+        val verdict = CastCompat.verdict(media, castSession?.castDevice?.modelName)
+        val default = when {
+            verdict.playable && CastCompat.Problem.BITRATE !in verdict.problems -> Quality.ORIGINAL
+            minOf(media.width, media.height) in 1..720 -> Quality.P720
+            else -> Quality.P1080
+        }
+        _ui.update {
+            it.copy(
+                movieInfo = media.label.ifBlank { null },
+                movieVerdict = verdict,
+                quality = if (qualityChosenByUser) it.quality else default,
+            )
+        }
+    }
+
+    fun setQuality(q: Quality) = guard("setQuality") {
+        qualityChosenByUser = true
+        _ui.update { it.copy(quality = q) }
+    }
+
+    fun cancelPrepare() = guard("cancelPrepare") {
+        converter.cancel()
+        _ui.update { it.copy(prepareProgress = null) }
     }
 
     /** Which output TheatreSync's sound plays on (null = Android decides). */

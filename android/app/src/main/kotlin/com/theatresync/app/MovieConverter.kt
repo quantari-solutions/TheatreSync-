@@ -1,0 +1,169 @@
+@file:androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
+
+package com.theatresync.app
+
+import android.content.Context
+import android.media.MediaExtractor
+import android.media.MediaFormat
+import android.net.Uri
+import android.os.Handler
+import android.os.Looper
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
+import androidx.media3.effect.Presentation
+import androidx.media3.transformer.Composition
+import androidx.media3.transformer.DefaultEncoderFactory
+import androidx.media3.transformer.EditedMediaItem
+import androidx.media3.transformer.Effects
+import androidx.media3.transformer.ExportException
+import androidx.media3.transformer.ExportResult
+import androidx.media3.transformer.ProgressHolder
+import androidx.media3.transformer.Transformer
+import androidx.media3.transformer.VideoEncoderSettings
+import java.io.File
+import java.security.MessageDigest
+
+/** Movie quality the owner can pick before casting. */
+enum class Quality(val shortSide: Int?, val videoBitrate: Int?) {
+    ORIGINAL(null, null),
+    P1080(1080, 8_000_000),
+    P720(720, 4_000_000),
+}
+
+/** Even-numbered size with the given short side, keeping the aspect ratio. Null = don't scale. */
+internal fun sizeFor(w: Int, h: Int, shortSide: Int?): Pair<Int, Int>? {
+    if (shortSide == null || w <= 0 || h <= 0) return null
+    val currentShort = minOf(w, h)
+    if (currentShort <= shortSide) return null // never upscale
+    val scale = shortSide.toDouble() / currentShort
+    fun even(x: Double) = (Math.round(x / 2.0) * 2).toInt()
+    return even(w * scale) to even(h * scale)
+}
+
+object MovieInspector {
+    /** Reads codec, size, frame rate and bitrate. Blocking: call off the main thread. */
+    fun inspect(context: Context, uri: Uri, sizeBytes: Long): CastCompat.Media? = try {
+        val ex = MediaExtractor()
+        try {
+            ex.setDataSource(context, uri, null)
+            var videoMime: String? = null
+            var audioMime: String? = null
+            var w = 0
+            var h = 0
+            var fps: Float? = null
+            var durationUs = 0L
+            for (i in 0 until ex.trackCount) {
+                val f = ex.getTrackFormat(i)
+                val mime = f.getString(MediaFormat.KEY_MIME) ?: continue
+                if (f.containsKey(MediaFormat.KEY_DURATION)) durationUs = maxOf(durationUs, f.getLong(MediaFormat.KEY_DURATION))
+                if (mime.startsWith("video/") && videoMime == null) {
+                    videoMime = mime
+                    w = if (f.containsKey(MediaFormat.KEY_WIDTH)) f.getInteger(MediaFormat.KEY_WIDTH) else 0
+                    h = if (f.containsKey(MediaFormat.KEY_HEIGHT)) f.getInteger(MediaFormat.KEY_HEIGHT) else 0
+                    // Phone videos are often stored landscape with a rotation flag.
+                    val rotation = if (f.containsKey("rotation-degrees")) f.getInteger("rotation-degrees") else 0
+                    if (rotation == 90 || rotation == 270) { val t = w; w = h; h = t }
+                    fps = runCatching { f.getInteger(MediaFormat.KEY_FRAME_RATE).toFloat() }.getOrNull()
+                        ?: runCatching { f.getFloat(MediaFormat.KEY_FRAME_RATE) }.getOrNull()
+                } else if (mime.startsWith("audio/") && audioMime == null) {
+                    audioMime = mime
+                }
+            }
+            val mbps = if (durationUs > 0) sizeBytes * 8.0 / (durationUs / 1_000_000.0) / 1_000_000 else null
+            CastCompat.Media(videoMime, w, h, fps, audioMime, mbps)
+        } finally {
+            ex.release()
+        }
+    } catch (_: Exception) {
+        null
+    }
+}
+
+/**
+ * Converts a movie to H.264 + AAC at the chosen quality so any Chromecast can show it
+ * smoothly. Runs Media3 Transformer (hardware encoder) on the main looper; results are
+ * cached so the same movie/quality plays instantly next time.
+ */
+class MovieConverter(private val context: Context) {
+    interface Listener {
+        fun onProgress(percent: Int)
+        fun onDone(file: File)
+        fun onFailed(reason: String)
+    }
+
+    private val main = Handler(Looper.getMainLooper())
+    private var transformer: Transformer? = null
+    private val dir = File(context.filesDir, "converted").apply { mkdirs() }
+
+    fun cachedFile(uri: Uri, quality: Quality): File? = target(uri, quality).takeIf { it.exists() && it.length() > 0 }
+
+    /**
+     * @param source what MovieInspector found (used to keep the exact shape when scaling down)
+     */
+    fun start(uri: Uri, quality: Quality, source: CastCompat.Media?, listener: Listener) {
+        cancel()
+        val out = target(uri, quality)
+        val partial = File(out.path + ".part")
+        partial.delete()
+        pruneCache(keep = out)
+        val encoders = DefaultEncoderFactory.Builder(context)
+            .setRequestedVideoEncoderSettings(VideoEncoderSettings.Builder().setBitrate(quality.videoBitrate ?: 8_000_000).build())
+            .build()
+        val t = Transformer.Builder(context)
+            .setVideoMimeType(MimeTypes.VIDEO_H264)
+            .setAudioMimeType(MimeTypes.AUDIO_AAC)
+            .setEncoderFactory(encoders)
+            .addListener(object : Transformer.Listener {
+                override fun onCompleted(composition: Composition, exportResult: ExportResult) {
+                    main.removeCallbacksAndMessages(null)
+                    if (partial.renameTo(out)) listener.onDone(out) else listener.onFailed("couldn't save the converted movie")
+                    transformer = null
+                }
+
+                override fun onError(composition: Composition, exportResult: ExportResult, exportException: ExportException) {
+                    main.removeCallbacksAndMessages(null)
+                    partial.delete()
+                    listener.onFailed(exportException.errorCodeName)
+                    transformer = null
+                }
+            })
+            .build()
+        val effects = outputSize(source, quality)?.let { (w, h) ->
+            Effects(emptyList(), listOf(Presentation.createForWidthAndHeight(w, h, Presentation.LAYOUT_SCALE_TO_FIT)))
+        } ?: Effects.EMPTY
+        val item = EditedMediaItem.Builder(MediaItem.fromUri(uri)).setEffects(effects).build()
+        transformer = t
+        t.start(item, partial.path)
+        val holder = ProgressHolder()
+        main.post(object : Runnable {
+            override fun run() {
+                val tr = transformer ?: return
+                if (tr.getProgress(holder) == Transformer.PROGRESS_STATE_AVAILABLE) listener.onProgress(holder.progress)
+                main.postDelayed(this, 500)
+            }
+        })
+    }
+
+    fun cancel() {
+        main.removeCallbacksAndMessages(null)
+        transformer?.cancel()
+        transformer = null
+    }
+
+    /** Width × height that keeps the source's shape with the chosen short side; null = keep size. */
+    internal fun outputSize(source: CastCompat.Media?, quality: Quality): Pair<Int, Int>? =
+        sizeFor(source?.width ?: 0, source?.height ?: 0, quality.shortSide)
+
+    private fun target(uri: Uri, quality: Quality): File {
+        val hash = MessageDigest.getInstance("SHA-256").digest(uri.toString().toByteArray())
+            .take(8).joinToString("") { "%02x".format(it) }
+        return File(dir, "${hash}_${quality.name}.mp4")
+    }
+
+    /** Converted movies are big: keep only the newest two besides the one being made. */
+    private fun pruneCache(keep: File) {
+        dir.listFiles()?.filter { it != keep && !it.name.endsWith(".part") }
+            ?.sortedByDescending { it.lastModified() }?.drop(2)?.forEach { it.delete() }
+        dir.listFiles { f -> f.name.endsWith(".part") }?.forEach { it.delete() }
+    }
+}

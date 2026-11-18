@@ -14,8 +14,8 @@ android {
         // 29 = Android 10, the first release with AudioPlaybackCapture.
         minSdk = 29
         targetSdk = 35
-        versionCode = 9
-        versionName = "0.4.4"
+        versionCode = 11
+        versionName = "0.4.6"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Where "Send to GitHub" opens a pre-filled crash issue (the owner submits it).
         buildConfigField("String", "CRASH_REPO", "\"quantari-solutions/TheatreSync-\"")
@@ -67,6 +67,8 @@ dependencies {
     implementation(libs.compose.ui.tooling.preview)
     debugImplementation(libs.compose.ui.tooling)
     implementation(libs.media3.exoplayer)
+    implementation(libs.media3.transformer)
+    implementation(libs.media3.effect)
     implementation(libs.cast.framework)
     implementation(libs.androidx.mediarouter)
     // mediarouter pulls in an old Fragment that breaks registerForActivityResult.
