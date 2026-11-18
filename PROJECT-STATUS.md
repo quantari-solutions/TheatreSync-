@@ -2,6 +2,20 @@
 
 _Last updated: 2026-11-18. Milestone 1.5 (0.4.2): the real crash fixed, crash safety net, crash timeline, cast indicator_
 
+## 0.4.5: owner's media-room test (headphones work; TV keeps buffering)
+
+Evidence from screenshots: "Sound on MOMENTUM 4", sync −359 ms, status flipping to "Waiting for picture" every 3–4 s;
+the phone's network meter showed ~0.5–1 MB/s while casting a phone-recorded video (~15–20 Mbit/s needed).
+
+| Issue | Fix |
+|---|---|
+| Chromecast stalls every few seconds | HTTP keep-alive (one connection for all range requests instead of a new TCP connection per chunk), 1 MB socket send buffer, 256 KB copy buffers (tested: 3 ranges on one connection) |
+| Sound ~350 ms behind after each restart | Learned start lead: headphone sound starts slightly ahead and adapts after each restart |
+| Confusing "Waiting for picture" | "TV is loading…" while the Chromecast buffers |
+| No way to tell if the Wi-Fi is the bottleneck | Speed check: measures Mbit/s to the TV vs the video's bitrate; after 3 stalls in 60 s it says so plainly and records it |
+| TV list said "Connect" while YouTube was playing | Each TV shows what it's playing ("Playing YouTube" · "Use for movie") |
+| Can't tell if headphones get TheatreSync's sound | **Headphone sound test**: plays beeps on the movie audio path, shows the device Android routed it to, asks "Did you hear it?", records failures |
+
 ## 0.4.4: owner feedback
 
 | Request | Done |

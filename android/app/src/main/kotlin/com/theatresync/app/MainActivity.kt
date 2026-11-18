@@ -110,6 +110,7 @@ class MainActivity : ComponentActivity() {
     private val gitHubCode = mutableStateOf<GitHubLink.DeviceCode?>(null)
     private val gitHubState = mutableStateOf(GitHubState.IDLE)
     private val gitHubConnected = mutableStateOf(false)
+    private val soundTest = mutableStateOf<SoundTestUi>(SoundTestUi.Idle)
     private lateinit var audioManager: AudioManager
 
     private val pickMovie = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -204,7 +205,10 @@ class MainActivity : ComponentActivity() {
                                 onOpenBluetooth = ::pickAudioDevice,
                                 onBack = { page = Page.HOME },
                                 preferredOutputId = ui.preferredOutputId,
-                                onSelectOutput = session::setPreferredOutput,
+                                onSelectOutput = { id -> session.setPreferredOutput(id); soundTest.value = SoundTestUi.Idle },
+                                soundTest = soundTest.value,
+                                onRunSoundTest = ::runSoundTest,
+                                onAnswerSoundTest = ::answerSoundTest,
                             )
                             "reconnecting" -> ReconnectingScreen(onBack = { page = Page.HOME })
                             "github" -> ConnectGitHubScreen(
@@ -377,6 +381,27 @@ class MainActivity : ComponentActivity() {
         gitHubConnected.value = GitHubLink.isConnected(this)
     }
 
+    private fun runSoundTest() {
+        if (soundTest.value == SoundTestUi.Playing) return
+        soundTest.value = SoundTestUi.Playing
+        val preferred = session.ui.value.preferredOutputId
+        Thread({
+            val r = SoundTest.run(this, preferred)
+            runOnUiThread { soundTest.value = SoundTestUi.Done(r) }
+        }, "sound-test").apply { isDaemon = true }.start()
+    }
+
+    /** The owner's answer is recorded so a failed test reaches Claude with the routing details. */
+    private fun answerSoundTest(heard: Boolean) {
+        val r = (soundTest.value as? SoundTestUi.Done)?.result ?: return
+        val summary = "Sound test: heard=$heard, routed to ${r.deviceName ?: "unknown"} (type ${r.deviceType}, ${r.route})" +
+            (r.error?.let { ", error $it" } ?: "") + ", outputs: " +
+            DiagnosticsReport.friendlyOutputs(this).joinToString { "${it.name}/${it.kind}" }
+        session.recordSoundTest(summary)
+        if (!heard || !r.isHeadphones) CrashReporter.handled(this, "headphone sound test", IllegalStateException(summary))
+        soundTest.value = SoundTestUi.Answered(r, heard)
+    }
+
     /** One-time GitHub approval (device flow): show a code, poll until the owner approves. */
     private fun startGitHubConnect() {
         if (!GitHubLink.isConfigured) return
@@ -547,7 +572,8 @@ internal fun SetupScreen(
                 Hint(stringResource(R.string.looking_for_tv))
             }
             else -> ui.tvs.forEach { tv ->
-                TvRow(tv.name) { onConnectTv(tv.id) }
+                val busy = ui.nowCasting.firstOrNull { it.tvId == tv.id }?.activity
+                TvRow(tv.name, busy?.label()) { onConnectTv(tv.id) }
             }
         }
     }
@@ -849,7 +875,7 @@ private fun ChosenRow(icon: String, text: String, action: @Composable () -> Unit
 }
 
 @Composable
-private fun TvRow(name: String, onClick: () -> Unit) {
+private fun TvRow(name: String, busyWith: String? = null, onClick: () -> Unit) {
     val shape = RoundedCornerShape(14.dp)
     Row(
         Modifier.fillMaxWidth().clip(shape).background(Q.Background.copy(alpha = 0.6f))
@@ -858,8 +884,12 @@ private fun TvRow(name: String, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text("📺", Modifier.clearAndSetSemantics { }, fontSize = 22.sp)
-        Text(name, Modifier.weight(1f).padding(start = 12.dp), style = MaterialTheme.typography.titleMedium, color = Q.Text)
-        Text(stringResource(R.string.connect), color = Q.Primary, style = MaterialTheme.typography.labelLarge)
+        Column(Modifier.weight(1f).padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(name, style = MaterialTheme.typography.titleMedium, color = Q.Text)
+            // The TV is already showing something (e.g. YouTube from TheatreSync or another phone).
+            busyWith?.let { Text(stringResource(R.string.tv_busy, it), style = MaterialTheme.typography.bodySmall, color = Q.Success) }
+        }
+        Text(stringResource(if (busyWith != null) R.string.use_for_movie else R.string.connect), color = Q.Primary, style = MaterialTheme.typography.labelLarge)
     }
 }
 
@@ -980,6 +1010,7 @@ private fun SyncPill(ui: MovieSession.Ui) {
     when {
         !ui.headphonesHere -> StatusPill(stringResource(R.string.sync_off), Q.TextFaint)
         ui.phase == Phase.PAUSED -> StatusPill(stringResource(R.string.status_paused), Q.TextMuted)
+        ui.tvBuffering -> StatusPill(stringResource(R.string.tv_loading), Q.Primary, pulsing = true)
         ui.phase == Phase.ENDED -> StatusPill(stringResource(R.string.status_ended), Q.TextMuted)
         ui.phase != Phase.PLAYING || drift == null -> StatusPill(stringResource(R.string.sync_waiting), Q.TextFaint)
         abs(drift) <= 40 -> StatusPill(stringResource(R.string.sync_ok, drift), Q.Success)
@@ -1142,6 +1173,9 @@ internal fun HeadphonesScreen(
     showDetailsInitially: Boolean = false,
     preferredOutputId: Int? = null,
     onSelectOutput: (Int?) -> Unit = {},
+    soundTest: SoundTestUi = SoundTestUi.Idle,
+    onRunSoundTest: () -> Unit = {},
+    onAnswerSoundTest: (Boolean) -> Unit = {},
 ) {
     var showDetails by remember { mutableStateOf(showDetailsInitially) }
     val headphones = outputs.filter { it.kind != DiagnosticsReport.Kind.SPEAKER }
@@ -1208,6 +1242,7 @@ internal fun HeadphonesScreen(
             }
             GhostButton(stringResource(R.string.pick_headphones), onOpenBluetooth, Modifier.fillMaxWidth().testTag("pick_device"))
         }
+        SoundTestCard(soundTest, onRunSoundTest, onAnswerSoundTest, onOpenBluetooth)
         if (!namesAllowed) {
             QCard {
                 Text(stringResource(R.string.see_names_title), style = MaterialTheme.typography.titleMedium, color = Q.Text)
@@ -1287,5 +1322,58 @@ internal fun ReconnectingScreen(onBack: () -> Unit) = Screen {
     QCard(highlighted = true) {
         StatusPill(stringResource(R.string.reconnecting), Q.Primary, pulsing = true)
         Hint(stringResource(R.string.reconnecting_hint))
+    }
+}
+
+
+sealed interface SoundTestUi {
+    data object Idle : SoundTestUi
+    data object Playing : SoundTestUi
+    data class Done(val result: SoundTest.Result) : SoundTestUi
+    data class Answered(val result: SoundTest.Result, val heard: Boolean) : SoundTestUi
+}
+
+/** Pre-screening: does TheatreSync's movie sound reach the headphones? */
+@Composable
+private fun SoundTestCard(state: SoundTestUi, onRun: () -> Unit, onAnswer: (Boolean) -> Unit, onPickDevice: () -> Unit) {
+    QCard(Modifier.testTag("sound_test"), highlighted = state !is SoundTestUi.Idle) {
+        Text(stringResource(R.string.sound_test_title), style = MaterialTheme.typography.titleLarge, color = Q.Text)
+        Hint(stringResource(R.string.sound_test_hint))
+        when (state) {
+            SoundTestUi.Idle -> GoldButton(stringResource(R.string.sound_test_run), onRun, Modifier.fillMaxWidth().testTag("sound_test_run"), height = 52.dp, leading = "♪")
+            SoundTestUi.Playing -> StatusPill(stringResource(R.string.sound_test_playing), Q.Primary, pulsing = true)
+            is SoundTestUi.Done -> {
+                SoundTestRoute(state.result)
+                Text(stringResource(R.string.sound_test_question), style = MaterialTheme.typography.titleMedium, color = Q.Text)
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    GoldButton(stringResource(R.string.sound_test_yes), { onAnswer(true) }, Modifier.weight(1f).testTag("sound_test_yes"), height = 48.dp)
+                    GhostButton(stringResource(R.string.sound_test_no), { onAnswer(false) }, Modifier.weight(1f).testTag("sound_test_no"))
+                }
+                GhostButton(stringResource(R.string.sound_test_again), onRun, Modifier.fillMaxWidth())
+            }
+            is SoundTestUi.Answered -> {
+                SoundTestRoute(state.result)
+                if (state.heard && state.result.isHeadphones) {
+                    StatusPill(stringResource(R.string.sound_test_pass), Q.Success)
+                } else {
+                    Body(stringResource(if (state.result.isHeadphones) R.string.sound_test_fail_heard_nothing else R.string.sound_test_fail_wrong_device))
+                    GoldButton(stringResource(R.string.pick_headphones), onPickDevice, Modifier.fillMaxWidth(), height = 48.dp)
+                }
+                GhostButton(stringResource(R.string.sound_test_again), onRun, Modifier.fillMaxWidth())
+            }
+        }
+    }
+}
+
+@Composable
+private fun SoundTestRoute(r: SoundTest.Result) {
+    val where = r.deviceName ?: stringResource(R.string.unknown_device)
+    if (r.error != null) {
+        Body(stringResource(R.string.sound_test_error, r.error))
+    } else {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(stringResource(R.string.sound_test_went_to), color = Q.TextMuted, style = MaterialTheme.typography.bodyLarge)
+            StatusPill(where, if (r.isHeadphones) Q.Success else Q.Error)
+        }
     }
 }

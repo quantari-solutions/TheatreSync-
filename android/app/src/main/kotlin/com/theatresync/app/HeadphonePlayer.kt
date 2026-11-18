@@ -27,6 +27,11 @@ class HeadphonePlayer(context: Context, uri: Uri, private val events: Events) {
 
     private val corrector = DriftCorrector()
 
+    /** Learned head start used when (re)starting, to cover audio output start-up time. */
+    @Volatile var startLeadMs: Long = 250
+        private set
+    private var justStarted = false
+
     /** Last player error, for diagnostics. */
     @Volatile var lastError: String? = null
         private set
@@ -89,13 +94,21 @@ class HeadphonePlayer(context: Context, uri: Uri, private val events: Events) {
         if (!exo.playWhenReady) {
             corrector.reset()
             exo.setPlaybackSpeed(1f)
-            exo.seekTo(targetMs)
+            // Start a little ahead: audio output (especially Bluetooth) takes a moment to get
+            // going, which left the sound ~350 ms behind after every pause. The lead is learned.
+            exo.seekTo(targetMs + startLeadMs)
             exo.play()
+            justStarted = true
             return
         }
         if (exo.playbackState != Player.STATE_READY) return // seeking or buffering
         val local = exo.currentPosition
         lastDriftMs = local - targetMs
+        if (justStarted && exo.isPlaying) {
+            // First measurement after (re)starting: adjust the lead for next time.
+            justStarted = false
+            startLeadMs = (startLeadMs - (local - targetMs) / 2).coerceIn(0L, 1_000L)
+        }
         when (val action = corrector.decide(local, targetMs)) {
             is DriftCorrector.Action.SetSpeed -> exo.setPlaybackSpeed(action.speed.toFloat())
             is DriftCorrector.Action.Seek -> {

@@ -69,7 +69,11 @@ object DiagnosticsReport {
                 appendLine("  Phone IP given to TV: ${d.phoneIp}")
                 appendLine("  TV IP: ${d.tvIp ?: "unknown"}")
                 appendLine("  TV requests for the movie: ${session.tvMovieRequests}")
+                session.streamMbps?.let { appendLine("  Speed to TV: %.1f Mbit/s".format(it)) }
+                session.videoMbps?.let { appendLine("  Video needs: %.1f Mbit/s".format(it)) }
+                session.lastSpeedProblem?.let { appendLine("  Problem: $it") }
             }
+            session?.lastSoundTest?.let { appendLine(); appendLine("Last sound test"); appendLine("  $it") }
             session?.lastHeadphoneProblem?.let { appendLine(); appendLine("Last headphone problem"); appendLine("  $it") }
             session?.lastYouTubeError?.let { appendLine(); appendLine("Last YouTube problem"); appendLine("  $it") }
             appendLine()

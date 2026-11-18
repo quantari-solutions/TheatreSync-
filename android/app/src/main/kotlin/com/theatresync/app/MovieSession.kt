@@ -78,6 +78,8 @@ class MovieSession(private val app: Application) {
         val youTubeTvId: String? = null,
         /** Output the owner picked for TheatreSync's sound (AudioDeviceInfo id), or null. */
         val preferredOutputId: Int? = null,
+        /** The Chromecast is loading (buffering) the movie right now. */
+        val tvBuffering: Boolean = false,
     ) {
         val canStart: Boolean get() = movieTitle != null && connectedTv != null
     }
@@ -128,7 +130,29 @@ class MovieSession(private val app: Application) {
         private set
     private var startedAtMs = 0L
     private var playingSinceMs = 0L
+    // Streaming speed check
+    private var lastBytes = 0L
+    private var lastBytesAtMs = 0L
+    private val speedSamples = ArrayDeque<Double>()
+    private val bufferingStarts = ArrayDeque<Long>()
+    private var wasBuffering = false
+    private var speedWarned = false
+
+    /** Average speed the movie reached the TV recently (Mbit/s), and what the video needs. */
+    @Volatile var streamMbps: Double? = null
+        private set
+    @Volatile var videoMbps: Double? = null
+        private set
     private var headphoneWarned = false
+
+    /** Result of the last headphone sound test, for the ⓘ technical details. */
+    @Volatile var lastSoundTest: String? = null
+        private set
+
+    fun recordSoundTest(summary: String) { lastSoundTest = summary }
+
+    @Volatile var lastSpeedProblem: String? = null
+        private set
 
     /** Why headphone sound didn't start, for the ⓘ technical details. */
     @Volatile var lastHeadphoneProblem: String? = null
@@ -352,6 +376,11 @@ class MovieSession(private val app: Application) {
         lastDiagnostics = Diagnostics(url, ip, tvAddress?.hostAddress)
         startedAtMs = SystemClock.elapsedRealtime()
         tvEverPlayed = false
+        lastBytes = 0L
+        lastBytesAtMs = startedAtMs
+        speedSamples.clear()
+        bufferingStarts.clear()
+        speedWarned = false
         playingSinceMs = 0L
         headphoneWarned = false
         val meta = MediaMetadata(MediaMetadata.MEDIA_TYPE_MOVIE).apply { putString(MediaMetadata.KEY_TITLE, m.title) }
@@ -520,6 +549,31 @@ class MovieSession(private val app: Application) {
         val failed = castState == MediaStatus.PLAYER_STATE_IDLE && client.idleReason == MediaStatus.IDLE_REASON_ERROR
         if (failed && ui.message == null) say(R.string.msg_tv_cant_play)
 
+        // Speed check: how fast is the movie reaching the TV, and does it keep stalling?
+        val buffering = castState == MediaStatus.PLAYER_STATE_BUFFERING
+        if (buffering && !wasBuffering && tvEverPlayed) bufferingStarts.addLast(now)
+        wasBuffering = buffering
+        while (bufferingStarts.isNotEmpty() && now - bufferingStarts.first() > 60_000) bufferingStarts.removeFirst()
+        val srv = server
+        if (srv != null && now - lastBytesAtMs >= 2_000) {
+            val bytes = srv.totalBytesSent
+            speedSamples.addLast((bytes - lastBytes) * 8.0 / ((now - lastBytesAtMs) / 1000.0) / 1_000_000)
+            while (speedSamples.size > 10) speedSamples.removeFirst()
+            streamMbps = speedSamples.average()
+            lastBytes = bytes
+            lastBytesAtMs = now
+            val durationSec = client.streamDuration / 1000.0
+            movie?.let { m -> if (durationSec > 0) videoMbps = m.sizeBytes * 8.0 / durationSec / 1_000_000 }
+        }
+        val need = videoMbps
+        val got = streamMbps
+        if (!speedWarned && bufferingStarts.size >= 3 && need != null && got != null && ui.message == null) {
+            speedWarned = true
+            lastSpeedProblem = "TV stalled ${bufferingStarts.size}x in 60 s; video needs %.1f Mbit/s, TV got %.1f Mbit/s".format(need, got)
+            CrashReporter.handled(app, "streaming too slow", IllegalStateException(lastSpeedProblem))
+            _ui.update { it.copy(message = app.getString(R.string.msg_wifi_too_slow, need, got)) }
+        }
+
         // Watchdog: the TV says nothing when it can't reach the phone; it just waits.
         if (playing && !tvEverPlayed) applyTvMute() // stream mute needs loaded media
         if (playing) tvEverPlayed = true
@@ -554,6 +608,7 @@ class MovieSession(private val app: Application) {
         _ui.update {
             it.copy(
                 phase = phase,
+                tvBuffering = buffering || castState == MediaStatus.PLAYER_STATE_LOADING,
                 positionMs = castPos,
                 durationMs = maxOf(0, client.streamDuration),
                 friends = server?.activeListeners() ?: 0,

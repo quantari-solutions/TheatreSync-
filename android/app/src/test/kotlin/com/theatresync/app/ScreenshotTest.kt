@@ -96,6 +96,21 @@ class ScreenshotTest {
             details, namesAllowed = true, onAllow = {}, onOpenBluetooth = {}, onBack = {}, preferredOutputId = 11,
         )
     }
+    @Test fun headphones5_soundTestHeadphones() = shot {
+        HeadphonesScreen(
+            listOf(DiagnosticsReport.Output("WH-1000XM4", DiagnosticsReport.Kind.BLUETOOTH, 11)),
+            details, namesAllowed = true, onAllow = {}, onOpenBluetooth = {}, onBack = {},
+            soundTest = SoundTestUi.Done(SoundTest.Result("WH-1000XM4", android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, "BLUETOOTH_A2DP")),
+        )
+    }
+    @Test fun headphones6_soundTestWrongDevice() = shot {
+        HeadphonesScreen(
+            listOf(DiagnosticsReport.Output("WH-1000XM4", DiagnosticsReport.Kind.BLUETOOTH, 11)),
+            details, namesAllowed = true, onAllow = {}, onOpenBluetooth = {}, onBack = {},
+            soundTest = SoundTestUi.Answered(SoundTest.Result("Phone speaker", android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER, "SPEAKER"), heard = false),
+        )
+    }
+    @Test fun setup7_tvBusy() = setup(Ui(movieTitle = "Interstellar", tvs = listOf(Tv("1", "Media Room TV"), Tv("2", "Alfred")), nowCasting = listOf(youtube.copy(tvId = "1", tvName = "Media Room TV"))))
     @Test fun github1_connect() = shot { ConnectGitHubScreen(true, false, null, GitHubState.IDLE, {}, {}, {}, {}) }
     @Test fun github2_code() = shot {
         ConnectGitHubScreen(true, false, GitHubLink.DeviceCode("WDJB-MJHT", "https://github.com/login/device", "x", 5), GitHubState.WAITING, {}, {}, {}, {})

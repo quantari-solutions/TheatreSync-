@@ -49,6 +49,12 @@ class MediaServer(
     private val listenerLastSeen = ConcurrentHashMap<String, Long>()
     private val mediaRequestCount = java.util.concurrent.atomic.AtomicInteger(0)
 
+    private val bytesSent = java.util.concurrent.atomic.AtomicLong(0)
+    private val keepAliveForThisRequest = ThreadLocal<Boolean>()
+
+    /** Total movie bytes sent (to the Chromecast and listeners). Sample over time for the speed. */
+    val totalBytesSent: Long get() = bytesSent.get()
+
     /** How many times anyone (normally the Chromecast) asked for the movie. 0 = the TV never reached us. */
     val mediaRequests: Int get() = mediaRequestCount.get()
 
@@ -95,27 +101,58 @@ class MediaServer(
             // Security: the movie is only ever for devices on the same home network.
             if (!isLocalNetwork(s.inetAddress)) return
             try {
-                s.soTimeout = 20_000
+                s.soTimeout = KEEP_ALIVE_IDLE_MS
                 s.tcpNoDelay = true
+                // Speed: a large send buffer keeps Wi-Fi busy while the TV drains data.
+                runCatching { s.sendBufferSize = 1 shl 20 }
                 val input = BufferedInputStream(s.getInputStream())
-                val requestLine = readLine(input) ?: return
-                val receivedAt = clockMs()
-                val headers = HashMap<String, String>()
-                while (true) {
-                    val line = readLine(input) ?: return
-                    if (line.isEmpty()) break
-                    val colon = line.indexOf(':')
-                    if (colon > 0) headers[line.substring(0, colon).trim().lowercase()] = line.substring(colon + 1).trim()
+                val out = BufferedOutputStream(s.getOutputStream(), 256 * 1024)
+                // HTTP keep-alive: the Chromecast fetches the movie as many range requests.
+                // Reusing one connection avoids a fresh TCP handshake and slow start for
+                // every chunk, which is what made playback stall every few seconds.
+                var served = 0
+                while (served < MAX_REQUESTS_PER_CONNECTION) {
+                    if (!serveOne(input, out)) break
+                    served++
                 }
-                val parts = requestLine.split(' ')
-                if (parts.size < 2) return
-                val method = parts[0].uppercase()
-                val target = parts[1]
-                val path = target.substringBefore('?')
-                val query = parseQuery(target.substringAfter('?', ""))
-                val out = BufferedOutputStream(s.getOutputStream(), 64 * 1024)
-                when {
-                    path == "/media" && (method == "GET" || method == "HEAD") -> {
+            } catch (_: SocketException) {
+                // Client went away mid-response — normal for Chromecast, which abandons ranges when seeking.
+            } catch (_: IOException) {
+                // Includes the idle timeout ending a kept-alive connection.
+            } catch (_: Exception) {
+                // Anything else (file provider errors, bad requests): drop this connection only.
+                // An uncaught exception here would kill the whole app and stop the movie.
+            }
+        }
+    }
+
+    /** Reads and answers one request. Returns true if the connection should stay open for another. */
+    private fun serveOne(input: BufferedInputStream, out: BufferedOutputStream): Boolean {
+        val requestLine = readLine(input) ?: return false
+        if (requestLine.isBlank()) return true // stray CRLF between kept-alive requests
+        val receivedAt = clockMs()
+        val headers = HashMap<String, String>()
+        while (true) {
+            val line = readLine(input) ?: return false
+            if (line.isEmpty()) break
+            val colon = line.indexOf(':')
+            if (colon > 0) headers[line.substring(0, colon).trim().lowercase()] = line.substring(colon + 1).trim()
+        }
+        val parts = requestLine.split(' ')
+        if (parts.size < 2) return false
+        val method = parts[0].uppercase()
+        val target = parts[1]
+        val version = parts.getOrNull(2)?.uppercase() ?: "HTTP/1.0"
+        // Our requests never have bodies, but skip one if a client sends it so the next request parses.
+        headers["content-length"]?.toLongOrNull()?.takeIf { it in 1..65_536 }?.let { n -> var left = n; while (left > 0) { val k = input.skip(left); if (k <= 0) break; left -= k } }
+        val connection = headers["connection"]?.lowercase()
+        val keepAlive = if (version == "HTTP/1.1") connection != "close" else connection == "keep-alive"
+        keepAliveForThisRequest.set(keepAlive)
+        val path = target.substringBefore('?')
+        val query = parseQuery(target.substringAfter('?', ""))
+        run {
+            when {
+                path == "/media" && (method == "GET" || method == "HEAD") -> {
                         mediaRequestCount.incrementAndGet()
                         serveMedia(out, headers["range"], head = method == "HEAD")
                     }
@@ -126,18 +163,12 @@ class MediaServer(
                         Payload.PlaybackState(Payload.PlaybackState.State.STOPPED, 0, clockMs(), 1.0)
                             .let { stateProvider() ?: it },
                     )
-                    path == "/hello" -> serveJson(out, helloProvider())
-                    else -> respond(out, 404, "Not Found", "text/plain", "not found")
-                }
-                out.flush()
-            } catch (_: SocketException) {
-                // Client went away mid-response — normal for Chromecast, which abandons ranges when seeking.
-            } catch (_: IOException) {
-            } catch (_: Exception) {
-                // Anything else (file provider errors, bad requests): drop this request only.
-                // An uncaught exception here would kill the whole app and stop the movie.
+                path == "/hello" -> serveJson(out, helloProvider())
+                else -> respond(out, 404, "Not Found", "text/plain", "not found")
             }
         }
+        out.flush()
+        return keepAlive
     }
 
     private fun serveClock(out: OutputStream, query: Map<String, String>, receivedAt: Long) {
@@ -194,7 +225,8 @@ class MediaServer(
         sb.append("HTTP/1.1 $code $reason\r\n")
         sb.append("Content-Type: $type\r\n")
         sb.append("Content-Length: $length\r\n")
-        sb.append("Connection: close\r\n")
+        val keep = keepAliveForThisRequest.get() == true
+        sb.append(if (keep) "Connection: keep-alive\r\nKeep-Alive: timeout=${KEEP_ALIVE_IDLE_MS / 1000}\r\n" else "Connection: close\r\n")
         sb.append("Access-Control-Allow-Origin: *\r\n")
         for ((k, v) in extra) sb.append("$k: $v\r\n")
         sb.append("\r\n")
@@ -202,18 +234,21 @@ class MediaServer(
     }
 
     private fun copy(input: InputStream, out: OutputStream, length: Long) {
-        val buf = ByteArray(64 * 1024)
+        val buf = ByteArray(256 * 1024)
         var remaining = length
         while (remaining > 0) {
             val n = input.read(buf, 0, minOf(buf.size.toLong(), remaining).toInt())
             if (n < 0) break
             out.write(buf, 0, n)
+            bytesSent.addAndGet(n.toLong())
             remaining -= n
         }
     }
 
     companion object {
         private const val MAX_LINE = 8 * 1024
+        private const val KEEP_ALIVE_IDLE_MS = 15_000
+        private const val MAX_REQUESTS_PER_CONNECTION = 10_000
 
         /** Loopback, link-local, or private (RFC 1918 / IPv6 ULA) addresses only. */
         fun isLocalNetwork(a: java.net.InetAddress?): Boolean {

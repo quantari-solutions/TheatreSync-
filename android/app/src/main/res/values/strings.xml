@@ -38,7 +38,7 @@
     <string name="footer">TheatreSync · by Quantari Solutions</string>
     <string name="friends_heading">Friends listening</string>
     <string name="sync_off">Sound off on this phone</string>
-    <string name="sync_waiting">Waiting for picture</string>
+    <string name="sync_waiting">Starting…</string>
     <string name="sync_ok">In sync · %1$+d ms</string>
     <string name="sync_fixing">Syncing · %1$+d ms</string>
     <string name="msg_no_cast">Chromecast needs Google Play services, which this phone doesn\'t have.</string>
@@ -162,4 +162,22 @@
     <string name="this_phone_speaker">This phone</string>
     <string name="reconnecting">Reconnecting to the TV…</string>
     <string name="reconnecting_hint">Getting the latest from your Chromecast.</string>
+    <string name="sound_test_title">Headphone sound test</string>
+    <string name="sound_test_hint">Plays two short beeps the same way TheatreSync plays movie sound, and shows where Android sent them.</string>
+    <string name="sound_test_run">Test headphone sound</string>
+    <string name="sound_test_playing">Playing… listen in your headphones</string>
+    <string name="sound_test_went_to">Sound went to</string>
+    <string name="sound_test_question">Did you hear the beeps in your headphones?</string>
+    <string name="sound_test_yes">Yes</string>
+    <string name="sound_test_no">No</string>
+    <string name="sound_test_again">Test again</string>
+    <string name="sound_test_pass">Headphones work with TheatreSync</string>
+    <string name="sound_test_fail_wrong_device">Android sent the sound somewhere other than your headphones. Make your headphones the active device below, then test again.</string>
+    <string name="sound_test_fail_heard_nothing">Android sent it to your headphones, but you didn\'t hear it. Check the headphones\' volume, then test again. The details have been recorded.</string>
+    <string name="sound_test_error">The test couldn\'t play: %1$s</string>
+    <string name="unknown_device">unknown device</string>
+    <string name="tv_busy">Playing %1$s</string>
+    <string name="use_for_movie">Use for movie</string>
+    <string name="tv_loading">TV is loading…</string>
+    <string name="msg_wifi_too_slow">The TV keeps stopping to load. This video needs about %1$.0f Mbit/s but the Wi-Fi is only getting %2$.0f Mbit/s to the TV. Move the phone closer to the router, or use a smaller video (720p or 1080p at 30 fps).</string>
 </resources>
