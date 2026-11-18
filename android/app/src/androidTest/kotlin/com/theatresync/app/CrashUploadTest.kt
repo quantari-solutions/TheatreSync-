@@ -11,8 +11,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import java.io.BufferedReader
-import java.io.InputStreamReader
 import java.net.ServerSocket
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
@@ -53,13 +51,25 @@ class CrashUploadTest {
         context.getSharedPreferences("github_setup", Context.MODE_PRIVATE).edit().clear().commit()
     }
 
+    /** Reads one header line as raw bytes (the body may be UTF-8, so never mix char and byte counts). */
+    private fun java.io.InputStream.readLineBytes(): String? {
+        val out = java.io.ByteArrayOutputStream()
+        while (true) {
+            val b = read()
+            if (b == -1) return if (out.size() == 0) null else out.toString("UTF-8")
+            if (b == '\n'.code) return out.toString("UTF-8").trimEnd('\r')
+            out.write(b)
+        }
+    }
+
     private fun serve() {
         server.accept().use { s ->
-            val input = BufferedReader(InputStreamReader(s.getInputStream()))
-            val requestLine = input.readLine() ?: return
-            val headers = generateSequence { input.readLine()?.takeIf { it.isNotEmpty() } }.toList()
+            val input = s.getInputStream()
+            val requestLine = input.readLineBytes() ?: return
+            val headers = generateSequence { input.readLineBytes()?.takeIf { it.isNotEmpty() } }.toList()
             val length = headers.firstOrNull { it.startsWith("Content-Length:", true) }?.substringAfter(':')?.trim()?.toInt() ?: 0
-            val body = CharArray(length).also { var n = 0; while (n < length) n += input.read(it, n, length - n) }.concatToString()
+            val raw = ByteArray(length).also { var n = 0; while (n < length) { val r = input.read(it, n, length - n); if (r < 0) break; n += r } }
+            val body = raw.toString(Charsets.UTF_8)
             requests += (requestLine + "\n" + headers.joinToString("\n")) to body
             val path = requestLine.split(" ")[1]
             val (status, json) = when {

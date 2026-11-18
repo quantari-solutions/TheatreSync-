@@ -116,7 +116,7 @@ object GitHubLink {
         var last: String? = null
         for (e in CrashReporter.entries(app).filter { it.status == CrashReporter.Status.SAVED }.reversed()) {
             val dedupeKey = "${e.version}|${e.kind}|${e.title}"
-            val isTest = e.title.startsWith(TEST_TITLE)
+            val isTest = TEST_TITLE in e.title
             if (!isTest && e.kind == CrashReporter.Kind.HANDLED && (handledToday >= 5 || dedupeKey in uploadedTitles)) {
                 // Same handled problem already reported for this version, or daily cap reached: don't spam.
                 continue
