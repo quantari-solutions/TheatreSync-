@@ -201,4 +201,13 @@
     <string name="tv_volume_hint">Controls the Chromecast\'s volume (room speakers). YouTube sound can\'t go to your headphones.</string>
     <string name="mute">Mute</string>
     <string name="unmute">Unmute</string>
+    <string name="github_setup_title">Set up once (about 2 minutes)</string>
+    <string name="github_setup_step1">1. Tap below. GitHub opens with everything filled in. Scroll down, tick \"Enable Device Flow\", then tap \"Create GitHub App\". On the next page tap \"Install App\" → Install on your account → only TheatreSync-.</string>
+    <string name="github_create_app">Create GitHub App</string>
+    <string name="github_setup_step2">2. Copy the app\'s Client ID (starts with Iv) from the top of its page and paste it here.</string>
+    <string name="github_client_id">Client ID</string>
+    <string name="github_client_id_invalid">That doesn\'t look like a Client ID. It starts with \"Iv\".</string>
+    <string name="github_save_id">Save Client ID</string>
+    <string name="github_send_test">Send test report</string>
+    <string name="github_testing">Uploading test report…</string>
 </resources>

@@ -127,7 +127,8 @@ class ScreenshotTest {
     @Test fun github2_code() = shot {
         ConnectGitHubScreen(true, false, GitHubLink.DeviceCode("WDJB-MJHT", "https://github.com/login/device", "x", 5), GitHubState.WAITING, {}, {}, {}, {})
     }
-    @Test fun github3_connected() = shot { ConnectGitHubScreen(true, true, null, GitHubState.DONE, {}, {}, {}, {}) }
+    @Test fun github3_connected() = shot { ConnectGitHubScreen(true, true, null, GitHubState.DONE, {}, {}, {}, {}, lastUpload = "Uploaded #21 · 18 Nov 2026, 22:14") }
+    @Test fun github4_setup() = shot { ConnectGitHubScreen(false, false, null, GitHubState.IDLE, {}, {}, {}, {}) }
     @Test fun crashTimeline() = shot { CrashReportsScreen(listOf(handled.copy(reference = "#3"), crash), autoReports = true, onSendGitHub = {}, onShare = {}, onBack = {}) }
     @Test fun crashTimelineEmpty() = shot { CrashReportsScreen(emptyList(), {}, {}, {}) }
 }

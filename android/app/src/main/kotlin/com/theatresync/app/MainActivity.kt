@@ -115,6 +115,9 @@ class MainActivity : ComponentActivity() {
     private val gitHubCode = mutableStateOf<GitHubLink.DeviceCode?>(null)
     private val gitHubState = mutableStateOf(GitHubState.IDLE)
     private val gitHubConnected = mutableStateOf(false)
+    private val gitHubConfigured = mutableStateOf(false)
+    private val gitHubLastUpload = mutableStateOf<String?>(null)
+    private val gitHubTesting = mutableStateOf(false)
     private val soundTest = mutableStateOf<SoundTestUi>(SoundTestUi.Idle)
     private lateinit var audioManager: AudioManager
 
@@ -217,14 +220,21 @@ class MainActivity : ComponentActivity() {
                             )
                             "reconnecting" -> ReconnectingScreen(onBack = { page = Page.HOME })
                             "github" -> ConnectGitHubScreen(
-                                configured = GitHubLink.isConfigured,
+                                configured = gitHubConfigured.value,
                                 connected = gitHubConnected.value,
                                 code = gitHubCode.value,
                                 state = gitHubState.value,
                                 onStart = ::startGitHubConnect,
                                 onOpenGitHub = { c -> runCatching { startActivity(Intent(Intent.ACTION_VIEW, c.verificationUri.toUri())) } },
-                                onDisconnect = { GitHubLink.disconnect(this@MainActivity); gitHubConnected.value = false },
+                                onDisconnect = { GitHubLink.disconnect(this@MainActivity); gitHubConnected.value = false; gitHubLastUpload.value = null },
                                 onBack = { page = Page.SETTINGS },
+                                onCreateApp = { runCatching { startActivity(Intent(Intent.ACTION_VIEW, GitHubLink.createAppUrl.toUri())) } },
+                                onSaveClientId = { id ->
+                                    GitHubLink.saveClientId(this@MainActivity, id).also { if (it) gitHubConfigured.value = true }
+                                },
+                                lastUpload = gitHubLastUpload.value,
+                                testing = gitHubTesting.value,
+                                onSendTest = ::sendGitHubTest,
                             )
                             "settings" -> SettingsScreen(
                                 crashCount = crashEntries.value.size,
@@ -388,6 +398,8 @@ class MainActivity : ComponentActivity() {
         crashEntries.value = CrashReporter.entries(this)
         pendingCrash.value = CrashReporter.pendingCrash(this)
         gitHubConnected.value = GitHubLink.isConnected(this)
+        gitHubConfigured.value = GitHubLink.isConfigured(this)
+        gitHubLastUpload.value = GitHubLink.lastUpload(this)
     }
 
     private fun runSoundTest() {
@@ -413,11 +425,11 @@ class MainActivity : ComponentActivity() {
 
     /** One-time GitHub approval (device flow): show a code, poll until the owner approves. */
     private fun startGitHubConnect() {
-        if (!GitHubLink.isConfigured) return
+        if (!GitHubLink.isConfigured(this)) return
         gitHubState.value = GitHubState.WAITING
         Thread({
             try {
-                val code = GitHubLink.requestCode()
+                val code = GitHubLink.requestCode(this)
                 runOnUiThread { gitHubCode.value = code }
                 val deadline = System.currentTimeMillis() + 15 * 60_000
                 while (System.currentTimeMillis() < deadline) {
@@ -428,7 +440,7 @@ class MainActivity : ComponentActivity() {
                             gitHubState.value = GitHubState.DONE
                             gitHubCode.value = null
                         }
-                        GitHubLink.uploadPending(this)
+                        sendGitHubTest()
                         return@Thread
                     }
                 }
@@ -438,6 +450,19 @@ class MainActivity : ComponentActivity() {
                 runOnUiThread { gitHubState.value = GitHubState.FAILED; gitHubCode.value = null }
             }
         }, "github-connect").apply { isDaemon = true }.start()
+    }
+
+    /** Proves the whole path: adds a test report, uploads it, shows "Uploaded #N" or the reason it failed. */
+    private fun sendGitHubTest() = runOnUiThread {
+        if (gitHubTesting.value) return@runOnUiThread
+        gitHubTesting.value = true
+        GitHubLink.sendTest(this) { result ->
+            runOnUiThread {
+                gitHubTesting.value = false
+                gitHubLastUpload.value = result
+                refreshCrashes()
+            }
+        }
     }
 
     private fun shareCrash(e: CrashReporter.Entry) {
@@ -1345,17 +1370,48 @@ internal fun ConnectGitHubScreen(
     onOpenGitHub: (GitHubLink.DeviceCode) -> Unit,
     onDisconnect: () -> Unit,
     onBack: () -> Unit,
+    onCreateApp: () -> Unit = {},
+    onSaveClientId: (String) -> Boolean = { false },
+    lastUpload: String? = null,
+    testing: Boolean = false,
+    onSendTest: () -> Unit = {},
 ) = Screen {
     TopBar(stringResource(R.string.auto_reports), onBack)
     when {
         connected -> QCard(highlighted = true) {
             StatusPill(stringResource(R.string.auto_reports_on), Q.Success)
             Body(stringResource(R.string.github_connected_text))
+            when {
+                testing -> StatusPill(stringResource(R.string.github_testing), Q.Primary, pulsing = true)
+                lastUpload != null -> StatusPill(lastUpload, if (lastUpload.startsWith("Uploaded")) Q.Success else Q.Primary)
+            }
+            GoldButton(stringResource(R.string.github_send_test), onSendTest, Modifier.fillMaxWidth().testTag("github_test"),
+                enabled = !testing, height = 52.dp)
             GhostButton(stringResource(R.string.github_disconnect), onDisconnect)
         }
-        !configured -> QCard {
-            Text(stringResource(R.string.github_not_ready_title), style = MaterialTheme.typography.titleMedium, color = Q.Text)
-            Hint(stringResource(R.string.github_not_ready_text))
+        !configured -> QCard(highlighted = true) {
+            Text(stringResource(R.string.github_setup_title), style = MaterialTheme.typography.titleMedium, color = Q.Text)
+            Body(stringResource(R.string.github_setup_step1))
+            GoldButton(stringResource(R.string.github_create_app), onCreateApp, Modifier.fillMaxWidth().testTag("github_create_app"), height = 52.dp)
+            Body(stringResource(R.string.github_setup_step2))
+            var id by rememberSaveable { mutableStateOf("") }
+            var invalid by remember { mutableStateOf(false) }
+            OutlinedTextField(
+                value = id,
+                onValueChange = { id = it.trim(); invalid = false },
+                modifier = Modifier.fillMaxWidth().testTag("github_client_id"),
+                singleLine = true,
+                isError = invalid,
+                placeholder = { Text("Iv23li…", color = Q.TextFaint) },
+                label = { Text(stringResource(R.string.github_client_id)) },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Q.Primary, unfocusedBorderColor = Q.BorderAccent,
+                    focusedLabelColor = Q.Primary, unfocusedLabelColor = Q.TextFaint,
+                    focusedTextColor = Q.Text, unfocusedTextColor = Q.Text, cursorColor = Q.Primary,
+                ),
+            )
+            if (invalid) Hint(stringResource(R.string.github_client_id_invalid))
+            GhostButton(stringResource(R.string.github_save_id), { invalid = !onSaveClientId(id) }, Modifier.fillMaxWidth().testTag("github_save_id"))
         }
         code != null -> QCard(highlighted = true) {
             Text(stringResource(R.string.github_enter_code), style = MaterialTheme.typography.titleMedium, color = Q.Text)

@@ -15,6 +15,7 @@ the mute toggle did nothing; no controls in YouTube mode; wanted a quality choic
 | Mute room speakers did nothing | Now also sets the movie stream volume to 0 and the TV's volume mute, then checks 2 s later and says plainly whether the TV accepted it | needs HW-10 |
 | No controls in YouTube mode | Now casting page: **TV volume** slider + Mute/Unmute (sent straight to the Chromecast; works for YouTube, mirroring and movies) | Protocol unit tests; needs HW-10 |
 | TV emoji icon | Material cast / speaker / film icons in gold tiles | Screenshot tests |
+| Automatic crash reports | Set up entirely on the phone: one-tap prefilled GitHub App, paste Client ID in the app, approve, automatic **test report** proves it ("Uploaded #N"); refusals explained. Emulator test against a fake GitHub | Emulator test; real upload needs the owner's one-time setup |
 | Sound test placement | Already in the Headphones page ("Test headphone sound") | Screenshot tests |
 
 ## 0.4.5: owner's media-room test (headphones work; TV keeps buffering)

@@ -4,20 +4,18 @@ TheatreSync records every crash and every problem it recovers from. Once connect
 GitHub, it uploads each one as an issue in this repository (labels `crash` or
 `handled-problem`) with no action from the owner. Claude reads them from there.
 
-## One-time setup (about 3 minutes, on a computer or phone browser)
+## One-time setup (about 2 minutes, all on the phone)
 
-1. Open <https://github.com/settings/apps/new>.
-2. **GitHub App name:** `TheatreSync crash reports` (any unique name).
-3. **Homepage URL:** `https://github.com/quantari-solutions/TheatreSync-`
-4. Untick **Webhook → Active**.
-5. Tick **Enable Device Flow**.
-6. **Repository permissions → Issues:** *Read and write*. Leave everything else at *No access*.
-7. **Where can this GitHub App be installed?** *Only on this account*. Tap **Create GitHub App**.
-8. On the next page, copy the **Client ID** (it looks like `Iv23li…`; it's public, not a secret) and send it to Claude.
-9. On the left, tap **Install App**, then **Install** on `quantari-solutions`, and choose *Only select repositories → TheatreSync-*.
+1. In TheatreSync: **☰ → Settings → Automatic crash reports**.
+2. Tap **Create GitHub App**. GitHub opens with the name, homepage, "no webhook", "only this account"
+   and **Issues: Read and write** already filled in. Scroll down, tick **Enable Device Flow**, tap **Create GitHub App**.
+   (If GitHub says the name is taken, add anything to it, e.g. "TheatreSync crash reports 2".)
+3. On the app's page, tap **Install App** → **Install** → *Only select repositories* → **TheatreSync-**.
+4. Copy the **Client ID** (starts with `Iv`; it's public, not a secret), go back to TheatreSync, paste it, tap **Save Client ID**.
+5. Tap **Connect GitHub**, then **Open GitHub**, enter the code shown and approve.
+6. The app sends a **test report** straight away and shows "Uploaded #N". That issue appears in the repository: setup is proven.
 
-Claude then puts the Client ID into the next build (`githubClientId` in `android/gradle.properties`).
-In the app: **☰ → Settings → Automatic crash reports → Connect GitHub**, enter the code shown, and approve. Done.
+Also send the Client ID to Claude so it's built into future versions (`githubClientId` in `android/gradle.properties`).
 
 ## How it's built
 
@@ -27,3 +25,7 @@ In the app: **☰ → Settings → Automatic crash reports → Connect GitHub**,
 * A crash is uploaded the next time the app opens (a crashing app can't send anything).
   Handled problems upload straight away: at most 5 a day, and each distinct problem only once per version.
 * Before connecting, reports stay in **Settings → Crash reports** on the phone.
+* If an upload is refused, Settings shows why in plain words (not installed on the repository, login expired, offline)
+  and the report stays on the phone to retry.
+* `CrashUploadTest` (emulator) runs the whole flow against a fake GitHub: Client ID check, device code, approval polling,
+  Keystore token, issue creation with labels, retry without labels, and refusal handling.
