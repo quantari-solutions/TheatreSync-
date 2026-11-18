@@ -7,8 +7,7 @@ struct DiagnosticsView: View {
     @State private var report: String = ""
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
+        ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Take a screenshot of this screen and share it back in Claude Code.")
                         .font(.callout)
@@ -22,9 +21,8 @@ struct DiagnosticsView: View {
                         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
                 }
                 .padding()
-            }
-            .navigationTitle("TheatreSync")
         }
+        .navigationTitle("Check headphones")
         .onAppear { refresh() }
         .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.routeChangeNotification)) { _ in
             refresh()
@@ -34,7 +32,7 @@ struct DiagnosticsView: View {
     private func refresh() {
         let session = AVAudioSession.sharedInstance()
         var lines: [String] = []
-        lines.append("TheatreSync iOS 0.1.0 · protocol v\(SyncProtocol.protocolVersion)")
+        lines.append("TheatreSync iOS 0.2.0 · protocol v\(SyncProtocol.protocolVersion)")
         lines.append("Output latency: \(Int(session.outputLatency * 1000)) ms")
         lines.append("IO buffer: \(Int(session.ioBufferDuration * 1000)) ms")
         lines.append("Sample rate: \(Int(session.sampleRate)) Hz")

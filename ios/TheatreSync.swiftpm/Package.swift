@@ -16,8 +16,8 @@ let package = Package(
             targets: ["AppModule"],
             bundleIdentifier: "com.theatresync.ios",
             teamIdentifier: "",
-            displayVersion: "0.1.0",
-            bundleVersion: "1",
+            displayVersion: "0.2.0",
+            bundleVersion: "2",
             appIcon: .placeholder(icon: .tv),
             accentColor: .presetColor(.yellow),
             supportedDeviceFamilies: [
@@ -29,6 +29,12 @@ let package = Package(
                 .landscapeRight,
                 .landscapeLeft,
                 .portraitUpsideDown(.when(deviceFamilies: [.pad]))
+            ],
+            capabilities: [
+                .localNetwork(
+                    purposeString: "TheatreSync looks for the phone that is playing the movie on your Wi-Fi.",
+                    bonjourServiceTypes: ["_theatresync._tcp"]
+                )
             ]
         )
     ],

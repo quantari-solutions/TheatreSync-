@@ -25,4 +25,4 @@
 
 ## Protocol changes
 `contracts/` is the source of truth. Change the schema + fixtures first, then the
-Kotlin (`android/sync-core`) and Swift (`ios/TheatreSync.swiftpm/Shared`) mirrors.
+Kotlin (`android/sync-core`) and Swift (`ios/TheatreSync.swiftpm/Shared`) mirrors. `scripts/test-ios-shared.sh` compiles and tests the Swift mirror on Linux.

@@ -1,57 +1,46 @@
-# Architecture (draft, Milestone 0)
+# Architecture
 
-> Built from the README's goal ("Bluetooth chromecast sync for theatre room") and
-> the hardware named in the cloud-first brief. Sections 1–16 of the original
-> product brief have not been added to the repo yet; when they are, this document
-> is revised to match them.
-
-## Problem
-
-In a projector room, picture usually travels **phone → Chromecast → projector /
-AV receiver** while sound may go **phone → Bluetooth headphones**. Each path has
-its own delay (Bluetooth A2DP often 150–300 ms; Cast varies). Without
-correction, lips and voices drift apart.
-
-## Approach
-
-1. **Measure** each output's latency (OS-reported estimate + user lip-sync trim).
-2. **Plan** extra delay for the faster outputs ([`LatencyAligner`](../android/sync-core/src/main/kotlin/com/theatresync/core/LatencyAligner.kt)).
-   Outputs we cannot delay (e.g. a Cast receiver) are flagged with the residual error.
-3. **Share a clock** between devices on the LAN using an NTP-style exchange
-   ([`ClockSync`](../android/sync-core/src/main/kotlin/com/theatresync/core/ClockSync.kt)), so a
-   second device (e.g. iPad as remote or extra listener) knows the host's media position.
-4. **Capture & re-time audio** on Android using `AudioPlaybackCapture` (Android 10+)
-   and play it via `AudioTrack` with the planned delay. *(Later milestone.)*
-
-## Components
+## The room
 
 ```
-            LAN (protocol v1, JSON — contracts/)
-  ┌──────────────────────┐         ┌────────────────────────┐
-  │ Android host (Kotlin)│◄───────►│ iPad / iPhone (SwiftUI) │
-  │  app  ── UI, capture │         │  remote / listener      │
-  │  sync-core ── pure   │         │  Shared/ ── same models │
-  │    logic, unit-tested│         │    & clock algorithm    │
-  └─────────┬────────────┘         └────────────────────────┘
-            │ Cast SDK (later)         │ AVAudioSession
-            ▼                          ▼
-      Chromecast → projector      AirPlay/BT outputs
-            │ A2DP
-            ▼
-      Sony WH-1000XM4
+ Android phone (host) ──Wi-Fi──► Chromecast ──HDMI──► AV receiver ──► Projector
+   │  serves the movie file over HTTP      (room speakers muted by the app)
+   │  plays the sound in step with the Chromecast
+   ├── Bluetooth ──► your headphones (WH-1000XM4)
+   │
+   └──Wi-Fi── friend's iPhone / your iPad (listener)
+                 fetches the same file, plays only the sound, in step
+                 └── Bluetooth ──► their headphones
 ```
 
-* `android/sync-core` has **no Android dependencies**, so all timing maths runs in
-  plain JVM unit tests in the cloud.
-* `contracts/` is authoritative. Kotlin tests round-trip every fixture; the iOS
-  static check compares Swift enums to the schema. A change to the protocol must
-  update the schema + fixtures first.
+## Why this design
 
-## Known platform constraints
+* **No audio streaming codec.** Every device plays the *same file* from the host, and
+  only the timing is shared. That's simpler and more reliable than streaming live audio,
+  and it works for any number of listeners.
+* **The Chromecast is the master clock.** We can't delay a Chromecast, so everything else
+  follows it. The host reads the Chromecast's position (Cast SDK) and publishes it as
+  `playback_state`. Listeners convert it with an NTP-style clock offset.
+* **Gentle corrections.** Drift is removed by playing up to 5 % faster or slower (pitch
+  preserved), so there are no audible jumps. Large drift (start, seek, stall) is fixed by seeking.
+* **Lip-sync buttons.** Bluetooth delay, and the receiver/projector picture delay, differ
+  per device. Each person taps "Sound is early/late"; the value is remembered.
+* **Default Media Receiver.** No Google Cast developer registration or receiver web app is
+  needed. The Chromecast loads `http://<phone>:<port>/media` directly.
 
-* `AudioPlaybackCapture` only captures apps that allow it (`allowAudioPlaybackCapture`);
-  many streaming apps with DRM opt out. Needs physical confirmation per app.
-* iOS cannot capture other apps' audio; the iOS app's role is remote/listener.
-* Cast receivers cannot be delayed by us; we can only delay local outputs.
-* Native iOS builds, signing and App Store need Xcode on a Mac. Swift Playgrounds
-  on iPad can build and run the `.swiftpm` app for personal testing.
+## Code map
+
+| Part | Where | Tested how |
+|---|---|---|
+| Protocol schema + fixtures | `contracts/` | Schema validator; Kotlin + Swift round-trip tests |
+| HTTP server, clock sync, drift correction | `android/sync-core` (plain Kotlin) | 37 JVM tests incl. closed-loop sim and HTTP end-to-end |
+| Android host app | `android/app` | Unit tests, lint, emulator tests (UI, on-device server, real audio locking onto a simulated TV clock) |
+| iOS listener app | `ios/TheatreSync.swiftpm` | Shared code compiled + tested with Swift on Linux; UI statically checked. App compile only in Swift Playgrounds |
+
+## Limits
+
+* Streaming apps (Netflix etc.) can't be handled in software: see [STREAMING-APPS.md](STREAMING-APPS.md).
+* Older Chromecasts play MP4/H.264 + AAC (and WebM) reliably; MKV/HEVC/DTS may fail.
+* The iPhone/iPad can't send to the Chromecast yet (the Google Cast iOS library needs Xcode),
+  so the Android phone is always the one that starts the movie.
+* Cast position is an estimate (±tens of ms). The lip-sync buttons cover what's left.
