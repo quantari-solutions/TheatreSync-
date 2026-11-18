@@ -126,3 +126,10 @@ How to report: reply in Claude Code with the test ID, *Pass/Fail*, and a screens
 3. Lock the phone for 1 minute, unlock, and press **Stop movie**.
 
 **Expected:** no crash. If TheatreSync ever closes, reopen it: a **Share crash report** card appears. Share it to Claude.
+
+## HW-09 — Picture reaches the projector (0.4.1)
+
+1. Wi-Fi on, connected to the same network as the Chromecast.
+2. Choose movie → connect Media Room TV → **Start movie**. Wait 30 seconds.
+
+**Expected:** the picture appears within ~10 s. **If not:** after 20 s TheatreSync shows a message. Open **Headphones → ⓘ** and send a screenshot of "Last movie sent to TV": it shows the address given to the TV and whether the TV ever asked for the movie.

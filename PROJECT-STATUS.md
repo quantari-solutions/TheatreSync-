@@ -8,6 +8,7 @@ _Last updated: 2026-11-18. Milestone 1.4: crash fix, YouTube, screen mirroring, 
 |---|---|---|
 | App closes after choosing a movie | (1) MovieSession's `init` ran before `routerCallback` was initialised: a crash whenever a Cast session already existed at start-up, e.g. after Android restarted the app behind the file picker. (2) Any unexpected exception on a movie-server thread killed the whole app, so the TV sat on a spinner. | `init` moved last and deferred, with a regression test; server threads catch everything (tested with a failing file provider); sync engine fully kept by R8; on-device **crash reporter** with "Share crash report" |
 | No way to stop the cast | Missing feature | **Stop casting** on the Now casting card and page (receiver STOP, tested against a fake Chromecast) |
+| Movie starts but nothing appears on the projector (phone joined Wi-Fi just before Start) | Not yet confirmed. Likely: the phone gave the TV an address on the wrong network (phones can have several, e.g. Wi-Fi Direct) | 0.4.1: pick the phone address on the Chromecast's subnet (tested); 20-second check that says plainly if the TV never reached the phone; ⓘ details show the URL, both IPs and how many times the TV fetched the movie |
 | Wants YouTube and mirroring in the app | Missing features | **YouTube** page (paste or share a link → plays on the TV via YouTube's TV remote API, with fallback to the YouTube app) and **Mirror screen** page (opens Android's cast screen or Google Home). TheatreSync appears in YouTube's Share menu |
 
 

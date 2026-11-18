@@ -3,30 +3,35 @@ package com.theatresync.app
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import com.theatresync.core.AddressPicker
 import java.net.Inet4Address
+import java.net.InetAddress
 
 object NetworkInfo {
     /**
-     * This phone's IPv4 address on the home Wi-Fi/Ethernet, or null.
-     * Skips VPNs: with a VPN on, the "active" network is the tunnel, whose
-     * address the Chromecast can't reach.
+     * All of this phone's IPv4 addresses on Wi-Fi/Ethernet (with prefix lengths).
+     * Skips VPNs: with a VPN on, the tunnel's address is unreachable for the Chromecast.
      */
-    fun localIpv4(context: Context): String? {
-        val cm = context.getSystemService(ConnectivityManager::class.java) ?: return null
+    fun candidates(context: Context): List<AddressPicker.Local> {
+        val cm = context.getSystemService(ConnectivityManager::class.java) ?: return emptyList()
         @Suppress("DEPRECATION")
         val networks = cm.allNetworks
-        val candidates = networks.filter { n ->
+        return networks.filter { n ->
             val caps = cm.getNetworkCapabilities(n) ?: return@filter false
             !caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN) &&
                 (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) || caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET))
+        }.flatMap { n ->
+            cm.getLinkProperties(n)?.linkAddresses.orEmpty().mapNotNull { la ->
+                val a = la.address
+                if (a is Inet4Address && !a.isLoopbackAddress && !a.isLinkLocalAddress) AddressPicker.Local(a, la.prefixLength) else null
+            }
         }
-        for (n in candidates) {
-            val ip = cm.getLinkProperties(n)?.linkAddresses
-                ?.map { it.address }
-                ?.firstOrNull { it is Inet4Address && !it.isLoopbackAddress && !it.isLinkLocalAddress }
-                ?.hostAddress
-            if (ip != null) return ip
-        }
-        return null
     }
+
+    /** The address the Chromecast at [tv] can reach: same subnet first, else the first candidate. */
+    fun localIpv4For(context: Context, tv: InetAddress?): String? =
+        AddressPicker.pick(candidates(context), tv)?.hostAddress
+
+    /** Without a TV to match (diagnostics, friends' address). */
+    fun localIpv4(context: Context): String? = localIpv4For(context, null)
 }

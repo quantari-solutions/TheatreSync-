@@ -118,4 +118,5 @@
     <string name="yt_share_label">Cast with TheatreSync</string>
     <string name="stop_casting">Stop casting</string>
     <string name="video_label">Video</string>
+    <string name="msg_tv_cant_reach">The TV couldn\'t reach this phone, so nothing is showing. Make sure the phone and the Chromecast are on the same Wi-Fi network (not a guest network), then stop and start the movie again. Headphones → ⓘ shows the details.</string>
 </resources>

@@ -72,6 +72,13 @@ class MediaServerTest {
         assertEquals("bytes */300000", c.getHeaderField("Content-Range"))
     }
 
+    @Test fun countsMovieRequests() {
+        assertEquals(0, server.mediaRequests)
+        get("/media", "bytes=0-9").inputStream.readBytes()
+        get("/state").inputStream.readBytes()
+        assertEquals(1, server.mediaRequests)
+    }
+
     @Test fun headHasNoBody() {
         val c = get("/media", method = "HEAD")
         assertEquals(200, c.responseCode)

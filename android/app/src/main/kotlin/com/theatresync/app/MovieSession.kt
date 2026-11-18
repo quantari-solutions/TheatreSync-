@@ -107,6 +107,17 @@ class MovieSession(private val app: Application) {
     private var knownTvs: List<TvWatchers.Tv> = emptyList()
     /** Cast sessions the user just stopped: hidden at once, before the TV confirms. */
     private val stoppedSessions = mutableSetOf<String>()
+
+    /** What we told the TV, for the ⓘ technical details if the picture never appears. */
+    data class Diagnostics(val movieUrl: String, val phoneIp: String, val tvIp: String?)
+
+    @Volatile var lastDiagnostics: Diagnostics? = null
+        private set
+    private var startedAtMs = 0L
+    private var tvEverPlayed = false
+
+    /** Number of times the TV fetched the movie in this session (0 = it never reached the phone). */
+    val tvMovieRequests: Int get() = server?.mediaRequests ?: 0
     private var wifiLock: WifiManager.WifiLock? = null
     private var interrupted = false
     private var tickCount = 0
@@ -270,7 +281,9 @@ class MovieSession(private val app: Application) {
         val m = movie ?: return
         val session = castSession ?: return
         val client = session.remoteMediaClient ?: return say(R.string.msg_tv_failed)
-        val ip = NetworkInfo.localIpv4(app) ?: return say(R.string.msg_no_wifi)
+        // Give the TV the address on its own network (a phone can have several).
+        val tvAddress = session.castDevice?.inetAddress
+        val ip = NetworkInfo.localIpv4For(app, tvAddress) ?: return say(R.string.msg_no_wifi)
 
         val srv = MediaServer(
             senderId = deviceId,
@@ -287,6 +300,9 @@ class MovieSession(private val app: Application) {
         player = HeadphonePlayer(app, m.uri, playerEvents)
 
         val url = "http://$ip:$port/media?t=${System.currentTimeMillis()}"
+        lastDiagnostics = Diagnostics(url, ip, tvAddress?.hostAddress)
+        startedAtMs = SystemClock.elapsedRealtime()
+        tvEverPlayed = false
         val meta = MediaMetadata(MediaMetadata.MEDIA_TYPE_MOVIE).apply { putString(MediaMetadata.KEY_TITLE, m.title) }
         val info = MediaInfo.Builder(url)
             .setContentUrl(url)
@@ -441,6 +457,13 @@ class MovieSession(private val app: Application) {
         val failed = castState == MediaStatus.PLAYER_STATE_IDLE && client.idleReason == MediaStatus.IDLE_REASON_ERROR
         if (failed && ui.message == null) say(R.string.msg_tv_cant_play)
 
+        // Watchdog: the TV says nothing when it can't reach the phone; it just waits.
+        if (playing) tvEverPlayed = true
+        val waitedMs = SystemClock.elapsedRealtime() - startedAtMs
+        if (!tvEverPlayed && waitedMs > TV_START_TIMEOUT_MS && ui.message == null) {
+            say(if ((server?.mediaRequests ?: 0) == 0) R.string.msg_tv_cant_reach else R.string.msg_tv_cant_play)
+        }
+
         val phase = when {
             finished -> Phase.ENDED
             playing -> Phase.PLAYING
@@ -472,6 +495,7 @@ class MovieSession(private val app: Application) {
 
     companion object {
         private const val TICK_MS = 200L
+        private const val TV_START_TIMEOUT_MS = 20_000L
         private const val KEY_WE_MUTED = "weMutedTv"
     }
 

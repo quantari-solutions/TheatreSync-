@@ -60,6 +60,16 @@ object DiagnosticsReport {
             appendLine("Device: ${Build.MANUFACTURER} ${Build.MODEL}")
             appendLine("Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
             appendLine("Wi-Fi address: ${NetworkInfo.localIpv4(context) ?: "not on Wi-Fi"}")
+            appendLine("All local addresses: ${NetworkInfo.candidates(context).joinToString { "${it.address.hostAddress}/${it.prefixLength}" }.ifEmpty { "none" }}")
+            val session = (context.applicationContext as? TheatreSyncApplication)?.session
+            session?.lastDiagnostics?.let { d ->
+                appendLine()
+                appendLine("Last movie sent to TV")
+                appendLine("  URL: ${d.movieUrl}")
+                appendLine("  Phone IP given to TV: ${d.phoneIp}")
+                appendLine("  TV IP: ${d.tvIp ?: "unknown"}")
+                appendLine("  TV requests for the movie: ${session.tvMovieRequests}")
+            }
             appendLine()
             appendLine("Bluetooth names visible: $canReadNames")
             appendLine()
