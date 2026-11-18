@@ -1,0 +1,32 @@
+name: Contracts & iOS source
+
+# Validates the shared protocol contracts and runs STATIC checks on the iOS
+# sources. This workflow does not, and cannot, compile iOS code (no Xcode on Linux).
+
+on:
+  pull_request:
+    paths: ["contracts/**", "ios/**", "scripts/validate-*", "docs/**", "*.md", ".github/workflows/shared.yml"]
+  push:
+    branches: [main]
+    paths: ["contracts/**", "ios/**", "scripts/validate-*", "docs/**", "*.md", ".github/workflows/shared.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install "jsonschema>=4.20"
+      - name: Validate JSON contracts
+        run: ./scripts/validate-contracts.sh
+      - name: iOS static source checks (not a compile)
+        run: ./scripts/validate-ios-source.sh
+      - name: Check doc links
+        run: python3 scripts/check-docs.py

@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://theatresync.local/contracts/sync-message.v1.schema.json",
+  "title": "TheatreSync sync message (protocol v1, DRAFT)",
+  "description": "Envelope for every message exchanged between TheatreSync devices on the local network. All times are integer milliseconds. 'hostTimeMs' values are on the HOST's monotonic clock; listeners convert using the clock offset obtained from clock_ping/clock_pong.",
+  "type": "object",
+  "required": ["v", "type", "senderId", "sentAtMs", "payload"],
+  "additionalProperties": false,
+  "properties": {
+    "v": { "const": 1 },
+    "type": { "enum": ["hello", "clock_ping", "clock_pong", "playback_state", "latency_report", "error"] },
+    "senderId": { "$ref": "#/$defs/deviceId" },
+    "sentAtMs": { "$ref": "#/$defs/millis" },
+    "payload": { "type": "object" }
+  },
+  "allOf": [
+    { "if": { "properties": { "type": { "const": "hello" } } },          "then": { "properties": { "payload": { "$ref": "#/$defs/hello" } } } },
+    { "if": { "properties": { "type": { "const": "clock_ping" } } },     "then": { "properties": { "payload": { "$ref": "#/$defs/clockPing" } } } },
+    { "if": { "properties": { "type": { "const": "clock_pong" } } },     "then": { "properties": { "payload": { "$ref": "#/$defs/clockPong" } } } },
+    { "if": { "properties": { "type": { "const": "playback_state" } } }, "then": { "properties": { "payload": { "$ref": "#/$defs/playbackState" } } } },
+    { "if": { "properties": { "type": { "const": "latency_report" } } }, "then": { "properties": { "payload": { "$ref": "#/$defs/latencyReport" } } } },
+    { "if": { "properties": { "type": { "const": "error" } } },          "then": { "properties": { "payload": { "$ref": "#/$defs/error" } } } }
+  ],
+  "$defs": {
+    "deviceId": { "type": "string", "pattern": "^[A-Za-z0-9_-]{4,64}$" },
+    "millis": { "type": "integer", "minimum": 0 },
+    "hello": {
+      "type": "object",
+      "required": ["deviceName", "platform", "role", "appVersion", "protocolVersions"],
+      "additionalProperties": false,
+      "properties": {
+        "deviceName": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "platform": { "enum": ["android", "ios"] },
+        "role": { "enum": ["host", "listener", "remote"] },
+        "appVersion": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+" },
+        "protocolVersions": { "type": "array", "items": { "type": "integer", "minimum": 1 }, "minItems": 1, "uniqueItems": true }
+      }
+    },
+    "clockPing": {
+      "type": "object",
+      "required": ["seq", "t0"],
+      "additionalProperties": false,
+      "properties": {
+        "seq": { "type": "integer", "minimum": 0 },
+        "t0": { "$ref": "#/$defs/millis", "description": "Listener clock when ping was sent." }
+      }
+    },
+    "clockPong": {
+      "type": "object",
+      "required": ["seq", "t0", "t1", "t2"],
+      "additionalProperties": false,
+      "properties": {
+        "seq": { "type": "integer", "minimum": 0 },
+        "t0": { "$ref": "#/$defs/millis", "description": "Echoed from the ping." },
+        "t1": { "$ref": "#/$defs/millis", "description": "Host clock when ping was received." },
+        "t2": { "$ref": "#/$defs/millis", "description": "Host clock when pong was sent." }
+      }
+    },
+    "playbackState": {
+      "type": "object",
+      "required": ["state", "mediaPositionMs", "hostTimeMs", "playbackRate"],
+      "additionalProperties": false,
+      "properties": {
+        "state": { "enum": ["playing", "paused", "buffering", "stopped"] },
+        "mediaPositionMs": { "$ref": "#/$defs/millis", "description": "Media position at hostTimeMs." },
+        "hostTimeMs": { "$ref": "#/$defs/millis" },
+        "playbackRate": { "type": "number", "exclusiveMinimum": 0, "maximum": 4 },
+        "mediaTitle": { "type": "string", "maxLength": 256 }
+      }
+    },
+    "latencyReport": {
+      "type": "object",
+      "required": ["outputRoute", "estimatedOutputLatencyMs", "userOffsetMs"],
+      "additionalProperties": false,
+      "properties": {
+        "outputRoute": { "enum": ["bluetooth_a2dp", "bluetooth_le_audio", "wired", "speaker", "cast", "unknown"] },
+        "outputDeviceName": { "type": "string", "maxLength": 64 },
+        "estimatedOutputLatencyMs": { "type": "integer", "minimum": 0, "maximum": 2000 },
+        "userOffsetMs": { "type": "integer", "minimum": -1000, "maximum": 1000, "description": "Manual lip-sync trim; positive = delay this output more." }
+      }
+    },
+    "error": {
+      "type": "object",
+      "required": ["code", "message"],
+      "additionalProperties": false,
+      "properties": {
+        "code": { "enum": ["unsupported_version", "bad_message", "not_host", "internal"] },
+        "message": { "type": "string", "maxLength": 512 }
+      }
+    }
+  }
+}

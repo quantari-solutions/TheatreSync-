@@ -1,0 +1,12 @@
+{
+  "name": "TheatreSync (Android + contracts)",
+  "image": "mcr.microsoft.com/devcontainers/java:1-17-bookworm",
+  "features": {
+    "ghcr.io/devcontainers/features/python:1": { "version": "3.12" }
+  },
+  "containerEnv": { "ANDROID_HOME": "/home/vscode/android-sdk" },
+  "postCreateCommand": "./scripts/setup-android.sh && python3 -m pip install --user 'jsonschema>=4.20'",
+  "customizations": {
+    "vscode": { "extensions": ["fwcd.kotlin", "redhat.vscode-yaml"] }
+  }
+}

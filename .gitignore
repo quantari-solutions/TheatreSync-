@@ -1,0 +1,18 @@
+# Build outputs
+dist/
+.gradle/
+**/build/
+# Machine-specific
+android/local.properties
+.idea/
+*.iml
+.DS_Store
+# Secrets — never commit
+*.keystore
+*.jks
+.env
+*.p12
+*.mobileprovision
+# iOS
+ios/**/.swiftpm/xcode/
+ios/**/.build/

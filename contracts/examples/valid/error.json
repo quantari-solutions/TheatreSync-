@@ -1,0 +1,1 @@
+{"v":1,"type":"error","senderId":"moto-g-host-01","sentAtMs":22000,"payload":{"code":"unsupported_version","message":"Host speaks protocol v1 only"}}
