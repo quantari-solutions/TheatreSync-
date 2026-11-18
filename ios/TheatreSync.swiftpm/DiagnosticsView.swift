@@ -7,20 +7,24 @@ struct DiagnosticsView: View {
     @State private var report: String = ""
 
     var body: some View {
-        ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
+        ZStack {
+            GridBackground()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    GradientTitle(text: "Check headphones", size: 28)
                     Text("Take a screenshot of this screen and share it back in Claude Code.")
-                        .font(.callout)
+                        .foregroundStyle(Q.textMuted)
                     Button("Refresh") { refresh() }
-                        .buttonStyle(.borderedProminent)
-                    Text(report)
-                        .font(.system(.footnote, design: .monospaced))
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(12)
-                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                        .buttonStyle(GhostButtonStyle())
+                    QCard {
+                        Text(report)
+                            .font(.system(.footnote, design: .monospaced))
+                            .foregroundStyle(Q.textMuted)
+                            .textSelection(.enabled)
+                    }
                 }
-                .padding()
+                .padding(20)
+            }
         }
         .navigationTitle("Check headphones")
         .onAppear { refresh() }

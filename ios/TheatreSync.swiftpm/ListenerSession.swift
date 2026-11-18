@@ -51,6 +51,7 @@ final class ListenerSession: ObservableObject {
     func adjustSoundDelay(by step: Int) {
         soundDelayMs = min(1000, max(-1000, soundDelayMs + step))
         UserDefaults.standard.set(soundDelayMs, forKey: "soundDelayMs")
+        corrector.forceCorrect()
     }
 
     func join(address: String, name: String) {

@@ -52,6 +52,15 @@ class DriftCorrector(
         return Action.SetSpeed(wanted)
     }
 
+    /**
+     * Call when the target jumps by a small amount on purpose (the user tapped
+     * "Sound is early/late"), so even a 20 ms change is applied smoothly instead
+     * of being ignored as inside the dead band.
+     */
+    fun forceCorrect() {
+        correcting = true
+    }
+
     /** Call after the player was paused or re-created so the next decision starts fresh. */
     fun reset() {
         correcting = false

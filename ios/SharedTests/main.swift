@@ -78,6 +78,11 @@ do {
     check(c.decide(localMs: 10_005, targetMs: 10_000) == .setSpeed(1.0), "hysteresis stops")
     check(c.decide(localMs: 10_030, targetMs: 10_000) == .none, "dead band")
 
+    var f = DriftCorrector()
+    check(f.decide(localMs: 10_020, targetMs: 10_000) == .none, "20 ms ignored")
+    f.forceCorrect()
+    check(f.decide(localMs: 10_020, targetMs: 10_000) == .setSpeed(0.99), "forced 20 ms applied")
+
     // Closed loop: player clock 0.3 % fast, starts 300 ms behind.
     var cl = DriftCorrector()
     var local = 9_700.0

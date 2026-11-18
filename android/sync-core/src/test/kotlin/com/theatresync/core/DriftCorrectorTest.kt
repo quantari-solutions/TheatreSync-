@@ -28,6 +28,14 @@ class DriftCorrectorTest {
         assertEquals(Action.None, c.decide(10_030, 10_000)) // 30 ms is inside the dead band
     }
 
+    @Test fun forcedSmallChangeIsApplied() {
+        val c = DriftCorrector()
+        assertEquals(Action.None, c.decide(10_020, 10_000)) // 20 ms normally ignored
+        c.forceCorrect()
+        assertEquals(Action.SetSpeed(0.99), c.decide(10_020, 10_000))
+        assertEquals(Action.SetSpeed(1.0), c.decide(10_008, 10_000))
+    }
+
     @Test fun neverSeeksNegative() = assertEquals(Action.Seek(0), DriftCorrector().decide(5_000, -300))
 
     @Test

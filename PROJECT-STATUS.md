@@ -1,6 +1,6 @@
 # Project status
 
-_Last updated: 2026-11-18. Milestone 1: movie night for your own files_
+_Last updated: 2026-11-18. Milestone 1.1: Quantari design + bug hunt_
 
 ## Audit: what actually works
 
@@ -20,6 +20,28 @@ _Last updated: 2026-11-18. Milestone 1: movie night for your own files_
 
 What the cloud sandbox cannot do: run an Android emulator (no virtualisation here; GitHub
 Actions runs it instead), talk to a real Chromecast or Bluetooth device, or build iOS apps.
+
+## Design
+
+Both apps use the Quantari Solutions theme taken from quantari-solutions.vercel.app's CSS:
+`#050508` background with a faint gold grid, gold gradient `#f0c44c → #ffe9a8 → #d4a017`,
+Inter (bundled on Android, OFL licence in `android/third_party/`; iOS uses the system font),
+pill buttons with a gold glow, `#0d0d16` cards with `#2a2410` borders. Android screens are
+rendered to PNGs by Paparazzi and verified on every build.
+
+## Bugs found and fixed in the audit
+
+| Bug | Effect | Fix |
+|---|---|---|
+| Single "Sound early/late" tap ignored | 20 ms change was inside the 40 ms dead band | `forceCorrect()` on Android and iOS, with tests |
+| Skip with unknown duration | ±10 s jumped to the start | Only clamp once the duration is known |
+| Cast connection blip | Headphone sound ran on alone and drifted | Hold sound until the TV is back |
+| App killed mid-movie | Room speakers left muted (YouTube silent next time) | Remember and undo our mute on next connect |
+| VPN on | Chromecast given an unreachable address | Pick the real Wi-Fi interface, skip VPNs |
+| Android 15 edge-to-edge | Content under the status bar | `enableEdgeToEdge()` + safe-area padding |
+| Old Fragment from Cast library | File picker broken (lint fatal) | Pin Fragment 1.8.8 |
+| Android 10/11 Bluetooth names | Names hidden wrongly | Only request BLUETOOTH_CONNECT on 12+ |
+| Paused status | Showed "Waiting for picture" | Shows "Paused" / "Finished" |
 
 ## Next physical tests (in order)
 

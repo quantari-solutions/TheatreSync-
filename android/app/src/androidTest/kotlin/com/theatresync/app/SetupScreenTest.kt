@@ -6,6 +6,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Rule
 import org.junit.Test
@@ -18,15 +19,15 @@ class SetupScreenTest {
 
     @Test
     fun showsThreeStepsAndStartIsDisabledUntilReady() {
-        rule.onNodeWithText("1  Choose a movie").assertIsDisplayed()
-        rule.onNodeWithText("2  Choose your TV").assertIsDisplayed()
+        rule.onNodeWithText("Choose a movie").assertIsDisplayed()
+        rule.onNodeWithText("Choose your TV").assertIsDisplayed()
         rule.onNodeWithText("Choose movie").assertIsDisplayed()
         rule.onNodeWithTag("start").assertIsNotEnabled()
     }
 
     @Test
     fun headphoneCheckOpensAndCloses() {
-        rule.onNodeWithText("Check headphones").performClick()
+        rule.onNodeWithText("Check headphones", substring = true).performScrollTo().performClick()
         rule.onNodeWithText("Allow Bluetooth").assertIsDisplayed()
         rule.onNodeWithText("Back").performClick()
         rule.onNodeWithText("Choose movie").assertIsDisplayed()

@@ -100,5 +100,8 @@ class HeadphonePlayer(context: Context, uri: Uri, private val events: Events) {
         }
     }
 
+    /** The user changed the sound delay: apply it smoothly even if it's small. */
+    fun onDelayChanged() = corrector.forceCorrect()
+
     fun release() = exo.release()
 }

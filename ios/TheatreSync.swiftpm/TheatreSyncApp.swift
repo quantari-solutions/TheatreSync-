@@ -22,6 +22,6 @@ struct RootView: View {
             }
         }
         .preferredColorScheme(.dark)
-        .tint(.yellow)
+        .tint(Q.primary)
     }
 }

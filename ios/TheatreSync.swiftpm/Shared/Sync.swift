@@ -57,6 +57,11 @@ struct DriftCorrector {
         return .setSpeed(wanted)
     }
 
+    /// The user nudged the sound delay: apply even a 20 ms change smoothly.
+    mutating func forceCorrect() {
+        correcting = true
+    }
+
     mutating func reset() {
         correcting = false
         currentSpeed = 1.0

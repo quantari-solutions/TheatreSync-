@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- DEBUG BUILDS ONLY: lets on-device tests call the app's own server on loopback.
+     The app itself never makes plain-HTTP requests; the Chromecast and listeners
+     connect to it from other devices, which this setting doesn't affect. -->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
+</network-security-config>

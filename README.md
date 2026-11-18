@@ -9,6 +9,15 @@ headphones, in sync. The Android phone starts the movie; friends join on iPhone/
 
 > **Status:** Milestone 1, movie night for your own files. See [PROJECT-STATUS.md](PROJECT-STATUS.md).
 
+## Screens
+
+<p>
+<img src="android/app/src/test/snapshots/images/com.theatresync.app_ScreenshotTest_setup2_movieChosen_tvsFound.png" width="240" alt="Setup screen" />
+<img src="android/app/src/test/snapshots/images/com.theatresync.app_ScreenshotTest_playing1_inSync.png" width="240" alt="Playing screen" />
+</p>
+
+Rendered automatically from the real app code by [Paparazzi](https://github.com/cashapp/paparazzi) on every build.
+
 ## Repository layout
 
 | Path | What it is |

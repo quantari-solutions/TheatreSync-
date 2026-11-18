@@ -161,6 +161,7 @@ class MovieSession(private val app: Application) {
 
     private fun onTvConnected(session: CastSession) {
         castSession = session
+        restoreTvSoundIfWeMutedIt(session)
         _ui.update { it.copy(connectedTv = session.castDevice?.friendlyName ?: "Chromecast", message = null) }
     }
 
@@ -224,7 +225,7 @@ class MovieSession(private val app: Application) {
 
     private fun teardown() {
         main.removeCallbacks(tick)
-        castSession?.let { s -> runCatching { s.setMute(false) } }
+        castSession?.let { s -> if (runCatching { s.setMute(false) }.isSuccess) prefs.edit { putBoolean(KEY_WE_MUTED, false) } }
         player?.release()
         player = null
         server?.stop()
@@ -243,7 +244,10 @@ class MovieSession(private val app: Application) {
 
     fun skip(deltaMs: Long) {
         val c = castSession?.remoteMediaClient ?: return
-        val pos = (c.approximateStreamPosition + deltaMs).coerceIn(0, maxOf(0, c.streamDuration))
+        val duration = c.streamDuration
+        val wanted = (c.approximateStreamPosition + deltaMs).coerceAtLeast(0)
+        // Duration is 0 until the Chromecast reports it — don't clamp to 0 then.
+        val pos = if (duration > 0) wanted.coerceAtMost(duration) else wanted
         c.seek(MediaSeekOptions.Builder().setPosition(pos).build())
     }
 
@@ -252,6 +256,7 @@ class MovieSession(private val app: Application) {
         val v = (_ui.value.soundDelayMs + stepMs).coerceIn(-1000, 1000)
         prefs.edit { putInt("soundDelayMs", v) }
         _ui.update { it.copy(soundDelayMs = v) }
+        player?.onDelayChanged()
     }
 
     fun setHeadphonesHere(on: Boolean) = _ui.update { it.copy(headphonesHere = on) }
@@ -264,7 +269,16 @@ class MovieSession(private val app: Application) {
     fun dismissMessage() = _ui.update { it.copy(message = null) }
 
     private fun applyTvMute() {
-        castSession?.let { s -> runCatching { s.setMute(_ui.value.muteTv) } }
+        val s = castSession ?: return
+        val mute = _ui.value.muteTv && server != null // only while a movie is running
+        if (runCatching { s.setMute(mute) }.isSuccess) prefs.edit { putBoolean(KEY_WE_MUTED, mute) }
+    }
+
+    /** If the app was killed mid-movie, the TV may still be muted by us: undo that. */
+    private fun restoreTvSoundIfWeMutedIt(session: CastSession) {
+        if (server == null && prefs.getBoolean(KEY_WE_MUTED, false)) {
+            if (runCatching { session.setMute(false) }.isSuccess) prefs.edit { putBoolean(KEY_WE_MUTED, false) }
+        }
     }
 
     private val playerEvents = object : HeadphonePlayer.Events {
@@ -295,7 +309,12 @@ class MovieSession(private val app: Application) {
     }
 
     private fun step() {
-        val client = castSession?.remoteMediaClient ?: return
+        val client = castSession?.takeIf { it.isConnected }?.remoteMediaClient
+        if (client == null) {
+            // Wi-Fi blip / TV connection suspended: hold the headphone sound until the TV is back.
+            player?.follow(0, shouldPlay = false)
+            return
+        }
         val now = SystemClock.elapsedRealtime()
         val castPos = client.approximateStreamPosition.coerceAtLeast(0)
         val castState = client.playerState
@@ -354,5 +373,6 @@ class MovieSession(private val app: Application) {
 
     companion object {
         private const val TICK_MS = 200L
+        private const val KEY_WE_MUTED = "weMutedTv"
     }
 }

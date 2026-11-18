@@ -11,6 +11,7 @@ cast = "22.1.0"
 mediarouter = "1.7.0"
 coroutines = "1.10.2"
 fragment = "1.8.8"
+paparazzi = "2.0.0-alpha02"
 androidxTestRunner = "1.6.2"
 androidxTestJunit = "1.2.1"
 
@@ -39,4 +40,5 @@ android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+paparazzi = { id = "app.cash.paparazzi", version.ref = "paparazzi" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }

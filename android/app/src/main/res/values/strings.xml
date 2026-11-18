@@ -2,7 +2,7 @@
 <resources>
     <string name="app_name">TheatreSync</string>
     <string name="ok">OK</string>
-    <string name="setup_intro">Picture on the big screen, sound in your headphones.</string>
+    <string name="setup_intro">Picture on the big screen. Sound in everyone\'s headphones. Perfectly in step.</string>
     <string name="step_movie">Choose a movie</string>
     <string name="choose_movie">Choose movie</string>
     <string name="movie_hint">MP4 files work best with Chromecast.</string>
@@ -30,11 +30,17 @@
     <string name="sound_here">Sound on %1$s</string>
     <string name="this_phone">this phone</string>
     <string name="mute_tv">Mute the room speakers</string>
-    <string name="friends_title">Friends listening: %1$d</string>
     <string name="friends_hint">On an iPhone or iPad on the same Wi-Fi, open TheatreSync and tap Join.</string>
     <string name="friends_address">Address: %1$s</string>
     <string name="stop_movie">Stop movie</string>
-    <string name="sync_debug">Sync: %1$d ms</string>
+    <string name="searching">Searching</string>
+    <string name="connect">Connect</string>
+    <string name="footer">TheatreSync · by Quantari Solutions</string>
+    <string name="friends_heading">Friends listening</string>
+    <string name="sync_off">Sound off on this phone</string>
+    <string name="sync_waiting">Waiting for picture</string>
+    <string name="sync_ok">In sync · %1$+d ms</string>
+    <string name="sync_fixing">Syncing · %1$+d ms</string>
     <string name="msg_no_cast">Chromecast needs Google Play services, which this phone doesn\'t have.</string>
     <string name="msg_bad_file">That file can\'t be opened. Try another movie file.</string>
     <string name="msg_tv_failed">Couldn\'t connect to the TV. Check it\'s switched on.</string>
