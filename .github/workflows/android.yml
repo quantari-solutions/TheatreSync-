@@ -42,7 +42,7 @@ jobs:
         run: ./scripts/build-android.sh
 
       - name: Upload APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: TheatreSync-apk
           path: |
@@ -52,7 +52,7 @@ jobs:
 
       - name: Upload reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: android-reports
           path: |
@@ -110,7 +110,7 @@ jobs:
 
       - name: Upload emulator test reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: emulator-test-reports
           path: android/app/build/reports/androidTests/
