@@ -29,7 +29,7 @@ class HeadphonePlayer(context: Context, uri: Uri, private val events: Events) {
     private val corrector = DriftCorrector()
 
     /** Learned head start used when (re)starting or seeking, to cover output start-up and seek time. */
-    @Volatile var startLeadMs: Long = 400
+    @Volatile var startLeadMs: Long = 250
         private set
     private var justStarted = false
 
@@ -39,6 +39,8 @@ class HeadphonePlayer(context: Context, uri: Uri, private val events: Events) {
      * restarted the headphones, forever (the "no sound in headphones" bug in 0.4.x).
      */
     private var settleUntilMs = 0L
+    /** One calibration seek is allowed right after a fresh start, measured once the output is steady. */
+    private var calibrated = false
     private var lastSeekAtMs = 0L
     /** Counted for diagnostics: a healthy session seeks once or twice. */
     @Volatile var seeks = 0
@@ -112,6 +114,7 @@ class HeadphonePlayer(context: Context, uri: Uri, private val events: Events) {
             exo.seekTo(targetMs + startLeadMs)
             exo.play()
             justStarted = true
+            calibrated = false
             lastSeekAtMs = now
             settleUntilMs = now + SETTLE_MS
             return
@@ -129,6 +132,20 @@ class HeadphonePlayer(context: Context, uri: Uri, private val events: Events) {
             // First steady measurement after (re)starting: learn the lead for next time.
             justStarted = false
             startLeadMs = (startLeadMs - drift * 3 / 4).coerceIn(0L, 2_000L)
+            if (!calibrated && kotlin.math.abs(drift) > CALIBRATE_ABOVE_MS) {
+                // The output is running now, so this measurement is real: correct once, at once,
+                // with the freshly learned lead. Later corrections obey the seek gap.
+                calibrated = true
+                corrector.reset()
+                exo.setPlaybackSpeed(1f)
+                exo.seekTo((targetMs + startLeadMs).coerceAtLeast(0))
+                seeks++
+                lastSeekAtMs = now
+                justStarted = true
+                settleUntilMs = now + SETTLE_MS
+                return
+            }
+            calibrated = true
         }
         when (val action = corrector.decide(local, targetMs)) {
             is DriftCorrector.Action.SetSpeed -> exo.setPlaybackSpeed(action.speed.toFloat())
@@ -168,5 +185,6 @@ class HeadphonePlayer(context: Context, uri: Uri, private val events: Events) {
     private companion object {
         const val SETTLE_MS = 1_000L
         const val MIN_SEEK_GAP_MS = 6_000L
+        const val CALIBRATE_ABOVE_MS = 120L
     }
 }
