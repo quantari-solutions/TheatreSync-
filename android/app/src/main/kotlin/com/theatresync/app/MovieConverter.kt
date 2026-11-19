@@ -10,6 +10,8 @@ import android.os.Handler
 import android.os.Looper
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
+import androidx.media3.common.audio.ChannelMixingAudioProcessor
+import androidx.media3.common.audio.ChannelMixingMatrix
 import androidx.media3.effect.Presentation
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.DefaultEncoderFactory
@@ -52,6 +54,7 @@ object MovieInspector {
             var h = 0
             var fps: Float? = null
             var durationUs = 0L
+            var channels: Int? = null
             for (i in 0 until ex.trackCount) {
                 val f = ex.getTrackFormat(i)
                 val mime = f.getString(MediaFormat.KEY_MIME) ?: continue
@@ -67,10 +70,11 @@ object MovieInspector {
                         ?: runCatching { f.getFloat(MediaFormat.KEY_FRAME_RATE) }.getOrNull()
                 } else if (mime.startsWith("audio/") && audioMime == null) {
                     audioMime = mime
+                    channels = if (f.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) f.getInteger(MediaFormat.KEY_CHANNEL_COUNT) else null
                 }
             }
             val mbps = if (durationUs > 0) sizeBytes * 8.0 / (durationUs / 1_000_000.0) / 1_000_000 else null
-            CastCompat.Media(videoMime, w, h, fps, audioMime, mbps)
+            CastCompat.Media(videoMime, w, h, fps, audioMime, mbps, channels)
         } finally {
             ex.release()
         }
@@ -95,24 +99,27 @@ class MovieConverter(private val context: Context) {
     private var transformer: Transformer? = null
     private val dir = File(context.filesDir, "converted").apply { mkdirs() }
 
-    fun cachedFile(uri: Uri, quality: Quality): File? = target(uri, quality).takeIf { it.exists() && it.length() > 0 }
+    fun cachedFile(uri: Uri, quality: Quality, plan: CastCompat.Plan): File? =
+        target(uri, quality, plan).takeIf { it.exists() && it.length() > 0 }
 
     /**
      * @param source what MovieInspector found (used to keep the exact shape when scaling down)
+     * @param plan SOUND_ONLY copies the picture untouched and only converts the sound to stereo
+     *   AAC (minutes, not tens of minutes); FULL also re-encodes the picture as H.264.
      */
-    fun start(uri: Uri, quality: Quality, source: CastCompat.Media?, listener: Listener) {
+    fun start(uri: Uri, quality: Quality, source: CastCompat.Media?, plan: CastCompat.Plan, listener: Listener) {
         cancel()
-        val out = target(uri, quality)
+        val out = target(uri, quality, plan)
         val partial = File(out.path + ".part")
         partial.delete()
         pruneCache(keep = out)
         val encoders = DefaultEncoderFactory.Builder(context)
             .setRequestedVideoEncoderSettings(VideoEncoderSettings.Builder().setBitrate(quality.videoBitrate ?: 8_000_000).build())
             .build()
-        val t = Transformer.Builder(context)
-            .setVideoMimeType(MimeTypes.VIDEO_H264)
-            .setAudioMimeType(MimeTypes.AUDIO_AAC)
-            .setEncoderFactory(encoders)
+        val builder = Transformer.Builder(context).setAudioMimeType(MimeTypes.AUDIO_AAC)
+        // Sound only: no video settings, so Transformer copies the picture as it is.
+        if (plan == CastCompat.Plan.FULL) builder.setVideoMimeType(MimeTypes.VIDEO_H264).setEncoderFactory(encoders)
+        val t = builder
             .addListener(object : Transformer.Listener {
                 override fun onCompleted(composition: Composition, exportResult: ExportResult) {
                     main.removeCallbacksAndMessages(null)
@@ -128,9 +135,11 @@ class MovieConverter(private val context: Context) {
                 }
             })
             .build()
-        val effects = outputSize(source, quality)?.let { (w, h) ->
-            Effects(emptyList(), listOf(Presentation.createForWidthAndHeight(w, h, Presentation.LAYOUT_SCALE_TO_FIT)))
-        } ?: Effects.EMPTY
+        val audio = stereoDownmix(source?.audioChannels)?.let { listOf(it) } ?: emptyList()
+        val video = if (plan != CastCompat.Plan.FULL) emptyList() else outputSize(source, quality)?.let { (w, h) ->
+            listOf(Presentation.createForWidthAndHeight(w, h, Presentation.LAYOUT_SCALE_TO_FIT))
+        } ?: emptyList()
+        val effects = if (audio.isEmpty() && video.isEmpty()) Effects.EMPTY else Effects(audio, video)
         val item = EditedMediaItem.Builder(MediaItem.fromUri(uri)).setEffects(effects).build()
         transformer = t
         t.start(item, partial.path)
@@ -154,10 +163,11 @@ class MovieConverter(private val context: Context) {
     internal fun outputSize(source: CastCompat.Media?, quality: Quality): Pair<Int, Int>? =
         sizeFor(source?.width ?: 0, source?.height ?: 0, quality.shortSide)
 
-    private fun target(uri: Uri, quality: Quality): File {
+    private fun target(uri: Uri, quality: Quality, plan: CastCompat.Plan): File {
         val hash = MessageDigest.getInstance("SHA-256").digest(uri.toString().toByteArray())
             .take(8).joinToString("") { "%02x".format(it) }
-        return File(dir, "${hash}_${quality.name}.mp4")
+        val q = if (plan == CastCompat.Plan.SOUND_ONLY) "SOUND" else quality.name
+        return File(dir, "${hash}_$q.mp4")
     }
 
     /** Converted movies are big: keep only the newest two besides the one being made. */
@@ -165,5 +175,28 @@ class MovieConverter(private val context: Context) {
         dir.listFiles()?.filter { it != keep && !it.name.endsWith(".part") }
             ?.sortedByDescending { it.lastModified() }?.drop(2)?.forEach { it.delete() }
         dir.listFiles { f -> f.name.endsWith(".part") }?.forEach { it.delete() }
+    }
+}
+
+/**
+ * 5.1 / 7.1 → stereo (ITU-style: centre and surrounds at −3 dB, LFE dropped), for Chromecasts
+ * that only decode stereo AAC. Null when no downmix is needed or the layout is unknown.
+ * Android's decoder order: FL, FR, FC, LFE, BL, BR (, SL, SR).
+ */
+internal fun stereoDownmix(channels: Int?): ChannelMixingAudioProcessor? {
+    val c = channels ?: return null
+    if (c != 6 && c != 8) return null
+    val k = 0.7071f
+    // coefficients[input * 2 + output]
+    val m = FloatArray(c * 2)
+    fun put(input: Int, left: Float, right: Float) { m[input * 2] = left; m[input * 2 + 1] = right }
+    put(0, 1f, 0f); put(1, 0f, 1f); put(2, k, k); put(3, 0f, 0f); put(4, k, 0f); put(5, 0f, k)
+    if (c == 8) { put(6, k, 0f); put(7, 0f, k) }
+    val norm = 1f / (1f + k) // loud enough for dialogue, rare peaks are soft-limited by the encoder
+    return ChannelMixingAudioProcessor().apply {
+        putChannelMixingMatrix(ChannelMixingMatrix(c, 2, m).scaleBy(norm))
+        // Already-stereo or mono parts of the same file pass through unchanged.
+        putChannelMixingMatrix(ChannelMixingMatrix.create(2, 2))
+        putChannelMixingMatrix(ChannelMixingMatrix.create(1, 2))
     }
 }

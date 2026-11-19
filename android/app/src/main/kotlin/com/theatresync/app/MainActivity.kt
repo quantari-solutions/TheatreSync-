@@ -34,6 +34,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -103,7 +104,7 @@ import com.theatresync.core.CastActivity
 import com.theatresync.core.YouTubeLinks
 import kotlin.math.abs
 
-enum class Page { HOME, HEADPHONES, NOW_CASTING, YOUTUBE, MIRROR, SETTINGS, CRASHES, GITHUB }
+enum class Page { HOME, HEADPHONES, NOW_CASTING, YOUTUBE, MIRROR, SETTINGS, CRASHES, GITHUB, REMOTE }
 
 class MainActivity : ComponentActivity() {
     private val session: MovieSession get() = (application as TheatreSyncApplication).session
@@ -160,7 +161,7 @@ class MainActivity : ComponentActivity() {
                     val casting = ui.nowCasting.firstOrNull { it.tvId == castTvId }
 
                     BackHandler(enabled = page != Page.HOME) {
-                        page = if (page == Page.CRASHES || page == Page.GITHUB) Page.SETTINGS else Page.HOME
+                        page = if (page == Page.CRASHES || page == Page.GITHUB || page == Page.REMOTE) Page.SETTINGS else Page.HOME
                     }
                     // YouTube accepted the video: open its Now casting player at once.
                     LaunchedEffect(ui.youTube, ui.youTubeTvId) {
@@ -186,6 +187,7 @@ class MainActivity : ComponentActivity() {
                     val target = when {
                         page == Page.NOW_CASTING && casting == null -> "reconnecting"
                         page == Page.GITHUB -> "github"
+                        page == Page.REMOTE -> "remote"
                         page == Page.SETTINGS -> "settings"
                         page == Page.CRASHES -> "crashes"
                         page == Page.HEADPHONES -> "headphones"
@@ -198,7 +200,7 @@ class MainActivity : ComponentActivity() {
                     AnimatedContent(
                         targetState = target,
                         transitionSpec = {
-                            val forward = targetState in setOf("headphones", "casting", "youtube", "mirror", "settings", "crashes", "github")
+                            val forward = targetState in setOf("headphones", "casting", "youtube", "mirror", "settings", "crashes", "github", "remote")
                             (slideInHorizontally { if (forward) it / 3 else -it / 3 } + fadeIn(tween(220)))
                                 .togetherWith(slideOutHorizontally { if (forward) -it / 3 else it / 3 } + fadeOut(tween(180)))
                         },
@@ -243,6 +245,22 @@ class MainActivity : ComponentActivity() {
                                 onCrashes = { refreshCrashes(); page = Page.CRASHES },
                                 onHeadphones = { refreshAudio(); page = Page.HEADPHONES },
                                 onBack = { page = Page.HOME },
+                                onRemote = { page = Page.REMOTE },
+                            )
+                            "remote" -> RemoteScreen(
+                                ui = ui,
+                                onPlayPause = session::castPlayPause,
+                                onSkip = session::castSkip,
+                                onVolumeStep = session::castVolumeStep,
+                                onMute = session::castMute,
+                                onNext = session::youTubeNext,
+                                onPrevious = session::youTubePrevious,
+                                onCaptions = { tvId, lang ->
+                                    session.youTubeCaptions(tvId, ui.nowCasting.firstOrNull { it.tvId == tvId }?.activity?.contentId, lang)
+                                },
+                                onStop = session::castStop,
+                                onYouTube = { page = Page.YOUTUBE },
+                                onBack = { page = Page.SETTINGS },
                             )
                             "crashes" -> CrashReportsScreen(
                                 entries = crashEntries.value,
@@ -271,6 +289,10 @@ class MainActivity : ComponentActivity() {
                                     onStop = { session.castStop(c.tvId); page = Page.HOME },
                                     onVolume = { session.castVolume(c.tvId, it) },
                                     onMute = { session.castMute(c.tvId, it) },
+                                    onSeekTo = { session.castSeekTo(c.tvId, it) },
+                                    onNext = { session.youTubeNext(c.tvId) },
+                                    onPrevious = { session.youTubePrevious(c.tvId) },
+                                    onCaptions = { lang -> session.youTubeCaptions(c.tvId, c.activity.contentId, lang) },
                                 )
                             }
                             "setup" -> SetupScreen(
@@ -284,6 +306,7 @@ class MainActivity : ComponentActivity() {
                                 onMenu = { page = Page.SETTINGS },
                                 onQuality = session::setQuality,
                                 onCancelPrepare = session::cancelPrepare,
+                                onClearMovie = session::clearMovie,
                                 onDisconnectTv = session::disconnectTv,
                                 onStart = {
                                     askPermissions.launch(runtimePermissions())
@@ -308,6 +331,7 @@ class MainActivity : ComponentActivity() {
                                 ui = ui,
                                 onPlayPause = session::togglePause,
                                 onSkip = session::skip,
+                                onSeekTo = session::seekTo,
                                 onSoundEarly = { session.adjustSoundDelay(+STEP_MS) },
                                 onSoundLate = { session.adjustSoundDelay(-STEP_MS) },
                                 onHeadphonesHere = session::setHeadphonesHere,
@@ -362,12 +386,12 @@ class MainActivity : ComponentActivity() {
 
     private fun openYouTubeApp(link: String?) {
         val uri = (link?.takeIf { YouTubeLinks.videoId(it) != null } ?: "https://www.youtube.com/").toUri()
-        val inApp = Intent(Intent.ACTION_VIEW, uri).setPackage("com.google.android.youtube")
-        try {
-            startActivity(inApp)
-        } catch (_: ActivityNotFoundException) {
-            runCatching { startActivity(Intent(Intent.ACTION_VIEW, uri)) }
+        // YouTube ReVanced first (the owner's YouTube), then official YouTube, then any browser.
+        val launched = YOUTUBE_PACKAGES.any { pkg ->
+            runCatching { startActivity(Intent(Intent.ACTION_VIEW, uri).setPackage(pkg)) }.isSuccess ||
+                (link == null && packageManager.getLaunchIntentForPackage(pkg)?.let { runCatching { startActivity(it) }.isSuccess } == true)
         }
+        if (!launched) runCatching { startActivity(Intent(Intent.ACTION_VIEW, uri)) }
     }
 
     /**
@@ -488,6 +512,11 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         const val STEP_MS = 20
+
+        /** ReVanced, ReVanced Extended, then official YouTube. */
+        val YOUTUBE_PACKAGES = listOf(
+            "app.revanced.android.youtube", "app.rvx.android.youtube", "com.google.android.youtube",
+        )
     }
 }
 
@@ -564,6 +593,7 @@ internal fun SetupScreen(
     onMenu: () -> Unit = {},
     onQuality: (Quality) -> Unit = {},
     onCancelPrepare: () -> Unit = {},
+    onClearMovie: () -> Unit = {},
     pendingCrash: CrashReporter.Entry? = null,
     onSendCrash: (CrashReporter.Entry) -> Unit = {},
     onShareCrash: (CrashReporter.Entry) -> Unit = {},
@@ -589,7 +619,12 @@ internal fun SetupScreen(
     QCard(highlighted = ui.movieTitle == null) {
         StepHeader(1, stringResource(R.string.step_movie), done = ui.movieTitle != null)
         if (ui.movieTitle != null) {
-            ChosenRow(R.drawable.ic_movie, ui.movieTitle) { GhostButton(stringResource(R.string.change), onChooseMovie, height = 40.dp) }
+            ChosenRow(R.drawable.ic_movie, ui.movieTitle) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    GhostButton(stringResource(R.string.change), onChooseMovie, height = 40.dp)
+                    GhostButton("✕", onClearMovie, Modifier.testTag("clear_movie"), height = 40.dp, description = stringResource(R.string.remove_movie))
+                }
+            }
             MovieQuality(ui, onQuality)
         } else {
             GoldButton(stringResource(R.string.choose_movie), onChooseMovie, Modifier.fillMaxWidth())
@@ -621,9 +656,12 @@ internal fun SetupScreen(
         val preparing = ui.prepareProgress
         if (preparing != null) {
             // Converting the movie for the TV (one time per movie and quality).
-            StatusPill(stringResource(R.string.preparing, preparing), Q.Primary, pulsing = true)
+            StatusPill(stringResource(if (ui.prepareSoundOnly) R.string.preparing_sound else R.string.preparing, preparing), Q.Primary, pulsing = true)
             GoldProgress(preparing / 100f)
-            Hint(stringResource(R.string.preparing_hint))
+            ui.prepareEtaSec?.let { eta ->
+                Hint(if (eta < 60) stringResource(R.string.eta_seconds, eta) else stringResource(R.string.eta_minutes, (eta + 59) / 60))
+            }
+            Hint(stringResource(if (ui.prepareSoundOnly) R.string.preparing_sound_hint else R.string.preparing_hint))
             GhostButton(stringResource(R.string.cancel), onCancelPrepare, Modifier.fillMaxWidth())
         } else {
             GoldButton(
@@ -674,8 +712,10 @@ internal fun SettingsScreen(
     onBack: () -> Unit,
     autoReports: Boolean = false,
     onAutoReports: () -> Unit = {},
+    onRemote: () -> Unit = {},
 ) = Screen {
     TopBar(stringResource(R.string.settings), onBack)
+    SettingsRow("🎛", stringResource(R.string.remote), null, onRemote, "settings_remote", status = stringResource(R.string.remote_status))
     SettingsRow(
         "☁", stringResource(R.string.auto_reports),
         null, onAutoReports, "settings_github",
@@ -975,6 +1015,7 @@ internal fun PlayingScreen(
     onMuteTv: (Boolean) -> Unit,
     onStop: () -> Unit,
     onDismiss: () -> Unit,
+    onSeekTo: (Long) -> Unit = {},
 ) = Screen {
     Eyebrow(
         when (ui.phase) {
@@ -988,13 +1029,7 @@ internal fun PlayingScreen(
     Message(ui.message, onDismiss)
 
     QCard(highlighted = ui.phase == Phase.PLAYING) {
-        val progress = if (ui.durationMs > 0) ui.positionMs.toFloat() / ui.durationMs else 0f
-        GoldProgress(progress)
-        Row {
-            Text(formatTime(ui.positionMs), color = Q.TextMuted, style = MaterialTheme.typography.labelLarge)
-            Spacer1()
-            Text(if (ui.durationMs > 0) formatTime(ui.durationMs) else "--:--", color = Q.TextFaint, style = MaterialTheme.typography.labelLarge)
-        }
+        SeekBar(ui.positionMs, ui.durationMs, onSeekTo, Modifier.testTag("movie_seek"))
         Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
             GhostButton(stringResource(R.string.skip_back_short), { onSkip(-10_000) }, Modifier.testTag("back10"), height = 52.dp, description = stringResource(R.string.skip_back))
             PlayButton(playing = ui.phase == Phase.PLAYING, onClick = onPlayPause)
@@ -1178,6 +1213,10 @@ internal fun NowCastingScreen(
     onStop: () -> Unit = {},
     onVolume: (Double) -> Unit = {},
     onMute: (Boolean) -> Unit = {},
+    onSeekTo: (Double) -> Unit = {},
+    onNext: () -> Unit = {},
+    onPrevious: () -> Unit = {},
+    onCaptions: (String?) -> Unit = {},
 ) = Screen {
     val a = item.activity
     TopBar(stringResource(R.string.now_casting), onBack)
@@ -1194,17 +1233,19 @@ internal fun NowCastingScreen(
             val d = a.durationSec
             val t = a.currentTimeSec ?: 0.0
             if (d != null && d > 0) {
-                GoldProgress((t / d).toFloat())
-                Row {
-                    Text(formatTime((t * 1000).toLong()), color = Q.TextMuted, style = MaterialTheme.typography.labelLarge)
-                    Spacer1()
-                    Text(formatTime((d * 1000).toLong()), color = Q.TextFaint, style = MaterialTheme.typography.labelLarge)
-                }
+                SeekBar((t * 1000).toLong(), (d * 1000).toLong(), { ms -> onSeekTo(ms / 1000.0) }, Modifier.testTag("cast_seek"))
             }
             Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
                 GhostButton(stringResource(R.string.skip_back_short), { onSkip(-10.0) }, height = 52.dp, description = stringResource(R.string.skip_back))
                 PlayButton(playing = a.isPlaying, onClick = onPlayPause)
                 GhostButton(stringResource(R.string.skip_fwd_short), { onSkip(10.0) }, height = 52.dp, description = stringResource(R.string.skip_forward))
+            }
+            if (a.kind == CastActivity.Kind.YOUTUBE) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    GhostButton("⏮  " + stringResource(R.string.yt_previous), onPrevious, Modifier.weight(1f).testTag("yt_previous"), height = 48.dp)
+                    GhostButton(stringResource(R.string.yt_next) + "  ⏭", onNext, Modifier.weight(1f).testTag("yt_next"), height = 48.dp)
+                }
+                CaptionsRow(onCaptions)
             }
         }
     } else {
@@ -1504,7 +1545,7 @@ private fun MovieQuality(ui: MovieSession.Ui, onQuality: (Quality) -> Unit) {
         val text = when {
             !verdict.playable && CastCompat.Problem.CODEC in verdict.problems -> stringResource(R.string.verdict_codec)
             !verdict.playable && CastCompat.Problem.RESOLUTION in verdict.problems -> stringResource(R.string.verdict_resolution)
-            !verdict.playable -> stringResource(R.string.verdict_audio)
+            !verdict.playable -> stringResource(R.string.verdict_audio_fix)
             CastCompat.Problem.BITRATE in verdict.problems -> stringResource(R.string.verdict_bitrate)
             else -> stringResource(R.string.verdict_ok)
         }
@@ -1531,5 +1572,163 @@ private fun MovieQuality(ui: MovieSession.Ui, onQuality: (Quality) -> Unit) {
             }
         }
     }
-    Hint(stringResource(if (ui.quality == Quality.ORIGINAL) R.string.quality_original_hint else R.string.quality_convert_hint))
+    val plan = ui.moviePlan
+    Hint(
+        stringResource(
+            when (plan) {
+                CastCompat.Plan.SOUND_ONLY -> R.string.quality_sound_only_hint
+                CastCompat.Plan.FULL -> R.string.quality_convert_hint
+                else -> R.string.quality_original_hint
+            },
+        ),
+    )
+}
+
+
+/** Captions: tap to turn on/off; long-press to pick the language. */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun CaptionsRow(onCaptions: (String?) -> Unit) {
+    var on by rememberSaveable { mutableStateOf(false) }
+    var language by rememberSaveable { mutableStateOf("en") }
+    var picking by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(50)
+    val label = stringResource(if (on) R.string.yt_captions_on else R.string.yt_captions_off) +
+        if (on) " · " + (CAPTION_LANGUAGES.firstOrNull { it.first == language }?.second ?: language) else ""
+    Box(
+        Modifier.fillMaxWidth().height(48.dp).clip(shape)
+            .background(if (on) Q.Gold else SolidColor(Q.Card))
+            .border(BorderStroke(1.dp, if (on) Q.Secondary else Q.BorderAccent), shape)
+            .combinedClickable(
+                onClick = { on = !on; onCaptions(if (on) language else null) },
+                onLongClick = { picking = true },
+                onLongClickLabel = stringResource(R.string.yt_captions_pick),
+                role = Role.Switch,
+            )
+            .semantics { stateDescription = if (on) "On" else "Off" }
+            .testTag("yt_captions"),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text("CC  $label", color = if (on) Color.Black else Q.PrimaryLight, style = MaterialTheme.typography.labelLarge)
+    }
+    Hint(stringResource(R.string.yt_captions_hint))
+    if (picking) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { picking = false },
+            containerColor = Q.Card,
+            title = { Text(stringResource(R.string.yt_captions_pick), color = Q.Text) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    CAPTION_LANGUAGES.forEach { (code, name) ->
+                        Text(
+                            name, color = if (code == language) Q.Primary else Q.Text,
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.fillMaxWidth().clickable {
+                                language = code; on = true; picking = false; onCaptions(code)
+                            }.padding(vertical = 10.dp),
+                        )
+                    }
+                    Text(
+                        stringResource(R.string.yt_captions_off), color = Q.TextMuted, style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.fillMaxWidth().clickable { on = false; picking = false; onCaptions(null) }.padding(vertical = 10.dp),
+                    )
+                }
+            },
+            confirmButton = {},
+        )
+    }
+}
+
+/** Common caption languages; YouTube shows them if the video has that track (or auto-translates). */
+private val CAPTION_LANGUAGES = listOf(
+    "en" to "English", "hi" to "Hindi", "gu" to "Gujarati", "es" to "Spanish", "fr" to "French",
+    "de" to "German", "ja" to "Japanese", "ko" to "Korean", "ar" to "Arabic", "zh-Hans" to "Chinese",
+)
+
+
+/**
+ * A second remote for the Chromecast. Everything an older Chromecast (no Google TV) can be
+ * controlled with: play/pause, skip, jump, volume, mute, YouTube next/previous and captions,
+ * and stop (back to the TV's home screen).
+ */
+@Composable
+internal fun RemoteScreen(
+    ui: MovieSession.Ui,
+    onPlayPause: (String) -> Unit,
+    onSkip: (String, Double) -> Unit,
+    onVolumeStep: (String, Double) -> Unit,
+    onMute: (String, Boolean) -> Unit,
+    onNext: (String) -> Unit,
+    onPrevious: (String) -> Unit,
+    onCaptions: (String, String?) -> Unit,
+    onStop: (String) -> Unit,
+    onYouTube: () -> Unit,
+    onBack: () -> Unit,
+) = Screen {
+    TopBar(stringResource(R.string.remote), onBack)
+    if (ui.tvs.isEmpty()) {
+        QCard { StatusPill(stringResource(R.string.searching), Q.Primary, pulsing = true) }
+        return@Screen
+    }
+    var tvId by rememberSaveable { mutableStateOf(ui.tvs.firstOrNull { it.name == ui.connectedTv }?.id ?: ui.tvs.first().id) }
+    val tv = ui.tvs.firstOrNull { it.id == tvId } ?: ui.tvs.first()
+    val activity = ui.nowCasting.firstOrNull { it.tvId == tv.id }?.activity
+    if (ui.tvs.size > 1) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            ui.tvs.take(3).forEach { t ->
+                val selected = t.id == tv.id
+                val shape = RoundedCornerShape(50)
+                Box(
+                    Modifier.weight(1f).height(44.dp).clip(shape)
+                        .background(if (selected) Q.Gold else SolidColor(Q.Card))
+                        .border(BorderStroke(1.dp, if (selected) Q.Secondary else Q.BorderAccent), shape)
+                        .clickable(role = Role.RadioButton) { tvId = t.id }
+                        .semantics { stateDescription = if (selected) "Selected" else "Not selected" },
+                    contentAlignment = Alignment.Center,
+                ) { Text(t.name, color = if (selected) Color.Black else Q.PrimaryLight, style = MaterialTheme.typography.labelLarge, maxLines = 1) }
+            }
+        }
+    }
+    QCard(highlighted = activity?.isPlaying == true) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            DeviceIcon(if (tv.isSpeaker) R.drawable.ic_device_speaker else R.drawable.ic_device_cast)
+            Column(Modifier.weight(1f)) {
+                Text(tv.name, style = MaterialTheme.typography.titleMedium, color = Q.Text)
+                Hint(activity?.let { a -> a.title ?: a.label() } ?: stringResource(R.string.remote_idle))
+            }
+        }
+        // Transport
+        Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+            GhostButton(stringResource(R.string.skip_back_short), { onSkip(tv.id, -10.0) }, height = 52.dp, description = stringResource(R.string.skip_back))
+            PlayButton(playing = activity?.isPlaying == true, onClick = { onPlayPause(tv.id) })
+            GhostButton(stringResource(R.string.skip_fwd_short), { onSkip(tv.id, 10.0) }, height = 52.dp, description = stringResource(R.string.skip_forward))
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            GhostButton("−30s", { onSkip(tv.id, -30.0) }, Modifier.weight(1f), height = 48.dp, description = "Back 30 seconds")
+            GhostButton("+30s", { onSkip(tv.id, 30.0) }, Modifier.weight(1f), height = 48.dp, description = "Forward 30 seconds")
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            GhostButton("⏮  " + stringResource(R.string.yt_previous), { onPrevious(tv.id) }, Modifier.weight(1f), height = 48.dp)
+            GhostButton(stringResource(R.string.yt_next) + "  ⏭", { onNext(tv.id) }, Modifier.weight(1f), height = 48.dp)
+        }
+    }
+    QCard {
+        Text(stringResource(R.string.tv_volume), style = MaterialTheme.typography.titleMedium, color = Q.Text)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            GhostButton("−", { onVolumeStep(tv.id, -0.05) }, Modifier.weight(1f).testTag("remote_vol_down"), height = 56.dp, description = "Volume down")
+            val muted = activity?.muted == true
+            GoldButton(stringResource(if (muted) R.string.unmute else R.string.mute), { onMute(tv.id, !muted) }, Modifier.weight(1.4f), height = 56.dp)
+            GhostButton("+", { onVolumeStep(tv.id, 0.05) }, Modifier.weight(1f).testTag("remote_vol_up"), height = 56.dp, description = "Volume up")
+        }
+        activity?.volumeLevel?.let { Hint(stringResource(R.string.remote_volume, (it * 100).toInt())) }
+    }
+    QCard {
+        CaptionsRow { lang -> onCaptions(tv.id, lang) }
+    }
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        GoldButton("▶  YouTube", onYouTube, Modifier.weight(1f), height = 52.dp)
+        GhostButton("■  " + stringResource(R.string.remote_home), { onStop(tv.id) }, Modifier.weight(1f), height = 52.dp)
+    }
+    Hint(stringResource(R.string.remote_hint))
+    Footer()
 }

@@ -56,6 +56,8 @@ class TvWatchers(private val onChange: (List<NowCasting>) -> Unit) {
 
     fun setMuted(tvId: String, muted: Boolean) = watchers[tvId]?.second?.setMuted(muted)
 
+    fun seekTo(tvId: String, seconds: Double) = watchers[tvId]?.second?.seekTo(seconds.coerceAtLeast(0.0))
+
     fun seekBy(tvId: String, deltaSec: Double) {
         val w = watchers[tvId]?.second ?: return
         val now = w.current?.currentTimeSec ?: return

@@ -132,6 +132,23 @@ class YouTubeLounge(private val baseUrl: String = "https://www.youtube.com/") {
         )
     }
 
+    /**
+     * Sends a remote-control command to the TV's YouTube app, e.g. "next", "previous",
+     * "setSubtitlesTrack" (videoId + languageCode; empty languageCode = captions off).
+     */
+    fun command(s: Session, name: String, params: Map<String, String> = emptyMap()) {
+        rid++
+        val prefix = "req$reqCount"
+        val data = linkedMapOf("count" to "1", "${prefix}__sc" to name)
+        params.forEach { (k, v) -> data["${prefix}_$k"] = v }
+        reqCount++
+        post(
+            "api/lounge/bc/bind",
+            mapOf("SID" to s.sid, "gsessionid" to s.gsessionId, "RID" to "$rid", "VER" to "8", "CVER" to "1"),
+            data, s.loungeToken,
+        )
+    }
+
     private fun post(path: String, params: Map<String, String>, form: Map<String, String>, token: String?): String {
         val query = if (params.isEmpty()) "" else "?" + encode(params)
         val c = URL(baseUrl + path + query).openConnection() as HttpURLConnection

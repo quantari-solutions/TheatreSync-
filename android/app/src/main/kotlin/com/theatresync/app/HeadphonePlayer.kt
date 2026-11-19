@@ -2,6 +2,7 @@ package com.theatresync.app
 
 import android.content.Context
 import android.net.Uri
+import android.os.SystemClock
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -27,10 +28,21 @@ class HeadphonePlayer(context: Context, uri: Uri, private val events: Events) {
 
     private val corrector = DriftCorrector()
 
-    /** Learned head start used when (re)starting, to cover audio output start-up time. */
-    @Volatile var startLeadMs: Long = 250
+    /** Learned head start used when (re)starting or seeking, to cover output start-up and seek time. */
+    @Volatile var startLeadMs: Long = 400
         private set
     private var justStarted = false
+
+    /**
+     * No drift decisions until this time. Bluetooth headphones take ~0.2–1 s to start after
+     * play/seek/route change. Judging drift during that time made the player seek again, which
+     * restarted the headphones, forever (the "no sound in headphones" bug in 0.4.x).
+     */
+    private var settleUntilMs = 0L
+    private var lastSeekAtMs = 0L
+    /** Counted for diagnostics: a healthy session seeks once or twice. */
+    @Volatile var seeks = 0
+        private set
 
     /** Last player error, for diagnostics. */
     @Volatile var lastError: String? = null
@@ -91,29 +103,48 @@ class HeadphonePlayer(context: Context, uri: Uri, private val events: Events) {
             lastDriftMs = null
             return
         }
+        val now = SystemClock.elapsedRealtime()
         if (!exo.playWhenReady) {
             corrector.reset()
             exo.setPlaybackSpeed(1f)
             // Start a little ahead: audio output (especially Bluetooth) takes a moment to get
-            // going, which left the sound ~350 ms behind after every pause. The lead is learned.
+            // going. The lead is learned from the first measurement after each start.
             exo.seekTo(targetMs + startLeadMs)
             exo.play()
             justStarted = true
+            lastSeekAtMs = now
+            settleUntilMs = now + SETTLE_MS
             return
         }
-        if (exo.playbackState != Player.STATE_READY) return // seeking or buffering
+        // Seeking, buffering or the output still starting: wait, and keep waiting a moment after.
+        if (exo.playbackState != Player.STATE_READY || !exo.isPlaying) {
+            settleUntilMs = now + SETTLE_MS
+            return
+        }
+        if (now < settleUntilMs) return
         val local = exo.currentPosition
-        lastDriftMs = local - targetMs
-        if (justStarted && exo.isPlaying) {
-            // First measurement after (re)starting: adjust the lead for next time.
+        val drift = local - targetMs
+        lastDriftMs = drift
+        if (justStarted) {
+            // First steady measurement after (re)starting: learn the lead for next time.
             justStarted = false
-            startLeadMs = (startLeadMs - (local - targetMs) / 2).coerceIn(0L, 1_000L)
+            startLeadMs = (startLeadMs - drift * 3 / 4).coerceIn(0L, 2_000L)
         }
         when (val action = corrector.decide(local, targetMs)) {
             is DriftCorrector.Action.SetSpeed -> exo.setPlaybackSpeed(action.speed.toFloat())
             is DriftCorrector.Action.Seek -> {
-                exo.setPlaybackSpeed(1f)
-                exo.seekTo(action.positionMs)
+                if (now - lastSeekAtMs < MIN_SEEK_GAP_MS && kotlin.math.abs(drift) < 3_000) {
+                    // Just seeked: catch up smoothly instead of seeking again (avoids seek loops).
+                    exo.setPlaybackSpeed(if (drift > 0) 0.95f else 1.05f)
+                    corrector.reset()
+                } else {
+                    exo.setPlaybackSpeed(1f)
+                    exo.seekTo((action.positionMs + startLeadMs).coerceAtLeast(0))
+                    seeks++
+                    lastSeekAtMs = now
+                    justStarted = true
+                    settleUntilMs = now + SETTLE_MS
+                }
             }
             DriftCorrector.Action.None -> Unit
         }
@@ -125,10 +156,17 @@ class HeadphonePlayer(context: Context, uri: Uri, private val events: Events) {
         val am = contextRef.getSystemService(android.media.AudioManager::class.java)
         val device = id?.let { wanted -> am?.getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS)?.firstOrNull { it.id == wanted } }
         exo.setPreferredAudioDevice(device)
+        // The new output needs a moment to start; don't treat that pause as drift.
+        settleUntilMs = SystemClock.elapsedRealtime() + SETTLE_MS * 2
     }
 
     /** The user changed the sound delay: apply it smoothly even if it's small. */
     fun onDelayChanged() = corrector.forceCorrect()
 
     fun release() = exo.release()
+
+    private companion object {
+        const val SETTLE_MS = 1_000L
+        const val MIN_SEEK_GAP_MS = 6_000L
+    }
 }

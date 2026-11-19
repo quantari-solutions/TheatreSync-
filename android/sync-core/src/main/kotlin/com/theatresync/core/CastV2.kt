@@ -152,6 +152,8 @@ data class CastActivity(
     /** TV (receiver) volume 0..1 and mute, as reported by the Chromecast. */
     val volumeLevel: Double? = null,
     val muted: Boolean? = null,
+    /** What the TV is playing, e.g. the YouTube video ID. */
+    val contentId: String? = null,
 ) {
     enum class Kind { YOUTUBE, MIRRORING, THEATRESYNC, MEDIA, OTHER }
 
@@ -216,6 +218,7 @@ object CastStatus {
             } else null
         return base.copy(
             title = meta?.str("title") ?: base.title,
+            contentId = contentId ?: base.contentId,
             subtitle = meta?.str("subtitle") ?: meta?.str("artist") ?: meta?.str("seriesTitle") ?: base.subtitle,
             imageUrl = image ?: base.imageUrl,
             playerState = status.str("playerState") ?: base.playerState,

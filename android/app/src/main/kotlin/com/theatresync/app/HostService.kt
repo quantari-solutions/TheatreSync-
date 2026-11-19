@@ -49,7 +49,13 @@ class HostService : Service() {
             .addAction(0, getString(R.string.notif_stop), action(ACTION_STOP, 2))
             .build()
         ServiceCompat.startForeground(this, 1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
+        running = true
         return START_NOT_STICKY
+    }
+
+    override fun onDestroy() {
+        running = false
+        super.onDestroy()
     }
 
     /** Notification buttons go back to this (non-exported) service only. */
@@ -62,7 +68,21 @@ class HostService : Service() {
         private const val CHANNEL = "movie"
         private const val ACTION_PLAY_PAUSE = "com.theatresync.app.PLAY_PAUSE"
         private const val ACTION_STOP = "com.theatresync.app.STOP"
-        fun start(context: Context) = ContextCompat.startForegroundService(context, Intent(context, HostService::class.java))
-        fun stop(context: Context) = context.stopService(Intent(context, HostService::class.java))
+        @Volatile var running = false
+            private set
+
+        /**
+         * Start while the app is on screen (Android refuses from the background, e.g. when a
+         * conversion finishes after the owner switched apps: crash report #20). No-op if running.
+         */
+        fun start(context: Context) {
+            if (running) return
+            runCatching { ContextCompat.startForegroundService(context, Intent(context, HostService::class.java)) }
+                .onFailure { CrashReporter.handled(context, "start movie service", it) }
+        }
+        fun stop(context: Context) {
+            running = false
+            context.stopService(Intent(context, HostService::class.java))
+        }
     }
 }
