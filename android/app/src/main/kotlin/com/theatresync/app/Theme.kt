@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.padding
@@ -34,6 +35,7 @@ import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -278,6 +280,44 @@ fun StatusPill(text: String, color: Color, pulsing: Boolean = false) {
         Box(Modifier.size(8.dp).alpha(alpha).clip(CircleShape).background(color))
         Text(text, color = color, style = MaterialTheme.typography.labelLarge)
     }
+}
+
+/**
+ * Draggable gold progress bar, like YouTube's: drag anywhere backwards or forwards; the time
+ * label follows the finger and the TV jumps there when you let go.
+ */
+@Composable
+fun SeekBar(positionMs: Long, durationMs: Long, onSeek: (Long) -> Unit, modifier: Modifier = Modifier) {
+    var dragging by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<Float?>(null) }
+    val fraction = dragging ?: if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
+    androidx.compose.material3.Slider(
+        value = fraction,
+        onValueChange = { dragging = it },
+        onValueChangeFinished = {
+            dragging?.let { f -> if (durationMs > 0) onSeek((f * durationMs).toLong()) }
+            dragging = null
+        },
+        enabled = durationMs > 0,
+        modifier = modifier.fillMaxWidth().height(28.dp),
+        colors = androidx.compose.material3.SliderDefaults.colors(
+            thumbColor = Q.Primary, activeTrackColor = Q.Primary, inactiveTrackColor = Q.Border,
+            disabledThumbColor = Q.Border, disabledActiveTrackColor = Q.Border, disabledInactiveTrackColor = Q.Border,
+        ),
+    )
+    androidx.compose.foundation.layout.Row {
+        Text(formatClock(if (dragging != null) (fraction * durationMs).toLong() else positionMs), color = Q.TextMuted, style = MaterialTheme.typography.labelLarge)
+        Spacer1()
+        Text(if (durationMs > 0) formatClock(durationMs) else "--:--", color = Q.TextFaint, style = MaterialTheme.typography.labelLarge)
+    }
+}
+
+/** 1:05:09 or 4:09. */
+fun formatClock(ms: Long): String {
+    val total = (ms / 1000).coerceAtLeast(0)
+    val h = total / 3600
+    val m = (total % 3600) / 60
+    val sec = total % 60
+    return if (h > 0) "%d:%02d:%02d".format(h, m, sec) else "%d:%02d".format(m, sec)
 }
 
 /** Thin gold progress bar. */

@@ -15,6 +15,8 @@ object CastCompat {
         val fps: Float?,
         val audioMime: String?,
         val mbps: Double?,
+        /** 6 = 5.1 surround. Older Chromecasts only decode stereo AAC. */
+        val audioChannels: Int? = null,
     ) {
         val label: String
             get() = buildList {
@@ -22,6 +24,7 @@ object CastCompat {
                 videoMime?.let { add(codecName(it)) }
                 fps?.takeIf { it > 0 }?.let { add("${it.toInt()} fps") }
                 mbps?.let { add("%.0f Mbit/s".format(it)) }
+                audioChannels?.takeIf { it > 2 }?.let { add(if (it == 6) "5.1 sound" else if (it == 8) "7.1 sound" else "$it-ch sound") }
             }.joinToString(" · ")
     }
 
@@ -54,10 +57,31 @@ object CastCompat {
         val a = media.audioMime?.lowercase()
         val audioOk = a == null || a in setOf("audio/mp4a-latm", "audio/mpeg", "audio/opus", "audio/vorbis", "audio/flac", "audio/raw") ||
             (advanced && a in setOf("audio/ac3", "audio/eac3"))
-        if (!audioOk) problems += Problem.AUDIO
+        val channelsOk = advanced || (media.audioChannels ?: 2) <= 2
+        if (!audioOk || !channelsOk) problems += Problem.AUDIO
         val playable = problems.isEmpty()
         if (playable && (media.mbps ?: 0.0) > COMFORT_MBPS && !advanced) problems += Problem.BITRATE // playable but may stall
         return Verdict(playable, problems)
+    }
+
+    /** What has to be done before this Chromecast can show the movie at [quality]. */
+    enum class Plan { NONE, SOUND_ONLY, FULL }
+
+    /**
+     * NONE: cast the file as it is (instant). SOUND_ONLY: keep the picture untouched and only
+     * turn the sound into stereo AAC (fast: no video re-encoding). FULL: re-encode the picture.
+     * Picking a quality at or above the movie's own never re-encodes the picture.
+     */
+    fun plan(media: Media?, verdict: Verdict?, scaleTo: Int?): Plan {
+        if (media == null || verdict == null) return if (scaleTo == null) Plan.NONE else Plan.FULL
+        val p = verdict.problems
+        val shortSide = minOf(media.width, media.height)
+        val scaling = scaleTo != null && shortSide > scaleTo
+        return when {
+            Problem.CODEC in p || Problem.RESOLUTION in p || scaling -> Plan.FULL
+            Problem.AUDIO in p -> Plan.SOUND_ONLY
+            else -> Plan.NONE
+        }
     }
 
     fun resolutionName(w: Int, h: Int): String {

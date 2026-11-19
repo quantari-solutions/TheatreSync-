@@ -5,6 +5,8 @@ import com.theatresync.app.CastCompat.Problem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertNotNull
 import org.junit.Test
 
 class CastCompatTest {
@@ -54,5 +56,46 @@ class CastCompatTest {
         assertEquals(1280 to 720, sizeFor(1920, 1080, 720))
         assertEquals(null, sizeFor(1280, 720, 1080)) // already smaller: keep
         assertEquals(null, sizeFor(1920, 1080, null)) // original quality
+    }
+
+    // ---- 0.4.7: surround sound and conversion plans (owner's Red Eye 720p H.264 + AAC 5.1)
+
+    private val redEye = CastCompat.Media("video/avc", 1280, 720, 24f, "audio/mp4a-latm", 3.0, audioChannels = 6)
+
+    @Test fun surroundAacNeedsFixingOnOlderChromecast() {
+        val v = CastCompat.verdict(redEye, "Chromecast")
+        assertFalse(v.playable)
+        assertEquals(listOf(CastCompat.Problem.AUDIO), v.problems)
+        assertTrue(CastCompat.verdict(redEye, "Chromecast Ultra").playable)
+        assertTrue(CastCompat.verdict(redEye.copy(audioChannels = 2), "Chromecast").playable)
+        assertTrue(redEye.label.contains("5.1 sound"))
+    }
+
+    @Test fun onlyTheSoundIsConvertedWhenThePictureIsFine() {
+        val v = CastCompat.verdict(redEye, "Chromecast")
+        // Original, or a quality at/above the movie's own, never re-encodes the picture.
+        assertEquals(CastCompat.Plan.SOUND_ONLY, CastCompat.plan(redEye, v, null))
+        assertEquals(CastCompat.Plan.SOUND_ONLY, CastCompat.plan(redEye, v, 1080))
+        assertEquals(CastCompat.Plan.SOUND_ONLY, CastCompat.plan(redEye, v, 720))
+        // Scaling down below the movie's own size does.
+        assertEquals(CastCompat.Plan.FULL, CastCompat.plan(redEye, v, 480))
+    }
+
+    @Test fun compatibleMoviesPlayInstantly() {
+        val ok = redEye.copy(audioChannels = 2)
+        assertEquals(CastCompat.Plan.NONE, CastCompat.plan(ok, CastCompat.verdict(ok, "Chromecast"), null))
+        assertEquals(CastCompat.Plan.NONE, CastCompat.plan(ok, CastCompat.verdict(ok, "Chromecast"), 1080))
+    }
+
+    @Test fun unplayablePictureNeedsFullConversion() {
+        val hevc4k = CastCompat.Media("video/hevc", 3840, 2160, 24f, "audio/mp4a-latm", 40.0, audioChannels = 2)
+        assertEquals(CastCompat.Plan.FULL, CastCompat.plan(hevc4k, CastCompat.verdict(hevc4k, "Chromecast"), null))
+    }
+
+    @Test fun downmixOnlyForSurround() {
+        assertNull(stereoDownmix(2))
+        assertNull(stereoDownmix(null))
+        assertNotNull(stereoDownmix(6))
+        assertNotNull(stereoDownmix(8))
     }
 }

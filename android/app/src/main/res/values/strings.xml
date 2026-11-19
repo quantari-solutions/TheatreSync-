@@ -210,4 +210,24 @@
     <string name="github_save_id">Save Client ID</string>
     <string name="github_send_test">Send test report</string>
     <string name="github_testing">Uploading test report…</string>
+    <string name="remove_movie">Remove this movie</string>
+    <string name="preparing_sound">Fixing the sound for your TV… %1$d%%</string>
+    <string name="preparing_sound_hint">Only the sound is converted; the picture is kept exactly as it is. Next time this movie plays instantly.</string>
+    <string name="eta_seconds">About %1$d seconds left</string>
+    <string name="eta_minutes">About %1$d min left</string>
+    <string name="quality_sound_only_hint">Picture kept as it is. Only the surround sound is turned into stereo for your Chromecast first (usually a minute or two, once).</string>
+    <string name="verdict_audio_fix">Your Chromecast can\'t play this surround sound. TheatreSync fixes the sound quickly before playing</string>
+    <string name="yt_previous">Previous</string>
+    <string name="yt_next">Next</string>
+    <string name="yt_captions_on">Captions on</string>
+    <string name="yt_captions_off">Captions off</string>
+    <string name="yt_captions_pick">Choose caption language</string>
+    <string name="yt_captions_hint">Tap to turn captions on or off. Press and hold to choose the language.</string>
+    <string name="yt_remote_failed">The TV\'s YouTube didn\'t respond. Try again in a moment.</string>
+    <string name="remote">Chromecast remote</string>
+    <string name="remote_status">Volume, play, skip, YouTube</string>
+    <string name="remote_idle">Ready to cast</string>
+    <string name="remote_volume">Volume %1$d%%</string>
+    <string name="remote_home">Stop (TV home)</string>
+    <string name="remote_hint">Older Chromecasts have no remote of their own; these are all the controls they accept. Volume changes the Chromecast\'s own level (your receiver may have its own).</string>
 </resources>

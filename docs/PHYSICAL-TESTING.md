@@ -143,3 +143,14 @@ How to report: reply in Claude Code with the test ID, *Pass/Fail*, and a screens
 
 **Expected:** the picture appears on the projector; the room speakers go quiet (or the app tells you they couldn't);
 the YouTube volume changes. Send one screenshot of step 1 and one of step 3, and say roughly how long step 2 took.
+
+## HW-11 — Headphone sound, fast conversion, remote (0.4.7)
+
+1. Connect the MOMENTUM 4. Choose Red Eye → it should say "5.1 sound" and offer to fix the sound. Tap **Start movie**,
+   switch to another app while it prepares if you like. Note how long "Fixing the sound" takes.
+2. When the picture appears, you should hear the movie in the headphones within ~2 seconds.
+3. On the Headphones page, switch between Phone speaker and MOMENTUM 4: sound should come back within ~2 seconds each time.
+4. Drag the progress bar to another point: picture and headphone sound should both jump there.
+5. YouTube: try Next, Previous and Captions; then ☰ → Chromecast remote → volume − / +.
+
+**Send:** how long step 1 took, whether step 2 and 3 worked (and how many tries), and a screenshot of anything that didn't.

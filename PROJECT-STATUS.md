@@ -1,6 +1,25 @@
 # Project status
 
-_Last updated: 2026-11-18. 0.4.6: TV-compatible quality (conversion), working room-speaker mute, TV volume for YouTube, new icons_
+_Last updated: 2026-11-19. 0.4.7: headphone sound fixed (seek loop), fast sound-only conversion, YouTube remote controls, Chromecast remote_
+
+## 0.4.7: owner's test night (crash reports now arrive on GitHub)
+
+| Report | Cause found | Fix | Verified |
+|---|---|---|---|
+| Headphones silent 9 times in 10 (test beep fine) | Issue #17: headphone player stuck "buffering". Bluetooth takes ~0.5 s to start; the sync code measured that as drift and seeked, which restarted Bluetooth, forever | 1 s settle time after every start/seek/output change; learned start lead up to 2 s; no second seek within 6 s (smooth catch-up instead) | Unit tests + emulator; needs HW-11 |
+| Switching phone speaker ↔ headset went silent | Same loop, triggered by the output change | Output change gets a 2 s settle | needs HW-11 |
+| Converting for 30 min, then nothing | Issue #20: conversion finished while the app was in the background; Android refused to start the movie service | Movie service starts when Start is tapped, and is idempotent | Crash report evidence; needs HW-11 |
+| Red Eye (720p H.264, AAC 5.1) "can't play" though shown as fine | Older Chromecasts only decode stereo AAC; channel count wasn't checked | Verdict checks channels; **sound-only conversion** copies the picture untouched and downmixes 5.1/7.1 to stereo (minutes, not tens of minutes); never re-encodes the picture when the quality is at/above the movie's own | Unit tests; speed needs HW-11 |
+| Conversion time unknown | — | "About N min left" | Screenshot |
+| Remove the chosen movie | — | ✕ next to Change | Screenshot |
+| Drag to any point | — | Draggable progress bar (movies and YouTube) | Screenshot |
+| YouTube next / previous, captions | — | Lounge remote commands `next`, `previous`, `setSubtitlesTrack`; long-press captions for language | Unverified on a TV (undocumented YouTube API) |
+| Full Chromecast remote | — | ☰ → Chromecast remote: play/pause, ±10/30 s, next/previous, volume ±, mute, captions, stop | Screenshot |
+| ReVanced instead of YouTube | — | "Open YouTube" opens ReVanced first; Share → TheatreSync casts the shared video | needs HW-11 |
+| "Martin Garrix" card with nothing playing | Cards were shown for any app open on any TV | Hidden when nothing is loaded, idle, or "playing" with a frozen clock for 45 s | needs HW-11 |
+| Multiple Bluetooth headphones on one phone | Android plays media to **one** Bluetooth headset at a time (no app can change this) | Each extra listener joins with their own phone (iPhone/iPad app) | — |
+| YouTube quality | The TV's YouTube app picks quality itself (older Chromecast: up to 1080p); the remote API has no quality control | — | — |
+| Samsung "The Frame" | It's not a Chromecast (YouTube via DIAL, DLNA) | Planned: YouTube to DIAL TVs | — |
 
 ## 0.4.6: picture missing for phone movies, mute had no effect
 

@@ -86,6 +86,12 @@ class MovieSession(private val app: Application) {
         val quality: Quality = Quality.ORIGINAL,
         /** 0–100 while converting the movie for the TV; null when not converting. */
         val prepareProgress: Int? = null,
+        /** Estimated seconds left while preparing, once it can be estimated. */
+        val prepareEtaSec: Long? = null,
+        /** True when only the sound is converted (the picture is copied as it is). */
+        val prepareSoundOnly: Boolean = false,
+        /** What Start will do with the chosen movie at the chosen quality on the connected TV. */
+        val moviePlan: CastCompat.Plan? = null,
         /** true = TV confirmed muted, false = TV ignored the mute, null = unknown / not muting. */
         val tvMuteConfirmed: Boolean? = null,
     ) {
@@ -253,12 +259,34 @@ class MovieSession(private val app: Application) {
             val real = list.any { it.tvId == o.tvId && it.activity.appId == o.activity.appId }
             if (real || SystemClock.elapsedRealtime() > optimisticUntilMs) { optimistic = null; list } else list.filterNot { it.tvId == o.tvId } + o
         } ?: list
+        val now = SystemClock.elapsedRealtime()
         val visible = withOptimistic.filterNot {
             val a = it.activity
+            val isOptimistic = it === optimistic
             (a.appId == CastStatus.APP_DEFAULT_MEDIA_RECEIVER && server != null) ||
-                (a.sessionId != null && a.sessionId in stoppedSessions)
+                (a.sessionId != null && a.sessionId in stoppedSessions) ||
+                // Connected but nothing playing (e.g. Google's player opened just by connecting,
+                // or YouTube left open on another TV): the TV row says "Connected" instead.
+                (!isOptimistic && a.kind != CastActivity.Kind.MIRRORING && !a.hasMedia) ||
+                (!isOptimistic && a.kind != CastActivity.Kind.MIRRORING && a.playerState in setOf(null, "IDLE")) ||
+                isStale(it, now)
         }
         _ui.update { it.copy(nowCasting = visible) }
+    }
+
+    /** Last position seen per TV, to spot TVs that claim "playing" but haven't moved for a while. */
+    private val lastMove = HashMap<String, Pair<Double, Long>>()
+
+    private fun isStale(item: TvWatchers.NowCasting, now: Long): Boolean {
+        val a = item.activity
+        val t = a.currentTimeSec ?: return false
+        val key = "${item.tvId}|${a.title}"
+        val prev = lastMove[key]
+        if (prev == null || prev.first != t || a.playerState != "PLAYING") {
+            lastMove[key] = t to now
+            return false
+        }
+        return now - prev.second > 45_000 // "playing" with the clock stuck for 45 s: a stale report
     }
 
     private fun castPlayPauseUnsafe(tvId: String) {
@@ -280,6 +308,41 @@ class MovieSession(private val app: Application) {
         tvWatchers.stopCasting(tvId)
         if (a?.appId == CastStatus.APP_YOUTUBE) resetYouTube()
         if (castSession == null) CastIndicator.hide(app)
+    }
+
+    /** One YouTube remote link per TV, reused so Next/Previous/captions respond quickly. */
+    private val youTubeRemotes = HashMap<String, Pair<YouTubeLounge, YouTubeLounge.Session>>()
+
+    /** Next / previous video on the TV's YouTube app. */
+    fun youTubeNext(tvId: String) = youTubeRemote(tvId, "next")
+    fun youTubePrevious(tvId: String) = youTubeRemote(tvId, "previous")
+
+    /** Captions on (in [language], e.g. "en") or off (null) for the video playing on the TV. */
+    fun youTubeCaptions(tvId: String, videoId: String?, language: String?) =
+        youTubeRemote(tvId, "setSubtitlesTrack", mapOf("videoId" to (videoId ?: ""), "languageCode" to (language ?: "")))
+
+    private fun youTubeRemote(tvId: String, command: String, params: Map<String, String> = emptyMap()) = guard("YouTube $command") {
+        val tv = knownTvs.firstOrNull { it.id == tvId } ?: return@guard say(R.string.yt_no_tv)
+        Thread({
+            fun link(): Pair<YouTubeLounge, YouTubeLounge.Session> {
+                val screenId = YouTubeScreenFinder({ TvWatchers.openTls(tv.address, tv.port) }).screenId()
+                val lounge = YouTubeLounge()
+                return (lounge to lounge.bind(lounge.loungeToken(screenId))).also { synchronized(youTubeRemotes) { youTubeRemotes[tvId] = it } }
+            }
+            try {
+                val (lounge, s) = synchronized(youTubeRemotes) { youTubeRemotes[tvId] } ?: link()
+                try { lounge.command(s, command, params) } catch (_: Exception) {
+                    // The link expires after a while: make a fresh one and try once more.
+                    val (l2, s2) = link()
+                    l2.command(s2, command, params)
+                }
+                main.postDelayed({ tvWatchers.pollNow(tvId) }, 800)
+            } catch (e: Exception) {
+                lastYouTubeError = "YouTube $command failed: ${e.javaClass.simpleName}: ${e.message}"
+                CrashReporter.handled(app, "YouTube $command", e)
+                main.post { say(R.string.yt_remote_failed) }
+            }
+        }, "youtube-remote").start()
     }
 
     /**
@@ -368,28 +431,55 @@ class MovieSession(private val app: Application) {
 
     // ---------------------------------------------------------------- the movie
 
+    /** What must happen before the connected TV can show the chosen movie at the chosen quality. */
+    private fun currentPlan(): CastCompat.Plan {
+        val ui = _ui.value
+        return CastCompat.plan(movieMedia, ui.movieVerdict, ui.quality.shortSide)
+    }
+
     private fun startMovieUnsafe() {
         val original = movie ?: return
         castSession ?: return
+        // Start the movie service now, while the app is on screen: Android won't allow it later
+        // from the background (e.g. when a conversion finishes after switching apps).
+        HostService.start(app)
         val q = _ui.value.quality
-        if (q == Quality.ORIGINAL) return castMovie(original)
-        converter.cachedFile(original.uri, q)?.let { f ->
+        val plan = currentPlan()
+        if (plan == CastCompat.Plan.NONE) return castMovie(original)
+        converter.cachedFile(original.uri, q, plan)?.let { f ->
             return castMovie(ContentUriSource.from(app, Uri.fromFile(f))?.withTitle(original.title) ?: return say(R.string.msg_bad_file))
         }
-        // Convert once on the phone, then cast. Progress shows on the Start button.
-        _ui.update { it.copy(prepareProgress = 0, message = null) }
-        converter.start(original.uri, q, movieMedia, object : MovieConverter.Listener {
-            override fun onProgress(percent: Int) = _ui.update { it.copy(prepareProgress = percent) }
+        // Convert once on the phone, then cast. Progress + time left show on the Start button.
+        val startedAt = SystemClock.elapsedRealtime()
+        _ui.update { it.copy(prepareProgress = 0, prepareEtaSec = null, prepareSoundOnly = plan == CastCompat.Plan.SOUND_ONLY, message = null) }
+        converter.start(original.uri, q, movieMedia, plan, object : MovieConverter.Listener {
+            override fun onProgress(percent: Int) {
+                val elapsed = (SystemClock.elapsedRealtime() - startedAt) / 1000
+                val eta = if (percent in 3..99 && elapsed >= 5) elapsed * (100 - percent) / percent else null
+                _ui.update { it.copy(prepareProgress = percent, prepareEtaSec = eta) }
+            }
             override fun onDone(file: java.io.File) = guard("cast converted movie") {
-                _ui.update { it.copy(prepareProgress = null) }
+                _ui.update { it.copy(prepareProgress = null, prepareEtaSec = null) }
                 val src = ContentUriSource.from(app, Uri.fromFile(file))?.withTitle(original.title)
                 if (src == null) say(R.string.msg_bad_file) else castMovie(src)
             }
             override fun onFailed(reason: String) {
-                CrashReporter.handled(app, "convert movie ($q)", IllegalStateException(reason))
-                _ui.update { it.copy(prepareProgress = null, message = app.getString(R.string.msg_convert_failed, reason)) }
+                CrashReporter.handled(app, "convert movie ($q, $plan)", IllegalStateException(reason))
+                if (server == null) HostService.stop(app)
+                _ui.update { it.copy(prepareProgress = null, prepareEtaSec = null, message = app.getString(R.string.msg_convert_failed, reason)) }
             }
         })
+    }
+
+    /** The X on the chosen movie: forget it (and stop any preparation). */
+    fun clearMovie() = guard("clearMovie") {
+        converter.cancel()
+        if (server == null) HostService.stop(app)
+        movie = null
+        movieMedia = null
+        qualityChosenByUser = false
+        prefs.edit { remove(KEY_MOVIE_URI) }
+        _ui.update { it.copy(movieTitle = null, movieInfo = null, movieVerdict = null, prepareProgress = null, prepareEtaSec = null, quality = Quality.ORIGINAL, moviePlan = null) }
     }
 
     /** Sends [m] to the TV and starts headphone sound. */
@@ -478,6 +568,12 @@ class MovieSession(private val app: Application) {
     private fun togglePauseUnsafe() {
         val c = castSession?.remoteMediaClient ?: return
         if (c.isPlaying) c.pause() else c.play()
+    }
+
+    /** Drag on the movie's progress bar: jump the TV there (the headphones follow). */
+    fun seekTo(positionMs: Long) = guard("seekTo") {
+        val c = castSession?.remoteMediaClient ?: return@guard
+        c.seek(MediaSeekOptions.Builder().setPosition(positionMs.coerceAtLeast(0)).build())
     }
 
     private fun skipUnsafe(deltaMs: Long) {
@@ -642,9 +738,9 @@ class MovieSession(private val app: Application) {
             if (playingSinceMs == 0L) playingSinceMs = SystemClock.elapsedRealtime()
             val p = player
             val silent = p == null || !p.exo.isPlaying
-            if (silent && SystemClock.elapsedRealtime() - playingSinceMs > 5_000 && !headphoneWarned) {
+            if (silent && SystemClock.elapsedRealtime() - playingSinceMs > 8_000 && !headphoneWarned) {
                 headphoneWarned = true
-                val why = p?.lastError ?: "player state ${p?.exo?.playbackState}, suppression ${p?.exo?.playbackSuppressionReason}"
+                val why = p?.lastError ?: "player state ${p?.exo?.playbackState}, suppression ${p?.exo?.playbackSuppressionReason}, seeks ${p?.seeks}, lead ${p?.startLeadMs} ms"
                 lastHeadphoneProblem = why
                 CrashReporter.handled(app, "headphone sound didn't start", IllegalStateException(why))
                 say(R.string.msg_headphones_silent)
@@ -707,7 +803,17 @@ class MovieSession(private val app: Application) {
     fun setMuteTv(on: Boolean) = guard("setMuteTv") { setMuteTvUnsafe(on) }
 
     fun castSkip(tvId: String, deltaSec: Double) = guard("castSkip") { tvWatchers.seekBy(tvId, deltaSec) }
+    fun castSeekTo(tvId: String, seconds: Double) = guard("castSeekTo") { tvWatchers.seekTo(tvId, seconds) }
     fun castVolume(tvId: String, level: Double) = guard("castVolume") { tvWatchers.setVolume(tvId, level) }
+    /** Remote − / + : change the TV volume by [delta] (0..1 scale). */
+    fun castVolumeStep(tvId: String, delta: Double) = guard("castVolumeStep") {
+        val now = rawNowCasting.firstOrNull { it.tvId == tvId }?.activity?.volumeLevel ?: lastVolume[tvId] ?: 0.5
+        val next = (now + delta).coerceIn(0.0, 1.0)
+        lastVolume[tvId] = next
+        tvWatchers.setVolume(tvId, next)
+    }
+    private val lastVolume = HashMap<String, Double>()
+
     fun castMute(tvId: String, muted: Boolean) = guard("castMute") { tvWatchers.setMuted(tvId, muted) }
 
     private inline fun guard(where: String, block: () -> Unit) {
@@ -759,10 +865,11 @@ class MovieSession(private val app: Application) {
     private fun refreshVerdict() {
         val media = movieMedia ?: return
         val verdict = CastCompat.verdict(media, castSession?.castDevice?.modelName)
+        // Default to the fastest choice the TV can show: the original picture whenever possible
+        // (only the sound is fixed if needed); scale down only if the picture itself can't play.
         val default = when {
-            verdict.playable && CastCompat.Problem.BITRATE !in verdict.problems -> Quality.ORIGINAL
-            minOf(media.width, media.height) in 1..720 -> Quality.P720
-            else -> Quality.P1080
+            CastCompat.Problem.RESOLUTION in verdict.problems -> Quality.P1080
+            else -> Quality.ORIGINAL
         }
         _ui.update {
             it.copy(
@@ -771,16 +878,19 @@ class MovieSession(private val app: Application) {
                 quality = if (qualityChosenByUser) it.quality else default,
             )
         }
+        _ui.update { it.copy(moviePlan = currentPlan()) }
     }
 
     fun setQuality(q: Quality) = guard("setQuality") {
         qualityChosenByUser = true
         _ui.update { it.copy(quality = q) }
+        _ui.update { it.copy(moviePlan = currentPlan()) }
     }
 
     fun cancelPrepare() = guard("cancelPrepare") {
         converter.cancel()
-        _ui.update { it.copy(prepareProgress = null) }
+        if (server == null) HostService.stop(app)
+        _ui.update { it.copy(prepareProgress = null, prepareEtaSec = null) }
     }
 
     /** Which output TheatreSync's sound plays on (null = Android decides). */
