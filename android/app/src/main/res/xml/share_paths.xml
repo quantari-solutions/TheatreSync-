@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Settings → Share TheatreSync: a copy of the app's own APK in the cache, shared to another phone. -->
+<paths>
+    <cache-path name="share" path="share/" />
+</paths>

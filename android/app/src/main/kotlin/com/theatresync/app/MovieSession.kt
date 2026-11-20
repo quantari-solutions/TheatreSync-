@@ -25,12 +25,15 @@ import com.google.android.gms.cast.framework.CastContext
 import com.google.android.gms.cast.framework.CastSession
 import com.google.android.gms.cast.framework.SessionManagerListener
 import com.theatresync.core.CastActivity
+import com.theatresync.core.CastIntro
 import com.theatresync.core.CastStatus
 import com.theatresync.core.Dial
 import com.theatresync.core.MediaServer
 import com.theatresync.core.MediaSource
 import com.theatresync.core.Mp4VideoOnly
 import com.theatresync.core.YouTubeLounge
+import com.theatresync.core.UpNext
+import com.theatresync.core.Subtitles
 import com.theatresync.core.YouTubeScreenFinder
 import com.theatresync.core.Payload
 import com.theatresync.core.Platform
@@ -56,6 +59,10 @@ class MovieSession(private val app: Application) {
 
     data class NewDevice(val id: Int, val name: String)
 
+    data class UpNextVideo(val videoId: String, val title: String?, val channel: String?) {
+        val thumbnail: String get() = "https://i.ytimg.com/vi/$videoId/mqdefault.jpg"
+    }
+
     /** @param youTubeOnly a smart TV found via DIAL (e.g. Samsung The Frame): YouTube only, no movies. */
     data class Tv(val id: String, val name: String, val isSpeaker: Boolean = false, val youTubeOnly: Boolean = false)
 
@@ -70,6 +77,8 @@ class MovieSession(private val app: Application) {
         val soundDelayMs: Int = 0,
         val headphonesHere: Boolean = true,
         val muteTv: Boolean = true,
+        /** The TV only got the picture (surround sound fixed instantly): the room speakers are silent. */
+        val tvSoundless: Boolean = false,
         val headphoneName: String? = null,
         val friends: Int = 0,
         val joinAddress: String? = null,
@@ -104,6 +113,18 @@ class MovieSession(private val app: Application) {
         val roomSoundToo: Boolean = false,
         /** Experimental: Quantari + TheatreSync titles on the TV before each movie. */
         val signatureIntro: Boolean = false,
+        /** Experimental: "Share audio" page (several headphones) shown in the menu. */
+        val multiAudio: Boolean = false,
+        /** YouTube: what's coming up on each TV (tvId → videos). */
+        val upNext: Map<String, List<UpNextVideo>> = emptyMap(),
+        /** Subtitles for the chosen movie (file name or "Generated · English"), and whether they show. */
+        val subtitleName: String? = null,
+        val subtitlesOn: Boolean = true,
+        /** Generating subtitles: percent done and seconds left (null when not running). */
+        val subtitleProgress: Int? = null,
+        val subtitleEtaSec: Long? = null,
+        /** YouTube ad skipper + SponsorBlock (on by default). */
+        val adSkipper: Boolean = true,
         /** The signature intro is on the TV right now. */
         val introPlaying: Boolean = false,
         /** Headphones that just connected (asks "use them?" while a movie plays). */
@@ -213,6 +234,8 @@ class MovieSession(private val app: Application) {
         movie = source
         movieMedia = null
         qualityChosenByUser = false
+        subtitleCues = null
+        _ui.update { it.copy(subtitleName = null) }
         prefs.edit { putString(KEY_MOVIE_URI, uri.toString()) }
         _ui.update { it.copy(movieTitle = source.title, message = null, movieInfo = null, movieVerdict = null, prepareProgress = null) }
         inspectMovie(source)
@@ -344,6 +367,8 @@ class MovieSession(private val app: Application) {
                 isStale(it, now)
         }
         _ui.update { it.copy(nowCasting = visible) }
+        // Ad skipper runs for every TV showing YouTube (when switched on).
+        adSkipper.sync(if (_ui.value.adSkipper) visible.filter { it.activity.kind == CastActivity.Kind.YOUTUBE }.map { it.tvId }.toSet() else emptySet())
     }
 
     /** Last position seen per TV, to spot TVs that claim "playing" but haven't moved for a while. */
@@ -433,12 +458,107 @@ class MovieSession(private val app: Application) {
         if (castSession == null) CastIndicator.hide(app)
     }
 
+    /**
+     * Signature Intro before YouTube or mirroring: plays the clip on a Chromecast and returns when it
+     * ends (blocking; call off the main thread). Skipped for smart TVs (no media player we can use),
+     * when switched off, or while a movie is running.
+     */
+    private fun playIntroBlocking(tvId: String) {
+        if (!_ui.value.signatureIntro || isDial(tvId) || server != null) return
+        val tv = knownTvs.firstOrNull { it.id == tvId } ?: return
+        val ip = NetworkInfo.localIpv4For(app, tv.address) ?: return
+        val srv = MediaServer(
+            senderId = deviceId,
+            clockMs = { SystemClock.elapsedRealtime() },
+            stateProvider = { null },
+            helloProvider = { Payload.Hello(Build.MODEL.take(64).ifBlank { "Android" }, Platform.ANDROID, Role.HOST, BuildConfig.VERSION_NAME, listOf(1)) },
+        )
+        srv.intro = RawResourceSource(app, R.raw.signature_intro, "TheatreSync")
+        try {
+            val port = srv.start()
+            CastIntro({ TvWatchers.openTls(tv.address, tv.port) }).play("http://$ip:$port/intro")
+        } catch (e: Exception) {
+            CrashReporter.handled(app, "signature intro before cast", e) // never block the cast itself
+        } finally {
+            srv.stop()
+        }
+    }
+
+    /** Mirroring: show the intro on the TV first, then hand over to Android's screen-cast screen. */
+    fun playIntroThen(tvId: String?, then: () -> Unit) = guard("intro then") {
+        if (tvId == null || !_ui.value.signatureIntro) return@guard then()
+        Thread({ playIntroBlocking(tvId); main.post(then) }, "intro").start()
+    }
+
+    /** The TV to use when the owner didn't pick one: the connected TV, else the only Chromecast with a screen. */
+    fun defaultTvId(): String? =
+        _ui.value.tvs.firstOrNull { it.name == _ui.value.connectedTv }?.id
+            ?: _ui.value.tvs.filter { !it.youTubeOnly && !it.isSpeaker }.singleOrNull()?.id
+
+    private val titleCache = java.util.concurrent.ConcurrentHashMap<String, Pair<String?, String?>>()
+    private val upNextList = java.util.concurrent.ConcurrentHashMap<String, String>() // tvId → playlist ID
+
+    /** Reads what's queued on the TV's YouTube and looks up the titles (YouTube oEmbed). */
+    fun refreshUpNext(tvId: String) = guard("refreshUpNext") {
+        if (tvName(tvId) == null) return@guard
+        Thread({
+            runCatching {
+                val (lounge, session) = synchronized(youTubeRemotes) { youTubeRemotes[tvId] }
+                    ?: YouTubeLounge().let { l -> (l to l.bind(l.loungeToken(youTubeScreenId(tvId)))).also { synchronized(youTubeRemotes) { youTubeRemotes[tvId] = it } } }
+                val events = lounge.events(session)
+                UpNext.listId(events)?.let { upNextList[tvId] = it }
+                val ids = UpNext.parse(events)
+                if (ids.isEmpty()) return@runCatching
+                val videos = ids.map { id ->
+                    val (title, channel) = titleCache.getOrPut(id) { oEmbed(id) }
+                    UpNextVideo(id, title, channel)
+                }
+                main.post { _ui.update { it.copy(upNext = it.upNext + (tvId to videos)) } }
+            }
+        }, "up-next").apply { isDaemon = true }.start()
+    }
+
+    /** Title and channel of a YouTube video from its public oEmbed page; nulls if offline. */
+    private fun oEmbed(videoId: String): Pair<String?, String?> = runCatching {
+        val c = java.net.URL("https://www.youtube.com/oembed?format=json&url=" +
+            java.net.URLEncoder.encode("https://www.youtube.com/watch?v=$videoId", "UTF-8")).openConnection() as java.net.HttpURLConnection
+        c.connectTimeout = 5_000; c.readTimeout = 5_000
+        val body = c.inputStream.use { it.readBytes().decodeToString() }
+        fun field(name: String) = Regex(""""$name"\s*:\s*"((?:[^"\\]|\\.)*)"""").find(body)?.groupValues?.get(1)
+            ?.replace("\\u0026", "&")?.replace("\\\"", "\"")
+        field("title") to field("author_name")
+    }.getOrDefault(null to null)
+
+    /** Play one of the Up next videos now (inside the same playlist / Mix when there is one). */
+    fun playUpNext(tvId: String, videoId: String) {
+        val params = mutableMapOf("videoId" to videoId, "currentTime" to "0")
+        upNextList[tvId]?.let { params["listId"] = it }
+        youTubeRemote(tvId, "setPlaylist", params)
+        _ui.update { it.copy(upNext = it.upNext + (tvId to (it.upNext[tvId].orEmpty().dropWhile { v -> v.videoId != videoId }.drop(1)))) }
+    }
+
     /** One YouTube remote link per TV, reused so Next/Previous/captions respond quickly. */
     private val youTubeRemotes = HashMap<String, Pair<YouTubeLounge, YouTubeLounge.Session>>()
 
     /** Next / previous video on the TV's YouTube app. */
-    fun youTubeNext(tvId: String) = youTubeRemote(tvId, "next")
-    fun youTubePrevious(tvId: String) = youTubeRemote(tvId, "previous")
+    fun youTubeNext(tvId: String) = youTubeSkipVideo(tvId, "next")
+    fun youTubePrevious(tvId: String) = youTubeSkipVideo(tvId, "previous")
+
+    /** Next/previous, then check the TV really changed video; YouTube ignores it with nothing queued. */
+    private fun youTubeSkipVideo(tvId: String, command: String) {
+        val before = activityFor(tvId)?.contentId
+        youTubeRemote(tvId, command)
+        if (isDial(tvId)) return // smart TVs report nothing back to compare with
+        main.postDelayed({
+            guard("check $command") {
+                val after = activityFor(tvId)?.contentId
+                if (before != null && after == before) {
+                    say(if (command == "next") R.string.yt_no_next else R.string.yt_no_previous)
+                    CrashReporter.handled(app, "YouTube $command had no effect", IllegalStateException("video stayed $before"))
+                }
+            }
+        }, 5_000)
+    }
 
     /** Captions on (in [language], e.g. "en") or off (null) for the video playing on the TV. */
     fun youTubeCaptions(tvId: String, videoId: String?, language: String?) =
@@ -480,8 +600,10 @@ class MovieSession(private val app: Application) {
         val tv = object { val id = tvId; val name = name }
         _ui.update { it.copy(youTube = YouTubeState.STARTING, youTubeVideoId = videoId, youTubeTvId = tv.id, message = null) }
         Thread({
-            var step = "starting YouTube on the TV"
+            var step = "playing the Signature Intro"
             val ok = try {
+                playIntroBlocking(tvId)
+                step = "starting YouTube on the TV"
                 val screenId = youTubeScreenId(tvId)
                 step = "asking YouTube to play the video"
                 val lounge = YouTubeLounge()
@@ -617,6 +739,81 @@ class MovieSession(private val app: Application) {
         })
     }
 
+    // ------------------------------------------------------------- subtitles
+
+    private var subtitleCues: List<Subtitles.Cue>? = null
+    private val subtitleGenerator by lazy { SubtitleGenerator(app) }
+
+    fun subtitlesSupported(): Boolean = subtitleGenerator.isSupported()
+
+    /** A .srt / .vtt file the owner picked for the chosen movie. */
+    fun loadSubtitles(uri: Uri) = guard("loadSubtitles") {
+        Thread({
+            val text = runCatching { app.contentResolver.openInputStream(uri)?.use { it.readBytes().decodeToString() } }.getOrNull()
+            val cues = text?.let { Subtitles.parse(it) }.orEmpty()
+            val name = runCatching { ContentUriSource.from(app, uri)?.title }.getOrNull() ?: app.getString(R.string.subtitles)
+            main.post {
+                if (cues.isEmpty()) say(R.string.msg_bad_subtitles)
+                else { subtitleCues = cues; _ui.update { it.copy(subtitleName = name, subtitlesOn = true) }; applySubtitlesToTv() }
+            }
+        }, "subtitles-load").start()
+    }
+
+    /** Makes subtitles on the phone from the movie's speech ([spoken]), shown in [shownIn]. */
+    fun generateSubtitles(spoken: String, shownIn: String, label: String) = guard("generateSubtitles") {
+        val m = movie ?: return@guard
+        subtitleGenerator.cachedFile(m.uri, spoken, shownIn)?.let { f ->
+            subtitleCues = Subtitles.parse(f.readText())
+            _ui.update { it.copy(subtitleName = label, subtitlesOn = true) }
+            applySubtitlesToTv()
+            return@guard
+        }
+        _ui.update { it.copy(subtitleProgress = 0, subtitleEtaSec = null) }
+        subtitleGenerator.start(m.uri, spoken, shownIn, object : SubtitleGenerator.Listener {
+            override fun onProgress(percent: Int, etaSec: Long?) = _ui.update { it.copy(subtitleProgress = percent, subtitleEtaSec = etaSec) }
+            override fun onDone(srtFile: java.io.File) = guard("subtitles done") {
+                subtitleCues = Subtitles.parse(srtFile.readText())
+                _ui.update { it.copy(subtitleProgress = null, subtitleEtaSec = null, subtitleName = label, subtitlesOn = true) }
+                applySubtitlesToTv()
+            }
+            override fun onFailed(reason: String) = _ui.update { it.copy(subtitleProgress = null, subtitleEtaSec = null, message = app.getString(R.string.msg_subtitles_failed, reason)) }
+        })
+    }
+
+    fun cancelSubtitles() = guard("cancelSubtitles") {
+        subtitleGenerator.cancel()
+        _ui.update { it.copy(subtitleProgress = null, subtitleEtaSec = null) }
+    }
+
+    fun clearSubtitles() = guard("clearSubtitles") {
+        subtitleCues = null
+        server?.subtitlesVtt = null
+        _ui.update { it.copy(subtitleName = null) }
+        runCatching { castSession?.remoteMediaClient?.setActiveMediaTracks(longArrayOf()) }
+    }
+
+    /** CC on/off on the movie page: switches the TV's subtitle track. */
+    fun setSubtitlesOn(on: Boolean) = guard("setSubtitlesOn") {
+        _ui.update { it.copy(subtitlesOn = on) }
+        runCatching { castSession?.remoteMediaClient?.setActiveMediaTracks(if (on && subtitleCues != null) longArrayOf(SUBTITLE_TRACK) else longArrayOf()) }
+    }
+
+    /** Subtitles chosen while a movie already plays: hand them to the server; they apply on the next start. */
+    private fun applySubtitlesToTv() {
+        server?.subtitlesVtt = subtitleCues?.let { Subtitles.toVtt(it) }
+        if (server != null) say(R.string.msg_subtitles_next_start)
+    }
+
+    private fun subtitleTrack(ip: String, port: Int): com.google.android.gms.cast.MediaTrack? {
+        if (subtitleCues == null) return null
+        return com.google.android.gms.cast.MediaTrack.Builder(SUBTITLE_TRACK, com.google.android.gms.cast.MediaTrack.TYPE_TEXT)
+            .setName(_ui.value.subtitleName ?: "Subtitles")
+            .setSubtype(com.google.android.gms.cast.MediaTrack.SUBTYPE_SUBTITLES)
+            .setContentId("http://$ip:$port/subs.vtt")
+            .setContentType("text/vtt")
+            .build()
+    }
+
     /** The X on the chosen movie: forget it (and stop any preparation). */
     fun clearMovie() = guard("clearMovie") {
         converter.cancel()
@@ -627,6 +824,9 @@ class MovieSession(private val app: Application) {
         prefs.edit { remove(KEY_MOVIE_URI) }
         _ui.update { it.copy(movieTitle = null, movieInfo = null, movieVerdict = null, prepareProgress = null, prepareEtaSec = null, quality = Quality.ORIGINAL, moviePlan = null) }
     }
+
+    /** Where to start the next cast (restart with room sound keeps the spot). */
+    private var pendingResumeMs = 0L
 
     /** Address the TV plays the movie from, and the intro's (when the signature intro is on). */
     private var movieUrl: String? = null
@@ -652,6 +852,7 @@ class MovieSession(private val app: Application) {
         )
         srv.media = tvSource
         srv.audioMedia = m // TapIn guests always get the movie with its sound
+        srv.subtitlesVtt = subtitleCues?.let { Subtitles.toVtt(it) }
         val port = try { srv.start() } catch (_: Exception) { return say(R.string.msg_no_wifi) }
         server = srv
 
@@ -669,16 +870,22 @@ class MovieSession(private val app: Application) {
         playingSinceMs = 0L
         headphoneWarned = false
         val meta = MediaMetadata(MediaMetadata.MEDIA_TYPE_MOVIE).apply { putString(MediaMetadata.KEY_TITLE, m.title) }
+        val subsTrack = subtitleTrack(ip, port)
         val info = MediaInfo.Builder(url)
             .setContentUrl(url)
             .setStreamType(MediaInfo.STREAM_TYPE_BUFFERED)
             .setContentType(tvSource.mimeType)
             .setMetadata(meta)
+            .apply { subsTrack?.let { setMediaTracks(listOf(it)) } }
             .build()
+        val activeTracks = if (subsTrack != null && _ui.value.subtitlesOn) longArrayOf(SUBTITLE_TRACK) else null
         movieUrl = url
         movieOnScreen = false
+        val resumeAt = pendingResumeMs
+        pendingResumeMs = 0L
+        _ui.update { it.copy(tvSoundless = tvSource !== m) }
         introUrl = null
-        val request = if (_ui.value.signatureIntro) {
+        val request = if (_ui.value.signatureIntro && resumeAt == 0L) {
             // Signature intro: Quantari + TheatreSync titles play first, then the movie (one queue,
             // so the TV goes straight from the titles into the film).
             srv.intro = RawResourceSource(app, R.raw.signature_intro, "TheatreSync")
@@ -691,13 +898,15 @@ class MovieSession(private val app: Application) {
             val queue = com.google.android.gms.cast.MediaQueueData.Builder()
                 .setItems(listOf(
                     com.google.android.gms.cast.MediaQueueItem.Builder(introInfo).setAutoplay(true).setPreloadTime(4.0).build(),
-                    com.google.android.gms.cast.MediaQueueItem.Builder(info).setAutoplay(true).build(),
+                    com.google.android.gms.cast.MediaQueueItem.Builder(info).setAutoplay(true).setStartTime(resumeAt / 1000.0)
+                        .apply { activeTracks?.let { setActiveTrackIds(it) } }.build(),
                 ))
                 .setStartIndex(0)
                 .build()
             MediaLoadRequestData.Builder().setQueueData(queue).setAutoplay(true).build()
         } else {
-            MediaLoadRequestData.Builder().setMediaInfo(info).setAutoplay(true).build()
+            MediaLoadRequestData.Builder().setMediaInfo(info).setAutoplay(true).setCurrentTime(resumeAt)
+                .apply { activeTracks?.let { setActiveTrackIds(it) } }.build()
         }
         client.load(request).setResultCallback { result ->
             if (!result.status.isSuccess) say(R.string.msg_tv_cant_play)
@@ -705,7 +914,7 @@ class MovieSession(private val app: Application) {
 
         applyTvMute()
         announcer.announce("TheatreSync · ${m.title}".take(60), ip, port)
-        TapInService.url = "http://$ip:$port/listen"
+        // TapIn NFC shares the address only while the owner has the "Share by NFC" screen open.
         wifiLock = (app.getSystemService(Context.WIFI_SERVICE) as WifiManager)
             .createWifiLock(WifiManager.WIFI_MODE_FULL_LOW_LATENCY, "theatresync").apply { acquire() }
         CastIndicator.hide(app) // the movie's own notification takes over (same cast icon)
@@ -782,6 +991,32 @@ class MovieSession(private val app: Application) {
         prefs.edit { putInt("soundDelayMs", 0) }
         _ui.update { it.copy(soundDelayMs = 0) }
         player?.resetSync()
+    }
+
+    // ------------------------------------------------------------- YouTube ad skipper
+
+    private val adSkipper = AdSkipper(
+        connect = { tvId -> YouTubeLounge().let { l -> l to l.bind(l.loungeToken(youTubeScreenId(tvId))) } },
+        positionSec = { tvId -> rawNowCasting.firstOrNull { it.tvId == tvId }?.activity?.currentTimeSec },
+        onAction = { _, what ->
+            main.post {
+                adStats = adStats.let { (ads, sponsors) -> if (what == AdSkipper.Action.SKIPPED_SPONSOR) ads to sponsors + 1 else ads + 1 to sponsors }
+            }
+        },
+    )
+    /** Ads handled and sponsor segments skipped this session (shown in Settings). */
+    @Volatile var adStats = 0 to 0
+        private set
+
+    fun setAdSkipper(on: Boolean) = guard("setAdSkipper") {
+        prefs.edit { putBoolean("adSkipper", on) }
+        _ui.update { it.copy(adSkipper = on) }
+        publishNowCasting(rawNowCasting)
+    }
+
+    fun setMultiAudio(on: Boolean) = guard("setMultiAudio") {
+        prefs.edit { putBoolean("multiAudio", on) }
+        _ui.update { it.copy(multiAudio = on) }
     }
 
     fun setSignatureIntro(on: Boolean) = guard("setSignatureIntro") {
@@ -1018,6 +1253,36 @@ class MovieSession(private val app: Application) {
     fun skip(deltaMs: Long) = guard("skip") { skipUnsafe(deltaMs) }
     fun setMuteTv(on: Boolean) = guard("setMuteTv") { setMuteTvUnsafe(on) }
 
+    /**
+     * Audio → Room speakers (TV) checkbox. On: the TV plays the sound too (for a movie whose sound the
+     * TV can't play, it restarts at the same spot with the sound converted). Off: the TV is silent.
+     */
+    fun setRoomSpeakers(on: Boolean) = guard("setRoomSpeakers") {
+        prefs.edit { putBoolean("roomSpeakers", on) }
+        _ui.update { it.copy(muteTv = !on, roomSoundToo = on) }
+        if (on && server != null && _ui.value.tvSoundless) restartWithRoomSound() else applyTvMute()
+    }
+
+    /** Restart the running movie at the same spot, this time giving the TV sound as well. */
+    private fun restartWithRoomSound() {
+        pendingResumeMs = _ui.value.positionMs
+        castSession?.remoteMediaClient?.stop()
+        teardown()
+        _ui.update { it.copy(phase = Phase.SETUP, joinAddress = null, tvSoundless = false, message = app.getString(R.string.msg_room_sound_restart)) }
+        startMovieUnsafe()
+    }
+
+    /** Pull to refresh: look for TVs and smart TVs again right now. */
+    fun refreshDevices() = guard("refreshDevices") {
+        lastDialScanMs = 0L
+        scanDial()
+        if (castContext != null) {
+            router.addCallback(selector, routerCallback, MediaRouter.CALLBACK_FLAG_PERFORM_ACTIVE_SCAN)
+            refreshTvs()
+            main.postDelayed({ guard("scan mode") { applyScanMode() } }, 10_000)
+        }
+    }
+
     fun castSkip(tvId: String, deltaSec: Double) = guard("castSkip") { castSkipUnsafe(tvId, deltaSec) }
     fun castSeekTo(tvId: String, seconds: Double) = guard("castSeekTo") { castSeekToUnsafe(tvId, seconds) }
     fun castVolume(tvId: String, level: Double) = guard("castVolume") {
@@ -1051,6 +1316,7 @@ class MovieSession(private val app: Application) {
         private const val TICK_MS = 200L
         private const val KEY_MOVIE_URI = "movieUri"
         private const val TV_START_TIMEOUT_MS = 20_000L
+        private const val SUBTITLE_TRACK = 1L
         private const val KEY_WE_MUTED = "weMutedTv"
     }
 
@@ -1172,7 +1438,8 @@ class MovieSession(private val app: Application) {
     // restarted the app while the file picker was open).
     init {
         main.post { guard("restore movie") { restoreMovie() } }
-        _ui.update { it.copy(autoSwitch = prefs.getBoolean("autoSwitch", false), signatureIntro = prefs.getBoolean("signatureIntro", false)) }
+        _ui.update { it.copy(autoSwitch = prefs.getBoolean("autoSwitch", false), signatureIntro = prefs.getBoolean("signatureIntro", true), multiAudio = prefs.getBoolean("multiAudio", false), adSkipper = prefs.getBoolean("adSkipper", true)) }
+        prefs.getBoolean("roomSpeakers", false).let { on -> _ui.update { it.copy(muteTv = !on, roomSoundToo = on) } }
         deviceWatchStartedAt = SystemClock.elapsedRealtime()
         runCatching { audioManager?.registerAudioDeviceCallback(deviceCallback, main) }
         if (castContext == null) {

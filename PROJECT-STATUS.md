@@ -1,6 +1,46 @@
 # Project status
 
-_Last updated: 2026-11-20. 0.5.0 (not released: owner releases when ready): TapIn guest listening (NFC + QR, no app), picture in picture, one crash-reports page_
+_Last updated: 2026-11-20. 0.5.3 (owner releases when ready): subtitles (files + generated on the phone, translated), YouTube ad skipper + SponsorBlock, per-chip APKs_
+
+## 0.5.3: subtitles and ad skipper
+
+| Request | Done | Verified |
+|---|---|---|
+| Load .srt subtitles | Subtitles row under the movie: **Load file** (.srt/.vtt) → converted to WebVTT, served at `/subs.vtt` (CORS), added as a Cast text track; **CC** switch on the movie page | Parser/route unit tests; needs HW-17 |
+| Auto-generated subtitles for own videos, any language | **Generate**: decodes the movie's sound, cuts it at pauses (energy VAD, 1.5–12 s pieces), runs Android's **on-device** speech recognizer on each piece (Android 13+ audio-from-file), writes timed cues; **translation** on the phone with ML Kit (language downloaded once). Saved per movie. Progress + time left; Cancel | Chunker/resampler/cue unit tests; recognition speed and accuracy need HW-17 (depends on the phone's offline speech models) |
+| Ad blocker like ReVanced | ReVanced patches the YouTube app *on the phone*; ads on the TV come from the TV's own YouTube app, which can't be patched. Built instead what open-source **iSponsorBlockTV** does over YouTube's remote protocol: press **Skip ad** as soon as allowed, **mute** unskippable ads, skip **SponsorBlock** segments (sponsor, self-promo, interaction). Command names checked against the pyytlounge source. Experimental → Ad skipper (on by default) | Event/SponsorBlock parser tests; needs HW-17 |
+| Two Bluetooth headsets on one phone | Not possible for one app: Android keeps two headsets *connected* but streams media to one *active* device (A2DP); there is no API to send audio to both. Exceptions are LE Audio/Auracast (Share audio page) and some brands' own "dual audio" in their system software | — |
+| APK size | ML Kit's translator adds ~16 MB native code per chip type → one APK per type (arm64 for phones: 24 MB; x86_64 for the CI emulator) | Built |
+
+## 0.5.2: owner feedback
+
+| Request | Done | Verified |
+|---|---|---|
+| Signature intro before YouTube and mirroring | `CastIntro` (sync-core) plays the clip through the Default Media Receiver and waits for it to finish, then YouTube starts / Android's cast screen opens. For YouTube cast *from TheatreSync* and Mirror from TheatreSync. Casting from other apps (YouTube/ReVanced cast button, laptop Chrome) can't be intercepted. Smart TVs (DIAL) have no player for it | Load/status unit tests; needs HW-16 |
+| Opening animation on app start | Same clip full screen on a fresh start (new process) only; coming back from another app resumes where you were. Tap to skip | Compiles; skipped under instrumentation |
+| Up next + swipe | Reads the TV's YouTube queue from Lounge events (playlist/Mix + autoplay pick), titles via YouTube oEmbed; row of thumbnails, tap to play; swipe the big picture left/right for next/previous. No animations | Parser unit tests; needs HW-16 |
+| No animations | Page changes are instant | — |
+| The Frame not under Choose your TV | Listed there as "Smart TV · YouTube only"; tapping explains and offers YouTube | Screenshot |
+| Headphone battery | Shown in Audio sources where the phone shares it (Android has no public API; read via the hidden getBatteryLevel, else omitted) | needs HW-16 |
+| Share app | Settings → Share TheatreSync: sends the APK (Android); text tells iPhone users to join with TapIn (iPhones can't install outside the App Store) | needs HW-16 |
+| Same sound on 2+ headphones (music/calls) | Experimental → **Share audio** switch; when on, a menu page checks LE Audio broadcast (Auracast) support and opens Android's audio sharing. Needs LE Audio in phone *and* headphones; otherwise Android allows one headset. Movies: TapIn | needs HW-16 |
+| Fix found while doing this | An unchecked text replacement in 0.5.1 had silently skipped wiring "dismiss message" on the remote page; all edits now use checked replacements and a wiring audit | — |
+
+## 0.5.1: owner feedback on 0.5.0
+
+| Report | Cause / answer | Done | Verified |
+|---|---|---|---|
+| Want checkboxes, one "Audio" place | — | 🎧 **Audio** (top right of the movie and Now casting pages, and the movie page's Audio row) opens **Audio sources**: checkboxes for Room speakers (TV), every connected headset, the phone speaker; Guests (TapIn) with **Share by NFC** / **Show QR code** buttons | Compiles; screenshots of pages |
+| Room speakers silent; mute toggle did nothing | Room sound was off by default, and surround movies sent the TV picture only | The toggles are gone. **Room speakers** checkbox: on = TV sound (surround movies restart at the same spot with converted sound); off = TV silent. Remembered | needs HW-15 |
+| Two headsets at once (Sony took over from MOMENTUM 4) | Android plays media on **one** Bluetooth headset per phone; connecting a second makes it the active one. No app can change this | Audio sources lists every connected headset (ticking an idle one switches to it) and explains; second pair → TapIn on another phone | — |
+| Signature animation didn't show | It was off by default (Settings → Experimental) | **On by default** now; not played on a mid-movie restart | needs HW-15 |
+| Next (remote) did nothing | YouTube ignores Next with nothing queued (single video). No error, so no crash report | After Next/Previous the app checks the TV changed video; if not it says why ("works inside a playlist or Mix") and logs it. Messages now show on the remote and Now casting pages | needs HW-15 |
+| NFC chooser ("TheatreSync or NFC Tools?") | Another installed NFC app registers the same NFC tag ID | NFC sharing is **only active while "Share by NFC" is open**, and TheatreSync is then the preferred NFC service (Android's official way to skip the chooser). QR only on request | needs HW-15 |
+| Remote while casting | — | 🎛 button top right of the movie and Now casting pages | Screenshot |
+| Pull down to refresh | — | Pull down on any page: re-scans Chromecasts (active scan 10 s), smart TVs (DIAL) and headphones | Compiles |
+| Glow around what's playing | — | A soft gold glint circles the Now casting / Movie playing card every 5 s while playing | Screenshot (still frame) |
+| Ad blocker | YouTube's ads are played by the TV's own YouTube app; a phone app can't remove them (YouTube Premium is the only way) | Not built | — |
+| Auto captions for any video | YouTube: Captions button already offers YouTube's own (incl. auto-generated) tracks. Own movies: needs on-device speech-to-text + translation; large feature | Not built yet; first step offered: load .srt subtitle files and show them on the TV | — |
 
 ## 0.5.0: TapIn, picture in picture, crash reports in one place
 

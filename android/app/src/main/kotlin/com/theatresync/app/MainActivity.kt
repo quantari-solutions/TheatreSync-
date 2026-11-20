@@ -34,10 +34,14 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
@@ -86,6 +90,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.res.painterResource
+import kotlinx.coroutines.launch
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -108,10 +113,12 @@ import com.theatresync.core.CastActivity
 import com.theatresync.core.YouTubeLinks
 import kotlin.math.abs
 
-enum class Page { HOME, HEADPHONES, NOW_CASTING, YOUTUBE, MIRROR, SETTINGS, CRASHES, GITHUB, REMOTE, MOVIE, HEADPHONE_SETTINGS, EXPERIMENTAL }
+enum class Page { HOME, HEADPHONES, NOW_CASTING, YOUTUBE, MIRROR, SETTINGS, CRASHES, GITHUB, REMOTE, MOVIE, HEADPHONE_SETTINGS, EXPERIMENTAL, MULTI_AUDIO }
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 class MainActivity : ComponentActivity() {
-    private val session: MovieSession get() = (application as TheatreSyncApplication).session
+    private val app: TheatreSyncApplication get() = application as TheatreSyncApplication
+    private val session: MovieSession get() = app.session
     private val outputs = mutableStateOf<List<DiagnosticsReport.Output>>(emptyList())
     private val details = mutableStateOf("")
     private val sharedLink = mutableStateOf<String?>(null)
@@ -137,6 +144,27 @@ class MainActivity : ComponentActivity() {
         refreshAudio()
     }
 
+    private val pickSubtitles = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) session.loadSubtitles(uri)
+    }
+
+    /** Subtitle generation waits for the speech-recognizer permission, then starts. */
+    private var pendingSubtitles: Triple<String, String, String>? = null
+    private val askMic = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val job = pendingSubtitles
+        pendingSubtitles = null
+        if (granted && job != null) session.generateSubtitles(job.first, job.second, job.third)
+    }
+
+    private fun generateSubtitles(spoken: String, shownIn: String, label: String) {
+        if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            session.generateSubtitles(spoken, shownIn, label)
+        } else {
+            pendingSubtitles = Triple(spoken, shownIn, label)
+            askMic.launch(android.Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
     private val deviceCallback = object : AudioDeviceCallback() {
         override fun onAudioDevicesAdded(added: Array<out AudioDeviceInfo>) = refreshAudio()
         override fun onAudioDevicesRemoved(removed: Array<out AudioDeviceInfo>) = refreshAudio()
@@ -145,6 +173,55 @@ class MainActivity : ComponentActivity() {
     private fun refreshAudio() {
         outputs.value = DiagnosticsReport.friendlyOutputs(this)
         details.value = DiagnosticsReport.build(this)
+        refreshConnectedHeadsets()
+    }
+
+    /** Battery % per headset name, where the phone shares it. */
+    private val headsetBattery = mutableStateOf<Map<String, Int>>(emptyMap())
+
+    /** Android tracks headset battery (shown in its Bluetooth settings) but has no public API for it. */
+    private fun batteryLevel(device: android.bluetooth.BluetoothDevice): Int? = runCatching {
+        (device.javaClass.getMethod("getBatteryLevel").invoke(device) as Int).takeIf { it in 0..100 }
+    }.getOrNull()
+
+    /** Every Bluetooth headset connected to the phone (Android plays on the active one only). */
+    private val connectedHeadsets = mutableStateOf<List<String>>(emptyList())
+
+    @android.annotation.SuppressLint("MissingPermission") // checked just below
+    private fun refreshConnectedHeadsets() {
+        if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.BLUETOOTH_CONNECT) != android.content.pm.PackageManager.PERMISSION_GRANTED) return
+        val adapter = getSystemService(android.bluetooth.BluetoothManager::class.java)?.adapter ?: return
+        runCatching {
+            adapter.getProfileProxy(this, object : android.bluetooth.BluetoothProfile.ServiceListener {
+                override fun onServiceConnected(profile: Int, proxy: android.bluetooth.BluetoothProfile) {
+                    val devices = runCatching { proxy.connectedDevices }.getOrDefault(emptyList())
+                    connectedHeadsets.value = devices.mapNotNull { it.name }
+                    headsetBattery.value = devices.mapNotNull { d -> d.name?.let { n -> batteryLevel(d)?.let { n to it } } }.toMap()
+                    adapter.closeProfileProxy(profile, proxy)
+                }
+                override fun onServiceDisconnected(profile: Int) = Unit
+            }, android.bluetooth.BluetoothProfile.A2DP)
+        }
+    }
+
+    /** "Share by NFC" screen open: this phone answers guest taps with the listening page, and TheatreSync
+     *  is the preferred NFC app so Android doesn't ask which app to use. */
+    private val nfcSharing = mutableStateOf(false)
+
+    private fun setNfcSharing(on: Boolean, url: String?) {
+        nfcSharing.value = on
+        TapInService.url = if (on) url else null
+        val adapter = runCatching { android.nfc.NfcAdapter.getDefaultAdapter(this) }.getOrNull() ?: return
+        val emulation = runCatching { android.nfc.cardemulation.CardEmulation.getInstance(adapter) }.getOrNull() ?: return
+        runCatching {
+            if (on) emulation.setPreferredService(this, android.content.ComponentName(this, TapInService::class.java))
+            else emulation.unsetPreferredService(this)
+        }
+    }
+
+    override fun onPause() {
+        if (nfcSharing.value) setNfcSharing(false, null) // preferred service only while on screen
+        super.onPause()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -169,7 +246,7 @@ class MainActivity : ComponentActivity() {
                     fun openHeadphoneSettings(from: Page) { hpSettingsFrom = from; refreshAudio(); page = Page.HEADPHONE_SETTINGS }
                     BackHandler(enabled = page != Page.HOME) {
                         page = when (page) {
-                            Page.CRASHES, Page.GITHUB, Page.REMOTE, Page.EXPERIMENTAL -> Page.SETTINGS
+                            Page.CRASHES, Page.GITHUB, Page.REMOTE, Page.EXPERIMENTAL, Page.MULTI_AUDIO -> Page.SETTINGS
                             Page.HEADPHONE_SETTINGS -> hpSettingsFrom
                             else -> Page.HOME
                         }
@@ -204,6 +281,35 @@ class MainActivity : ComponentActivity() {
                             dismissButton = { GhostButton(stringResource(R.string.new_device_keep), session::dismissNewDevice, height = 48.dp) },
                         )
                     }
+                    val listenUrl = ui.joinAddress?.let { "http://$it/listen" }
+                    if (audioSheet.value) {
+                        AudioSheet(
+                            ui = ui,
+                            outputs = outputs.value,
+                            connectedHeadsets = connectedHeadsets.value,
+                            battery = headsetBattery.value,
+                            listenUrl = listenUrl,
+                            onRoomSpeakers = session::setRoomSpeakers,
+                            onSelectOutput = session::setPreferredOutput,
+                            onPickDevice = ::pickAudioDevice,
+                            onShareNfc = { setNfcSharing(true, listenUrl) },
+                            onShowQr = { qrDialog.value = true },
+                            onMore = { audioSheet.value = false; openHeadphoneSettings(page) },
+                            onDismiss = { audioSheet.value = false },
+                        )
+                    }
+                    if (nfcSharing.value && listenUrl != null) NfcShareDialog(onDone = { setNfcSharing(false, null) })
+                    if (smartTvInfo.value) {
+                        androidx.compose.material3.AlertDialog(
+                            onDismissRequest = { smartTvInfo.value = false },
+                            containerColor = Q.Card,
+                            title = { Text(stringResource(R.string.smart_tv_title), color = Q.Text) },
+                            text = { Text(stringResource(R.string.smart_tv_text), color = Q.TextMuted) },
+                            confirmButton = { GoldButton(stringResource(R.string.youtube), { smartTvInfo.value = false; page = Page.YOUTUBE }, height = 48.dp) },
+                            dismissButton = { GhostButton(stringResource(R.string.done), { smartTvInfo.value = false }, height = 48.dp) },
+                        )
+                    }
+                    if (qrDialog.value && listenUrl != null) QrDialog(listenUrl, onDone = { qrDialog.value = false })
                     // Shared from the YouTube app: jump straight to the YouTube page.
                     LaunchedEffect(sharedLink.value) { if (sharedLink.value != null) page = Page.YOUTUBE }
                     // If the cast we're looking at ends, go back home on its own.
@@ -222,6 +328,7 @@ class MainActivity : ComponentActivity() {
                         page == Page.REMOTE -> "remote"
                         page == Page.HEADPHONE_SETTINGS -> "hpsettings"
                         page == Page.EXPERIMENTAL -> "experimental"
+                        page == Page.MULTI_AUDIO && ui.multiAudio -> "multiaudio"
                         page == Page.SETTINGS -> "settings"
                         page == Page.CRASHES -> "crashes"
                         page == Page.HEADPHONES -> "headphones"
@@ -231,194 +338,242 @@ class MainActivity : ComponentActivity() {
                         page == Page.MOVIE && ui.phase != Phase.SETUP -> "playing"
                         else -> "setup"
                     }
+                    // Fresh start: the Quantari opening first (once per process; not when coming back from another app).
+                    var opening by remember { mutableStateOf(!app.openingShown && !runningUnderTest) }
+                    if (opening) {
+                        OpeningAnimation { app.openingShown = true; opening = false }
+                        return@GridBackground
+                    }
                     if (inPip.value) {
                         PipContent(ui, ui.nowCasting.firstOrNull { it.tvId == castTvId } ?: ui.nowCasting.firstOrNull())
                         return@GridBackground
                     }
-                    AnimatedContent(
-                        targetState = target,
-                        transitionSpec = {
-                            val forward = targetState in setOf("headphones", "casting", "youtube", "mirror", "settings", "crashes", "github", "remote", "hpsettings", "experimental")
-                            (slideInHorizontally { if (forward) it / 3 else -it / 3 } + fadeIn(tween(220)))
-                                .togetherWith(slideOutHorizontally { if (forward) -it / 3 else it / 3 } + fadeOut(tween(180)))
+                    // Pull down anywhere to look for TVs, smart TVs and headphones again.
+                    var refreshing by remember { mutableStateOf(false) }
+                    val scope = androidx.compose.runtime.rememberCoroutineScope()
+                    androidx.compose.material3.pulltorefresh.PullToRefreshBox(
+                        isRefreshing = refreshing,
+                        onRefresh = {
+                            refreshing = true
+                            session.refreshDevices()
+                            refreshAudio()
+                            scope.launch { kotlinx.coroutines.delay(1_500); refreshing = false }
                         },
-                        label = "page",
-                    ) { t ->
-                        when (t) {
-                            "headphones" -> HeadphonesScreen(
-                                outputs = outputs.value,
-                                details = details.value,
-                                namesAllowed = DiagnosticsReport.bluetoothNamesAllowed(this@MainActivity),
-                                onAllow = { askPermissions.launch(runtimePermissions()) },
-                                onOpenBluetooth = ::pickAudioDevice,
-                                onBack = { page = Page.HOME },
-                                preferredOutputId = ui.preferredOutputId,
-                                onSelectOutput = { id -> session.setPreferredOutput(id); soundTest.value = SoundTestUi.Idle },
-                                soundTest = soundTest.value,
-                                onRunSoundTest = ::runSoundTest,
-                                onAnswerSoundTest = ::answerSoundTest,
-                                onSettings = { openHeadphoneSettings(Page.HEADPHONES) },
-                            )
-                            "hpsettings" -> HeadphoneSettingsScreen(
-                                ui = ui,
-                                outputs = outputs.value,
-                                onSelectOutput = { id -> session.setPreferredOutput(id) },
-                                onPickDevice = ::pickAudioDevice,
-                                onDelay = { step -> session.adjustSoundDelay(step) },
-                                onResetSync = session::resetHeadphoneSync,
-                                onFx = session::setFx,
-                                onSoundTest = { refreshAudio(); page = Page.HEADPHONES },
-                                onBack = { page = hpSettingsFrom },
-                                onAutoSwitch = session::setAutoSwitch,
-                            )
-                            "reconnecting" -> ReconnectingScreen(onBack = { page = Page.HOME })
-                            "github" -> ConnectGitHubScreen(
-                                configured = gitHubConfigured.value,
-                                connected = gitHubConnected.value,
-                                code = gitHubCode.value,
-                                state = gitHubState.value,
-                                onStart = ::startGitHubConnect,
-                                onOpenGitHub = { c -> runCatching { startActivity(Intent(Intent.ACTION_VIEW, c.verificationUri.toUri())) } },
-                                onDisconnect = { GitHubLink.disconnect(this@MainActivity); gitHubConnected.value = false; gitHubLastUpload.value = null },
-                                onBack = { page = Page.SETTINGS },
-                                onCreateApp = { runCatching { startActivity(Intent(Intent.ACTION_VIEW, GitHubLink.createAppUrl.toUri())) } },
-                                onSaveClientId = { id ->
-                                    GitHubLink.saveClientId(this@MainActivity, id).also { if (it) gitHubConfigured.value = true }
-                                },
-                                lastUpload = gitHubLastUpload.value,
-                                testing = gitHubTesting.value,
-                                onSendTest = ::sendGitHubTest,
-                            )
-                            "settings" -> SettingsScreen(
-                                crashCount = crashEntries.value.size,
-                                autoReports = gitHubConnected.value,
-                                onAutoReports = { page = Page.GITHUB },
-                                onCrashes = { refreshCrashes(); page = Page.CRASHES },
-                                onHeadphones = { openHeadphoneSettings(Page.SETTINGS) },
-                                onBack = { page = Page.HOME },
-                                onRemote = { page = Page.REMOTE },
-                                onExperimental = { page = Page.EXPERIMENTAL },
-                            )
-                            "experimental" -> ExperimentalScreen(
-                                ui = ui,
-                                onSignatureIntro = session::setSignatureIntro,
-                                onBack = { page = Page.SETTINGS },
-                            )
-                            "remote" -> RemoteScreen(
-                                ui = ui,
-                                onPlayPause = session::castPlayPause,
-                                onSkip = session::castSkip,
-                                onVolumeStep = session::castVolumeStep,
-                                onMute = session::castMute,
-                                onNext = session::youTubeNext,
-                                onPrevious = session::youTubePrevious,
-                                onCaptions = { tvId, lang ->
-                                    session.youTubeCaptions(tvId, ui.nowCasting.firstOrNull { it.tvId == tvId }?.activity?.contentId, lang)
-                                },
-                                onStop = session::castStop,
-                                onYouTube = { page = Page.YOUTUBE },
-                                onBack = { page = Page.SETTINGS },
-                            )
-                            "crashes" -> CrashReportsScreen(
-                                entries = crashEntries.value,
-                                autoReports = gitHubConnected.value,
-                                onSendGitHub = ::sendToGitHub,
-                                onShare = ::shareCrash,
-                                onBack = { page = Page.SETTINGS },
-                                autoReportsSection = {
-                                    GitHubSection(
-                                        configured = gitHubConfigured.value,
-                                        connected = gitHubConnected.value,
-                                        code = gitHubCode.value,
-                                        state = gitHubState.value,
-                                        onStart = ::startGitHubConnect,
-                                        onOpenGitHub = { c -> runCatching { startActivity(Intent(Intent.ACTION_VIEW, c.verificationUri.toUri())) } },
-                                        onDisconnect = { GitHubLink.disconnect(this@MainActivity); gitHubConnected.value = false; gitHubLastUpload.value = null },
-                                        onCreateApp = { runCatching { startActivity(Intent(Intent.ACTION_VIEW, GitHubLink.createAppUrl.toUri())) } },
-                                        onSaveClientId = { id -> GitHubLink.saveClientId(this@MainActivity, id).also { if (it) gitHubConfigured.value = true } },
-                                        lastUpload = gitHubLastUpload.value,
-                                        testing = gitHubTesting.value,
-                                        onSendTest = ::sendGitHubTest,
-                                    )
-                                },
-                            )
-                            "youtube" -> YouTubeScreen(
-                                ui = ui,
-                                initialLink = sharedLink.value,
-                                onCast = { id, tv -> session.castYouTube(id, tv) },
-                                onOpenApp = { link -> openYouTubeApp(link) },
-                                onBack = { session.resetYouTube(); sharedLink.value = null; page = Page.HOME },
-                            )
-                            "mirror" -> MirrorScreen(
-                                onStart = { startMirroring() },
-                                onBack = { page = Page.HOME },
-                            )
-                            "casting" -> casting?.let { c ->
-                                NowCastingScreen(
-                                    item = c,
-                                    onPlayPause = { session.castPlayPause(c.tvId) },
-                                    onSkip = { session.castSkip(c.tvId, it) },
+                        modifier = Modifier.fillMaxSize(),
+                    ) {
+                        AnimatedContent(
+                            targetState = target,
+                            // Owner: no animations, everything instant and simple.
+                            transitionSpec = { androidx.compose.animation.EnterTransition.None togetherWith androidx.compose.animation.ExitTransition.None },
+                            label = "page",
+                        ) { t ->
+                            when (t) {
+                                "headphones" -> HeadphonesScreen(
+                                    outputs = outputs.value,
+                                    details = details.value,
+                                    namesAllowed = DiagnosticsReport.bluetoothNamesAllowed(this@MainActivity),
+                                    onAllow = { askPermissions.launch(runtimePermissions()) },
+                                    onOpenBluetooth = ::pickAudioDevice,
                                     onBack = { page = Page.HOME },
-                                    onStop = { session.castStop(c.tvId); page = Page.HOME },
-                                    onVolume = { session.castVolume(c.tvId, it) },
-                                    onMute = { session.castMute(c.tvId, it) },
-                                    onSeekTo = { session.castSeekTo(c.tvId, it) },
-                                    onNext = { session.youTubeNext(c.tvId) },
-                                    onPrevious = { session.youTubePrevious(c.tvId) },
-                                    onCaptions = { lang -> session.youTubeCaptions(c.tvId, c.activity.contentId, lang) },
-                                    onHeadphoneOptions = { openHeadphoneSettings(Page.NOW_CASTING) },
+                                    preferredOutputId = ui.preferredOutputId,
+                                    onSelectOutput = { id -> session.setPreferredOutput(id); soundTest.value = SoundTestUi.Idle },
+                                    soundTest = soundTest.value,
+                                    onRunSoundTest = ::runSoundTest,
+                                    onAnswerSoundTest = ::answerSoundTest,
+                                    onSettings = { openHeadphoneSettings(Page.HEADPHONES) },
+                                )
+                                "hpsettings" -> HeadphoneSettingsScreen(
+                                    ui = ui,
+                                    outputs = outputs.value,
+                                    onSelectOutput = { id -> session.setPreferredOutput(id) },
+                                    onPickDevice = ::pickAudioDevice,
+                                    onDelay = { step -> session.adjustSoundDelay(step) },
+                                    onResetSync = session::resetHeadphoneSync,
+                                    onFx = session::setFx,
+                                    onSoundTest = { refreshAudio(); page = Page.HEADPHONES },
+                                    onBack = { page = hpSettingsFrom },
+                                    onAutoSwitch = session::setAutoSwitch,
+                                )
+                                "reconnecting" -> ReconnectingScreen(onBack = { page = Page.HOME })
+                                "github" -> ConnectGitHubScreen(
+                                    configured = gitHubConfigured.value,
+                                    connected = gitHubConnected.value,
+                                    code = gitHubCode.value,
+                                    state = gitHubState.value,
+                                    onStart = ::startGitHubConnect,
+                                    onOpenGitHub = { c -> runCatching { startActivity(Intent(Intent.ACTION_VIEW, c.verificationUri.toUri())) } },
+                                    onDisconnect = { GitHubLink.disconnect(this@MainActivity); gitHubConnected.value = false; gitHubLastUpload.value = null },
+                                    onBack = { page = Page.SETTINGS },
+                                    onCreateApp = { runCatching { startActivity(Intent(Intent.ACTION_VIEW, GitHubLink.createAppUrl.toUri())) } },
+                                    onSaveClientId = { id ->
+                                        GitHubLink.saveClientId(this@MainActivity, id).also { if (it) gitHubConfigured.value = true }
+                                    },
+                                    lastUpload = gitHubLastUpload.value,
+                                    testing = gitHubTesting.value,
+                                    onSendTest = ::sendGitHubTest,
+                                )
+                                "settings" -> SettingsScreen(
+                                    crashCount = crashEntries.value.size,
+                                    autoReports = gitHubConnected.value,
+                                    onAutoReports = { page = Page.GITHUB },
+                                    onCrashes = { refreshCrashes(); page = Page.CRASHES },
+                                    onHeadphones = { openHeadphoneSettings(Page.SETTINGS) },
+                                    onBack = { page = Page.HOME },
+                                    onRemote = { page = Page.REMOTE },
+                                    onExperimental = { page = Page.EXPERIMENTAL },
+                                    onShareApp = ::shareApp,
+                                    multiAudioOn = ui.multiAudio,
+                                    onMultiAudio = { page = Page.MULTI_AUDIO },
+                                )
+                                "experimental" -> ExperimentalScreen(
+                                    ui = ui,
+                                    onSignatureIntro = session::setSignatureIntro,
+                                    onMultiAudio = session::setMultiAudio,
+                                    onAdSkipper = session::setAdSkipper,
+                                    onBack = { page = Page.SETTINGS },
+                                )
+                                "multiaudio" -> MultiAudioScreen(
+                                    status = remember { audioSharingSupport() },
+                                    connectedHeadsets = connectedHeadsets.value,
+                                    onOpenSharing = ::openAudioSharing,
+                                    onTapIn = { refreshAudio(); audioSheet.value = true },
+                                    onBack = { page = Page.SETTINGS },
+                                )
+                                "remote" -> RemoteScreen(
+                                    ui = ui,
+                                    onPlayPause = session::castPlayPause,
+                                    onSkip = session::castSkip,
+                                    onVolumeStep = session::castVolumeStep,
+                                    onMute = session::castMute,
+                                    onNext = session::youTubeNext,
+                                    onPrevious = session::youTubePrevious,
+                                    onCaptions = { tvId, lang ->
+                                        session.youTubeCaptions(tvId, ui.nowCasting.firstOrNull { it.tvId == tvId }?.activity?.contentId, lang)
+                                    },
+                                    onStop = session::castStop,
+                                    onYouTube = { page = Page.YOUTUBE },
+                                    onBack = { page = Page.SETTINGS },
+                                    onDismissMessage = session::dismissMessage,
+                                )
+                                "crashes" -> CrashReportsScreen(
+                                    entries = crashEntries.value,
+                                    autoReports = gitHubConnected.value,
+                                    onSendGitHub = ::sendToGitHub,
+                                    onShare = ::shareCrash,
+                                    onBack = { page = Page.SETTINGS },
+                                    autoReportsSection = {
+                                        GitHubSection(
+                                            configured = gitHubConfigured.value,
+                                            connected = gitHubConnected.value,
+                                            code = gitHubCode.value,
+                                            state = gitHubState.value,
+                                            onStart = ::startGitHubConnect,
+                                            onOpenGitHub = { c -> runCatching { startActivity(Intent(Intent.ACTION_VIEW, c.verificationUri.toUri())) } },
+                                            onDisconnect = { GitHubLink.disconnect(this@MainActivity); gitHubConnected.value = false; gitHubLastUpload.value = null },
+                                            onCreateApp = { runCatching { startActivity(Intent(Intent.ACTION_VIEW, GitHubLink.createAppUrl.toUri())) } },
+                                            onSaveClientId = { id -> GitHubLink.saveClientId(this@MainActivity, id).also { if (it) gitHubConfigured.value = true } },
+                                            lastUpload = gitHubLastUpload.value,
+                                            testing = gitHubTesting.value,
+                                            onSendTest = ::sendGitHubTest,
+                                        )
+                                    },
+                                )
+                                "youtube" -> YouTubeScreen(
+                                    ui = ui,
+                                    initialLink = sharedLink.value,
+                                    onCast = { id, tv -> session.castYouTube(id, tv) },
+                                    onOpenApp = { link -> openYouTubeApp(link) },
+                                    onBack = { session.resetYouTube(); sharedLink.value = null; page = Page.HOME },
+                                )
+                                "mirror" -> MirrorScreen(
+                                    onStart = { session.playIntroThen(session.defaultTvId()) { startMirroring() } },
+                                    onBack = { page = Page.HOME },
+                                )
+                                "casting" -> casting?.let { c ->
+                                    NowCastingScreen(
+                                        item = c,
+                                        onPlayPause = { session.castPlayPause(c.tvId) },
+                                        onSkip = { session.castSkip(c.tvId, it) },
+                                        onBack = { page = Page.HOME },
+                                        onStop = { session.castStop(c.tvId); page = Page.HOME },
+                                        onVolume = { session.castVolume(c.tvId, it) },
+                                        onMute = { session.castMute(c.tvId, it) },
+                                        onSeekTo = { session.castSeekTo(c.tvId, it) },
+                                        onNext = { session.youTubeNext(c.tvId) },
+                                        onPrevious = { session.youTubePrevious(c.tvId) },
+                                        onCaptions = { lang -> session.youTubeCaptions(c.tvId, c.activity.contentId, lang) },
+                                        onHeadphoneOptions = { openHeadphoneSettings(Page.NOW_CASTING) },
+                                        onPip = ::enterPip,
+                                        onAudio = { refreshAudio(); audioSheet.value = true },
+                                        onRemote = { page = Page.REMOTE },
+                                        message = ui.message,
+                                        onDismissMessage = session::dismissMessage,
+                                        upNext = ui.upNext[c.tvId].orEmpty(),
+                                        onUpNext = { id -> session.playUpNext(c.tvId, id) },
+                                        onRefreshUpNext = { session.refreshUpNext(c.tvId) },
+                                    )
+                                }
+                                "setup" -> SetupScreen(
+                                    ui = ui,
+                                    onChooseMovie = { pickMovie.launch(arrayOf("video/*")) },
+                                    onConnectTv = { id ->
+                                        // Needed for the cast icon in the status bar (Android 13+).
+                                        askPermissions.launch(runtimePermissions())
+                                        session.connectTv(id)
+                                    },
+                                    onMenu = { page = Page.SETTINGS },
+                                    onQuality = session::setQuality,
+                                    onCancelPrepare = session::cancelPrepare,
+                                    onClearMovie = session::clearMovie,
+                                    onOpenMovie = { page = Page.MOVIE },
+                                    onRoomSound = session::setRoomSoundToo,
+                                onSmartTv = { smartTvInfo.value = true },
+                                onSubtitles = SubtitleActions(
+                                    supported = session.subtitlesSupported(),
+                                    onLoad = { pickSubtitles.launch(arrayOf("application/x-subrip", "text/vtt", "text/*", "application/octet-stream")) },
+                                    onGenerate = ::generateSubtitles,
+                                    onCancel = session::cancelSubtitles,
+                                    onClear = session::clearSubtitles,
+                                ),
+                                    onDisconnectTv = session::disconnectTv,
+                                    onStart = {
+                                        askPermissions.launch(runtimePermissions())
+                                        session.startMovie()
+                                    },
+                                    onCheckHeadphones = {
+                                        refreshAudio()
+                                        page = Page.HEADPHONES
+                                    },
+                                    onDismiss = session::dismissMessage,
+                                    onOpenCasting = { id -> castTvId = id; page = Page.NOW_CASTING },
+                                    onCastPlayPause = session::castPlayPause,
+                                    onCastStop = session::castStop,
+                                    onYouTube = { page = Page.YOUTUBE },
+                                    onMirror = { page = Page.MIRROR },
+                                    pendingCrash = pendingCrash.value,
+                                    onSendCrash = { e -> sendToGitHub(e) },
+                                    onShareCrash = { e -> shareCrash(e) },
+                                    onDismissCrash = { e -> CrashReporter.dismiss(this@MainActivity, e.id); refreshCrashes() },
+                                )
+                                else -> PlayingScreen(
+                                    ui = ui,
+                                    onPlayPause = session::togglePause,
+                                    onSkip = session::skip,
+                                    onSeekTo = session::seekTo,
+                                    onSoundEarly = { session.adjustSoundDelay(+STEP_MS) },
+                                    onSoundLate = { session.adjustSoundDelay(-STEP_MS) },
+                                    onHeadphonesHere = session::setHeadphonesHere,
+                                    onMuteTv = session::setMuteTv,
+                                    onStop = session::stopMovie,
+                                    onDismiss = session::dismissMessage,
+                                    onBack = { page = Page.HOME },
+                                    onHeadphoneOptions = { openHeadphoneSettings(Page.MOVIE) },
                                     onPip = ::enterPip,
+                                    onSubtitlesOn = session::setSubtitlesOn,
+                                    onAudio = { refreshAudio(); audioSheet.value = true },
+                                    onRemote = { page = Page.REMOTE },
                                 )
                             }
-                            "setup" -> SetupScreen(
-                                ui = ui,
-                                onChooseMovie = { pickMovie.launch(arrayOf("video/*")) },
-                                onConnectTv = { id ->
-                                    // Needed for the cast icon in the status bar (Android 13+).
-                                    askPermissions.launch(runtimePermissions())
-                                    session.connectTv(id)
-                                },
-                                onMenu = { page = Page.SETTINGS },
-                                onQuality = session::setQuality,
-                                onCancelPrepare = session::cancelPrepare,
-                                onClearMovie = session::clearMovie,
-                                onOpenMovie = { page = Page.MOVIE },
-                                onRoomSound = session::setRoomSoundToo,
-                                onDisconnectTv = session::disconnectTv,
-                                onStart = {
-                                    askPermissions.launch(runtimePermissions())
-                                    session.startMovie()
-                                },
-                                onCheckHeadphones = {
-                                    refreshAudio()
-                                    page = Page.HEADPHONES
-                                },
-                                onDismiss = session::dismissMessage,
-                                onOpenCasting = { id -> castTvId = id; page = Page.NOW_CASTING },
-                                onCastPlayPause = session::castPlayPause,
-                                onCastStop = session::castStop,
-                                onYouTube = { page = Page.YOUTUBE },
-                                onMirror = { page = Page.MIRROR },
-                                pendingCrash = pendingCrash.value,
-                                onSendCrash = { e -> sendToGitHub(e) },
-                                onShareCrash = { e -> shareCrash(e) },
-                                onDismissCrash = { e -> CrashReporter.dismiss(this@MainActivity, e.id); refreshCrashes() },
-                            )
-                            else -> PlayingScreen(
-                                ui = ui,
-                                onPlayPause = session::togglePause,
-                                onSkip = session::skip,
-                                onSeekTo = session::seekTo,
-                                onSoundEarly = { session.adjustSoundDelay(+STEP_MS) },
-                                onSoundLate = { session.adjustSoundDelay(-STEP_MS) },
-                                onHeadphonesHere = session::setHeadphonesHere,
-                                onMuteTv = session::setMuteTv,
-                                onStop = session::stopMovie,
-                                onDismiss = session::dismissMessage,
-                                onBack = { page = Page.HOME },
-                                onHeadphoneOptions = { openHeadphoneSettings(Page.MOVIE) },
-                                onPip = ::enterPip,
-                            )
                         }
                     }
                 }
@@ -458,6 +613,10 @@ class MainActivity : ComponentActivity() {
         if (intent.getStringExtra(EXTRA_OPEN) == OPEN_REMOTE) openRemote.intValue++
         if (intent.getStringExtra(EXTRA_OPEN) == OPEN_PIP) window.decorView.post { enterPip() }
     }
+
+    private val audioSheet = mutableStateOf(false)
+    private val smartTvInfo = mutableStateOf(false)
+    private val qrDialog = mutableStateOf(false)
 
     /** True while the app is shown as a small floating picture-in-picture window. */
     private val inPip = mutableStateOf(false)
@@ -602,6 +761,47 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /** Settings → Share TheatreSync: sends this app (APK) to another Android phone; iPhones join with TapIn. */
+    private fun shareApp() {
+        Thread({
+            runCatching {
+                val dir = java.io.File(cacheDir, "share").apply { mkdirs() }
+                val apk = java.io.File(dir, "TheatreSync-${BuildConfig.VERSION_NAME}.apk")
+                if (!apk.exists()) {
+                    dir.listFiles()?.forEach { it.delete() }
+                    java.io.File(applicationInfo.sourceDir).copyTo(apk, overwrite = true)
+                }
+                val uri = androidx.core.content.FileProvider.getUriForFile(this, "$packageName.share", apk)
+                val send = Intent(Intent.ACTION_SEND)
+                    .setType("application/vnd.android.package-archive")
+                    .putExtra(Intent.EXTRA_STREAM, uri)
+                    .putExtra(Intent.EXTRA_TEXT, getString(R.string.share_app_text))
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                runOnUiThread { startActivity(Intent.createChooser(send, getString(R.string.share_app))) }
+            }.onFailure { CrashReporter.handled(this, "share app", it) }
+        }, "share-app").start()
+    }
+
+    /** Can this phone share one audio stream to several LE Audio headphones (Auracast)? */
+    private fun audioSharingSupport(): AudioSharing {
+        val adapter = getSystemService(android.bluetooth.BluetoothManager::class.java)?.adapter ?: return AudioSharing.NO_BLUETOOTH
+        if (android.os.Build.VERSION.SDK_INT < 33) return AudioSharing.UNSUPPORTED
+        return when (runCatching { adapter.isLeAudioBroadcastSourceSupported }.getOrDefault(android.bluetooth.BluetoothStatusCodes.FEATURE_NOT_SUPPORTED)) {
+            android.bluetooth.BluetoothStatusCodes.FEATURE_SUPPORTED -> AudioSharing.SUPPORTED
+            else -> AudioSharing.UNSUPPORTED
+        }
+    }
+
+    /** Opens Android's own audio-sharing screen where the phone has one, else Bluetooth settings. */
+    private fun openAudioSharing() {
+        val attempts = listOf(
+            Intent("com.android.settings.BLUETOOTH_AUDIO_SHARING_SETTINGS"),
+            Intent("android.settings.BLUETOOTH_AUDIO_SHARING_SETTINGS"),
+            Intent(Settings.ACTION_BLUETOOTH_SETTINGS),
+        )
+        attempts.firstOrNull { runCatching { startActivity(it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }.isSuccess }
+    }
+
     private fun shareCrash(e: CrashReporter.Entry) {
         val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, e.report)
         if (runCatching { startActivity(Intent.createChooser(send, getString(R.string.share_crash))) }.isSuccess) {
@@ -729,6 +929,8 @@ internal fun SetupScreen(
     onClearMovie: () -> Unit = {},
     onOpenMovie: () -> Unit = {},
     onRoomSound: (Boolean) -> Unit = {},
+    onSmartTv: () -> Unit = {},
+    onSubtitles: SubtitleActions = SubtitleActions(),
     pendingCrash: CrashReporter.Entry? = null,
     onSendCrash: (CrashReporter.Entry) -> Unit = {},
     onShareCrash: (CrashReporter.Entry) -> Unit = {},
@@ -766,6 +968,7 @@ internal fun SetupScreen(
                 }
             }
             MovieQuality(ui, onQuality, onRoomSound)
+            SubtitlesSection(ui, onSubtitles)
         } else {
             GoldButton(stringResource(R.string.choose_movie), onChooseMovie, Modifier.fillMaxWidth())
             Hint(stringResource(R.string.movie_hint))
@@ -783,13 +986,10 @@ internal fun SetupScreen(
                 StatusPill(stringResource(R.string.searching), Q.Primary, pulsing = true)
                 Hint(stringResource(R.string.looking_for_tv))
             }
-            ui.tvs.none { !it.youTubeOnly } -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                StatusPill(stringResource(R.string.searching), Q.Primary, pulsing = true)
-                Hint(stringResource(R.string.looking_for_tv))
-            }
-            else -> ui.tvs.filterNot { it.youTubeOnly }.forEach { tv ->
+            else -> ui.tvs.forEach { tv ->
                 val busy = ui.nowCasting.firstOrNull { it.tvId == tv.id }?.activity
-                TvRow(tv.name, busy?.label(), tv.isSpeaker) { onConnectTv(tv.id) }
+                // Smart TVs (e.g. Samsung The Frame) are listed too; tapping explains they're YouTube-only.
+                TvRow(tv.name, busy?.label(), tv.isSpeaker, tv.youTubeOnly) { if (tv.youTubeOnly) onSmartTv() else onConnectTv(tv.id) }
             }
         }
     }
@@ -861,6 +1061,9 @@ internal fun SettingsScreen(
     onAutoReports: () -> Unit = {},
     onRemote: () -> Unit = {},
     onExperimental: () -> Unit = {},
+    onShareApp: () -> Unit = {},
+    multiAudioOn: Boolean = false,
+    onMultiAudio: () -> Unit = {},
 ) = Screen {
     TopBar(stringResource(R.string.settings), onBack)
     SettingsRow("🎛", stringResource(R.string.remote), null, onRemote, "settings_remote", status = stringResource(R.string.remote_status))
@@ -871,6 +1074,9 @@ internal fun SettingsScreen(
         statusOk = autoReports,
     )
     SettingsRow("🎧", stringResource(R.string.headphones), null, onHeadphones, "settings_headphones")
+    // Experimental "Share audio" appears in the menu only when switched on in Experimental.
+    if (multiAudioOn) SettingsRow("🎶", stringResource(R.string.multi_audio), null, onMultiAudio, "settings_multi_audio", status = stringResource(R.string.multi_audio_status))
+    SettingsRow("📤", stringResource(R.string.share_app), null, onShareApp, "settings_share", status = stringResource(R.string.share_app_status))
     SettingsRow("🧪", stringResource(R.string.experimental), null, onExperimental, "settings_experimental", status = stringResource(R.string.experimental_status))
     QCard {
         Text(stringResource(R.string.about), style = MaterialTheme.typography.titleMedium, color = Q.Text)
@@ -1130,7 +1336,7 @@ private fun DeviceIcon(res: Int, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun TvRow(name: String, busyWith: String? = null, isSpeaker: Boolean = false, onClick: () -> Unit) {
+private fun TvRow(name: String, busyWith: String? = null, isSpeaker: Boolean = false, youTubeOnly: Boolean = false, onClick: () -> Unit) {
     val shape = RoundedCornerShape(14.dp)
     Row(
         Modifier.fillMaxWidth().clip(shape).background(Q.Background.copy(alpha = 0.6f))
@@ -1143,8 +1349,12 @@ private fun TvRow(name: String, busyWith: String? = null, isSpeaker: Boolean = f
             Text(name, style = MaterialTheme.typography.titleMedium, color = Q.Text, maxLines = 2, overflow = TextOverflow.Ellipsis)
             // The TV is already showing something (e.g. YouTube from TheatreSync or another phone).
             busyWith?.let { Text(stringResource(R.string.tv_busy, it), style = MaterialTheme.typography.bodySmall, color = Q.Success) }
+            if (youTubeOnly) Text(stringResource(R.string.smart_tv_youtube), style = MaterialTheme.typography.bodySmall, color = Q.TextMuted)
         }
-        Text(stringResource(if (busyWith != null) R.string.use_for_movie else R.string.connect), color = Q.Primary, style = MaterialTheme.typography.labelLarge)
+        Text(
+            stringResource(when { youTubeOnly -> R.string.youtube; busyWith != null -> R.string.use_for_movie; else -> R.string.connect }),
+            color = Q.Primary, style = MaterialTheme.typography.labelLarge,
+        )
     }
 }
 
@@ -1176,8 +1386,11 @@ internal fun PlayingScreen(
     onBack: () -> Unit = {},
     onHeadphoneOptions: () -> Unit = {},
     onPip: () -> Unit = {},
+    onAudio: () -> Unit = {},
+    onRemote: () -> Unit = {},
+    onSubtitlesOn: (Boolean) -> Unit = {},
 ) = Screen {
-    TopBar(stringResource(R.string.movie_player), onBack) { PipButton(onPip) }
+    TopBar(stringResource(R.string.movie_player), onBack) { PlayerActions(onAudio, onRemote, onPip) }
     Eyebrow(
         when {
             ui.introPlaying -> stringResource(R.string.status_intro)
@@ -1215,15 +1428,8 @@ internal fun PlayingScreen(
         )
     }
 
-    QCard {
-        SwitchRow("🎧", stringResource(R.string.sound_here, ui.headphoneName ?: stringResource(R.string.this_phone)), ui.headphonesHere, onHeadphonesHere)
-        SwitchRow("🔇", stringResource(R.string.mute_tv), ui.muteTv, onMuteTv)
-        if (ui.muteTv) when (ui.tvMuteConfirmed) {
-            true -> StatusPill(stringResource(R.string.mute_confirmed), Q.Success)
-            false -> Hint(stringResource(R.string.mute_ignored))
-            null -> Unit
-        }
-    }
+    AudioSummary(ui, onAudio)
+    if (ui.subtitleName != null) QCard { SwitchRow("CC", stringResource(R.string.subtitles_on), ui.subtitlesOn, onSubtitlesOn) }
 
     QCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1241,7 +1447,7 @@ internal fun PlayingScreen(
             )
         }
     }
-    ui.joinAddress?.let { TapInCard("http://$it/listen") }
+
 
     HeadphoneOptionsButton(onHeadphoneOptions)
     GhostButton("■  " + stringResource(R.string.stop_movie), onStop, Modifier.fillMaxWidth(), height = 52.dp, description = stringResource(R.string.stop_movie))
@@ -1345,7 +1551,7 @@ private fun Thumb(a: CastActivity, modifier: Modifier, big: Boolean = false) {
 @Composable
 private fun NowCastingCard(item: TvWatchers.NowCasting, onOpen: () -> Unit, onPlayPause: () -> Unit, onStop: () -> Unit) {
     val a = item.activity
-    QCard(Modifier.clickable(role = Role.Button, onClick = onOpen).testTag("nowcasting"), highlighted = true) {
+    QCard(Modifier.clickable(role = Role.Button, onClick = onOpen).testTag("nowcasting"), highlighted = true, orbit = a.isPlaying) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Thumb(a, Modifier.width(128.dp).aspectRatio(16f / 9f))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -1385,10 +1591,30 @@ internal fun NowCastingScreen(
     onCaptions: (String?) -> Unit = {},
     onHeadphoneOptions: () -> Unit = {},
     onPip: () -> Unit = {},
+    onAudio: () -> Unit = {},
+    onRemote: () -> Unit = {},
+    message: String? = null,
+    onDismissMessage: () -> Unit = {},
+    upNext: List<MovieSession.UpNextVideo> = emptyList(),
+    onUpNext: (String) -> Unit = {},
+    onRefreshUpNext: () -> Unit = {},
 ) = Screen {
     val a = item.activity
-    TopBar(stringResource(R.string.now_casting), onBack) { PipButton(onPip) }
-    Thumb(a, Modifier.fillMaxWidth().aspectRatio(16f / 9f).shadow(22.dp, RoundedCornerShape(18.dp), ambientColor = Q.Glow, spotColor = Q.Glow), big = true)
+    // Keep "Up next" fresh while this page is open (and right after the video changes).
+    if (a.kind == CastActivity.Kind.YOUTUBE) LaunchedEffect(item.tvId, a.contentId) {
+        while (true) { onRefreshUpNext(); kotlinx.coroutines.delay(20_000) }
+    }
+    TopBar(stringResource(R.string.now_casting), onBack) { PlayerActions(onAudio, onRemote, onPip) }
+    Message(message, onDismissMessage)
+    val swipe = if (a.kind == CastActivity.Kind.YOUTUBE) Modifier.pointerInput(item.tvId) {
+        var total = 0f
+        detectHorizontalDragGestures(
+            onDragStart = { total = 0f },
+            onDragEnd = { if (total < -120f) onNext() else if (total > 120f) onPrevious() },
+            onHorizontalDrag = { _, dx -> total += dx },
+        )
+    } else Modifier
+    Thumb(a, Modifier.fillMaxWidth().aspectRatio(16f / 9f).shadow(22.dp, RoundedCornerShape(18.dp), ambientColor = Q.Glow, spotColor = Q.Glow).then(swipe).testTag("yt_swipe"), big = true)
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         StatusPill(a.label(), if (a.isPlaying || a.kind == CastActivity.Kind.MIRRORING) Q.Success else Q.TextMuted, pulsing = a.isPlaying)
         Text(stringResource(R.string.on_tv, item.tvName), color = Q.TextFaint, style = MaterialTheme.typography.bodyMedium)
@@ -1416,6 +1642,7 @@ internal fun NowCastingScreen(
                 CaptionsRow(onCaptions)
             }
         }
+        if (a.kind == CastActivity.Kind.YOUTUBE) UpNextRow(upNext, onUpNext)
     } else {
         QCard {
             Text(stringResource(R.string.mirroring_title), style = MaterialTheme.typography.titleMedium, color = Q.Text)
@@ -1860,8 +2087,10 @@ internal fun RemoteScreen(
     onStop: (String) -> Unit,
     onYouTube: () -> Unit,
     onBack: () -> Unit,
+    onDismissMessage: () -> Unit = {},
 ) = Screen {
     TopBar(stringResource(R.string.remote), onBack)
+    Message(ui.message, onDismissMessage)
     if (ui.tvs.isEmpty()) {
         QCard { StatusPill(stringResource(R.string.searching), Q.Primary, pulsing = true) }
         return@Screen
@@ -1919,7 +2148,7 @@ internal fun RemoteScreen(
 /** Home screen while a movie runs: tap to go back to its player. */
 @Composable
 private fun MoviePlayingCard(ui: MovieSession.Ui, onOpen: () -> Unit) {
-    QCard(Modifier.clickable(role = Role.Button, onClick = onOpen).testTag("movie_playing"), highlighted = true) {
+    QCard(Modifier.clickable(role = Role.Button, onClick = onOpen).testTag("movie_playing"), highlighted = true, orbit = ui.phase == Phase.PLAYING) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             DeviceIcon(R.drawable.ic_movie)
             Column(Modifier.weight(1f)) {
@@ -2127,42 +2356,6 @@ private fun PipContent(ui: MovieSession.Ui, casting: TvWatchers.NowCasting?) {
 }
 
 
-/**
- * TapIn: guests without the app hold their phone to this one (NFC) or scan the code; their
- * browser opens the listening page and plays the movie's sound in their own headphones.
- */
-@Composable
-private fun TapInCard(url: String) {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    // Phones without NFC (or previews) just show the QR code.
-    val nfc = remember { runCatching { android.nfc.NfcAdapter.getDefaultAdapter(context) }.getOrNull() }
-    fun nfcEnabled() = runCatching { nfc?.isEnabled == true }.getOrDefault(false)
-    var nfcOn by remember { mutableStateOf(nfcEnabled()) }
-    LaunchedEffect(Unit) { while (true) { nfcOn = nfcEnabled(); kotlinx.coroutines.delay(2_000) } }
-    QCard(Modifier.testTag("tapin"), highlighted = true) {
-        Text(stringResource(R.string.tapin_title), style = MaterialTheme.typography.titleLarge, color = Q.Text, modifier = Modifier.semantics { heading() })
-        Hint(stringResource(R.string.tapin_hint))
-        when {
-            nfc == null -> Unit
-            nfcOn -> StatusPill(stringResource(R.string.tapin_nfc_ready), Q.Success, pulsing = true)
-            else -> GhostButton(stringResource(R.string.tapin_nfc_off), {
-                runCatching { context.startActivity(Intent(android.provider.Settings.ACTION_NFC_SETTINGS)) }
-            }, Modifier.fillMaxWidth(), height = 48.dp)
-        }
-        val qr = remember(url) { qrBitmap(url, 512) }
-        if (qr != null) {
-            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                androidx.compose.foundation.Image(
-                    qr, contentDescription = stringResource(R.string.tapin_qr_description),
-                    modifier = Modifier.size(200.dp).clip(RoundedCornerShape(16.dp)).background(Color.White).padding(10.dp).testTag("tapin_qr"),
-                )
-            }
-        }
-        Text(url, color = Q.TextMuted, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Hint(stringResource(R.string.tapin_headphones_nfc))
-    }
-}
-
 /** QR code (black on white) for [text], or null if it can't be made. */
 internal fun qrBitmap(text: String, size: Int): androidx.compose.ui.graphics.ImageBitmap? = runCatching<androidx.compose.ui.graphics.ImageBitmap> {
     val matrix = com.google.zxing.qrcode.QRCodeWriter().encode(
@@ -2176,8 +2369,34 @@ internal fun qrBitmap(text: String, size: Int): androidx.compose.ui.graphics.Ima
 
 /** Settings → Experimental: features that are fun but optional. */
 @Composable
-internal fun ExperimentalScreen(ui: MovieSession.Ui, onSignatureIntro: (Boolean) -> Unit, onBack: () -> Unit) = Screen {
+internal fun ExperimentalScreen(ui: MovieSession.Ui, onSignatureIntro: (Boolean) -> Unit, onBack: () -> Unit, onMultiAudio: (Boolean) -> Unit = {}, onAdSkipper: (Boolean) -> Unit = {}) = Screen {
     TopBar(stringResource(R.string.experimental), onBack)
+    QCard(highlighted = ui.adSkipper) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                Text(stringResource(R.string.ad_skipper), style = MaterialTheme.typography.titleLarge, color = Q.Text)
+                Hint(stringResource(R.string.ad_skipper_short))
+            }
+            Switch(
+                checked = ui.adSkipper, onCheckedChange = onAdSkipper, modifier = Modifier.testTag("ad_skipper"),
+                colors = SwitchDefaults.colors(checkedThumbColor = Color.Black, checkedTrackColor = Q.Primary),
+            )
+        }
+        Hint(stringResource(R.string.ad_skipper_text))
+    }
+    QCard(highlighted = ui.multiAudio) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                Text(stringResource(R.string.multi_audio), style = MaterialTheme.typography.titleLarge, color = Q.Text)
+                Hint(stringResource(R.string.multi_audio_short))
+            }
+            Switch(
+                checked = ui.multiAudio, onCheckedChange = onMultiAudio, modifier = Modifier.testTag("multi_audio"),
+                colors = SwitchDefaults.colors(checkedThumbColor = Color.Black, checkedTrackColor = Q.Primary),
+            )
+        }
+        Hint(stringResource(R.string.multi_audio_toggle_hint))
+    }
     QCard(highlighted = ui.signatureIntro) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f).padding(end = 12.dp)) {
@@ -2194,4 +2413,325 @@ internal fun ExperimentalScreen(ui: MovieSession.Ui, onSignatureIntro: (Boolean)
         Hint(stringResource(R.string.signature_intro_note))
     }
     Footer()
+}
+
+
+/** Top-right player buttons: Audio sources, the remote, picture in picture. */
+@Composable
+private fun PlayerActions(onAudio: () -> Unit, onRemote: () -> Unit, onPip: () -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        RoundIconButton("🎧", stringResource(R.string.audio), onAudio, Modifier.testTag("audio"))
+        RoundIconButton("🎛", stringResource(R.string.remote), onRemote, Modifier.testTag("open_remote"))
+        PipButton(onPip)
+    }
+}
+
+/** One line on the movie page saying where the sound goes; tap for the Audio sheet. */
+@Composable
+private fun AudioSummary(ui: MovieSession.Ui, onAudio: () -> Unit) {
+    QCard(Modifier.clickable(role = Role.Button, onClick = onAudio).testTag("audio_summary")) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("🎧", fontSize = 22.sp, modifier = Modifier.clearAndSetSemantics { })
+            Column(Modifier.weight(1f)) {
+                Text(stringResource(R.string.audio), style = MaterialTheme.typography.titleMedium, color = Q.Text)
+                val places = listOfNotNull(
+                    if (ui.headphonesHere) (ui.headphoneName ?: stringResource(R.string.this_phone)) else null,
+                    if (!ui.muteTv) stringResource(R.string.room_speakers) else null,
+                    if (ui.friends > 0) pluralStringResource(R.plurals.guests_listening, ui.friends, ui.friends) else null,
+                )
+                Hint(places.joinToString(" · ").ifBlank { stringResource(R.string.audio_nowhere) })
+            }
+            Text("›", color = Q.Primary, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.clearAndSetSemantics { })
+        }
+    }
+}
+
+/** Audio sources: tick everywhere the sound should play. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+internal fun AudioSheet(
+    ui: MovieSession.Ui,
+    outputs: List<DiagnosticsReport.Output>,
+    connectedHeadsets: List<String>,
+    battery: Map<String, Int> = emptyMap(),
+    listenUrl: String?,
+    onRoomSpeakers: (Boolean) -> Unit,
+    onSelectOutput: (Int?) -> Unit,
+    onPickDevice: () -> Unit,
+    onShareNfc: () -> Unit,
+    onShowQr: () -> Unit,
+    onMore: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Q.Card) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(stringResource(R.string.audio_sources), style = MaterialTheme.typography.titleLarge, color = Q.Text)
+            Hint(stringResource(R.string.audio_sources_hint))
+
+            // Room speakers
+            CheckRow(
+                checked = !ui.muteTv, title = stringResource(R.string.room_speakers),
+                subtitle = stringResource(if (ui.tvSoundless && ui.muteTv) R.string.room_speakers_restart else R.string.room_speakers_hint),
+                tag = "check_room", onChange = onRoomSpeakers,
+            )
+
+            // Headphones and the phone speaker. Android plays on one Bluetooth headset at a time.
+            val active = outputs.firstOrNull { o -> o.id == ui.preferredOutputId } ?: outputs.firstOrNull { it.kind != DiagnosticsReport.Kind.SPEAKER } ?: outputs.firstOrNull()
+            val names = (outputs.map { it.name } + connectedHeadsets).distinct()
+            var triedSecond by remember { mutableStateOf(false) }
+            names.forEach { name ->
+                val output = outputs.firstOrNull { it.name == name }
+                val isActive = output != null && output == active
+                CheckRow(
+                    checked = isActive, title = name,
+                    subtitle = stringResource(
+                        when {
+                            output?.kind == DiagnosticsReport.Kind.SPEAKER -> R.string.out_speaker
+                            output == null -> R.string.headset_connected_idle
+                            else -> R.string.headset_playing
+                        },
+                    ) + (battery[name]?.let { " · 🔋 $it%" } ?: ""),
+                    tag = "check_out_$name",
+                    onChange = { on ->
+                        when {
+                            !on -> Unit // something always plays; tick another one to move the sound
+                            output != null -> { if (active != null && active.kind != DiagnosticsReport.Kind.SPEAKER && output.kind != DiagnosticsReport.Kind.SPEAKER) triedSecond = true; onSelectOutput(output.id) }
+                            else -> { triedSecond = true; onPickDevice() }
+                        }
+                    },
+                )
+            }
+            if (triedSecond || connectedHeadsets.size > 1) {
+                QCard(highlighted = true) {
+                    Text(stringResource(R.string.two_headsets_title), style = MaterialTheme.typography.titleMedium, color = Q.Text)
+                    Hint(stringResource(R.string.two_headsets_text))
+                }
+            }
+            GhostButton(stringResource(R.string.hp_connect_other), onPickDevice, Modifier.fillMaxWidth(), height = 48.dp)
+
+            // Guests
+            Text(stringResource(R.string.guests_title), style = MaterialTheme.typography.titleMedium, color = Q.Text, modifier = Modifier.padding(top = 8.dp))
+            if (listenUrl == null) Hint(stringResource(R.string.guests_need_movie))
+            else {
+                Hint(stringResource(R.string.guests_hint))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    GoldButton(stringResource(R.string.share_nfc), onShareNfc, Modifier.weight(1f).testTag("share_nfc"), height = 52.dp)
+                    GhostButton(stringResource(R.string.show_qr), onShowQr, Modifier.weight(1f).testTag("show_qr"), height = 52.dp)
+                }
+            }
+            GhostButton("⚙  " + stringResource(R.string.hp_settings), onMore, Modifier.fillMaxWidth(), height = 48.dp)
+        }
+    }
+}
+
+/** A big tappable row with a checkbox. */
+@Composable
+private fun CheckRow(checked: Boolean, title: String, subtitle: String?, tag: String, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 64.dp).clip(RoundedCornerShape(14.dp))
+            .border(BorderStroke(1.dp, if (checked) Q.Primary else Q.BorderAccent), RoundedCornerShape(14.dp))
+            .toggleable(value = checked, role = Role.Checkbox, onValueChange = onChange)
+            .padding(horizontal = 14.dp, vertical = 12.dp)
+            .testTag(tag),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        androidx.compose.material3.Checkbox(
+            checked = checked, onCheckedChange = null,
+            colors = androidx.compose.material3.CheckboxDefaults.colors(checkedColor = Q.Primary, uncheckedColor = Q.PrimaryLight, checkmarkColor = Color.Black),
+        )
+        Column(Modifier.weight(1f).padding(start = 10.dp)) {
+            Text(title, color = Q.Text, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            subtitle?.let { Hint(it) }
+        }
+    }
+}
+
+/** "Share by NFC": the guest holds their phone to this one. TheatreSync answers taps only while this is open. */
+@Composable
+private fun NfcShareDialog(onDone: () -> Unit) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDone,
+        containerColor = Q.Card,
+        title = { Text(stringResource(R.string.share_nfc), color = Q.Text) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                StatusPill(stringResource(R.string.nfc_hold), Q.Primary, pulsing = true)
+                Text(stringResource(R.string.nfc_steps), color = Q.TextMuted)
+            }
+        },
+        confirmButton = { GoldButton(stringResource(R.string.done), onDone, height = 48.dp) },
+    )
+}
+
+/** The QR code, only when the owner asks for it. */
+@Composable
+private fun QrDialog(url: String, onDone: () -> Unit) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDone,
+        containerColor = Q.Card,
+        title = { Text(stringResource(R.string.show_qr), color = Q.Text) },
+        text = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                val qr = remember(url) { qrBitmap(url, 512) }
+                if (qr != null) {
+                    androidx.compose.foundation.Image(
+                        qr, contentDescription = stringResource(R.string.tapin_qr_description),
+                        modifier = Modifier.size(220.dp).clip(RoundedCornerShape(16.dp)).background(Color.White).padding(10.dp).testTag("tapin_qr"),
+                    )
+                }
+                Text(stringResource(R.string.qr_steps), color = Q.TextMuted)
+            }
+        },
+        confirmButton = { GoldButton(stringResource(R.string.done), onDone, height = 48.dp) },
+    )
+}
+
+
+enum class AudioSharing { SUPPORTED, UNSUPPORTED, NO_BLUETOOTH }
+
+/** Experimental: the same sound (music, calls, anything) on several headphones. */
+@Composable
+internal fun MultiAudioScreen(
+    status: AudioSharing,
+    connectedHeadsets: List<String>,
+    onOpenSharing: () -> Unit,
+    onTapIn: () -> Unit,
+    onBack: () -> Unit,
+) = Screen {
+    TopBar(stringResource(R.string.multi_audio), onBack)
+    QCard(highlighted = status == AudioSharing.SUPPORTED) {
+        Text(stringResource(R.string.multi_audio_phone_title), style = MaterialTheme.typography.titleLarge, color = Q.Text)
+        StatusPill(
+            stringResource(if (status == AudioSharing.SUPPORTED) R.string.multi_audio_supported else R.string.multi_audio_unsupported),
+            if (status == AudioSharing.SUPPORTED) Q.Success else Q.Primary,
+        )
+        Body(stringResource(if (status == AudioSharing.SUPPORTED) R.string.multi_audio_supported_text else R.string.multi_audio_unsupported_text))
+        GoldButton(stringResource(R.string.multi_audio_open), onOpenSharing, Modifier.fillMaxWidth().testTag("open_audio_sharing"), height = 52.dp)
+        if (connectedHeadsets.isNotEmpty()) Hint(stringResource(R.string.multi_audio_connected, connectedHeadsets.joinToString(", ")))
+    }
+    QCard {
+        Text(stringResource(R.string.multi_audio_movies_title), style = MaterialTheme.typography.titleMedium, color = Q.Text)
+        Hint(stringResource(R.string.multi_audio_movies_text))
+        GhostButton(stringResource(R.string.audio_sources), onTapIn, Modifier.fillMaxWidth(), height = 48.dp)
+    }
+    Footer()
+}
+
+
+/** YouTube "Up next": what the TV will play after this video; tap one to play it now. Swipe sideways to see more. */
+@Composable
+private fun UpNextRow(videos: List<MovieSession.UpNextVideo>, onPlay: (String) -> Unit) {
+    QCard {
+        Text(stringResource(R.string.up_next), style = MaterialTheme.typography.titleMedium, color = Q.Text)
+        if (videos.isEmpty()) {
+            Hint(stringResource(R.string.up_next_empty))
+            return@QCard
+        }
+        androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.testTag("up_next")) {
+            items(videos.size) { i ->
+                val v = videos[i]
+                Column(
+                    Modifier.width(176.dp).clip(RoundedCornerShape(12.dp)).clickable(role = Role.Button) { onPlay(v.videoId) },
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    // Fixed 16:9 frame, so the row keeps its shape while thumbnails load (or offline).
+                    Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(12.dp)).background(Q.Border), contentAlignment = Alignment.Center) {
+                        RemoteImage(v.thumbnail, v.title, Modifier.fillMaxSize()) {
+                            Text("▶", color = Q.Primary, style = MaterialTheme.typography.titleLarge, modifier = Modifier.clearAndSetSemantics { })
+                        }
+                    }
+                    Text(v.title ?: "YouTube", color = Q.Text, style = MaterialTheme.typography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    v.channel?.let { Text(it, color = Q.TextFaint, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                }
+            }
+        }
+        Hint(stringResource(R.string.up_next_hint))
+    }
+}
+
+
+/** What the Subtitles section can do (bundled to keep the setup screen's parameter list short). */
+class SubtitleActions(
+    val supported: Boolean = false,
+    val onLoad: () -> Unit = {},
+    val onGenerate: (spoken: String, shownIn: String, label: String) -> Unit = { _, _, _ -> },
+    val onCancel: () -> Unit = {},
+    val onClear: () -> Unit = {},
+)
+
+private val SPOKEN = listOf("en-US" to "English", "hi-IN" to "Hindi", "gu-IN" to "Gujarati", "es-ES" to "Spanish", "fr-FR" to "French", "de-DE" to "German", "ja-JP" to "Japanese", "ko-KR" to "Korean")
+
+/** Subtitles for the chosen movie: load a .srt file, or generate them on the phone. */
+@Composable
+private fun SubtitlesSection(ui: MovieSession.Ui, actions: SubtitleActions) {
+    var choosing by remember { mutableStateOf(false) }
+    Text(stringResource(R.string.subtitles), style = MaterialTheme.typography.titleMedium, color = Q.Text)
+    val progress = ui.subtitleProgress
+    when {
+        progress != null -> {
+            StatusPill(stringResource(R.string.subtitles_generating, progress), Q.Primary, pulsing = true)
+            GoldProgress(progress / 100f)
+            ui.subtitleEtaSec?.let { eta ->
+                Hint(if (eta < 60) pluralStringResource(R.plurals.eta_seconds, eta.toInt(), eta.toInt()) else ((eta + 59) / 60).toInt().let { m -> pluralStringResource(R.plurals.eta_minutes, m, m) })
+            }
+            GhostButton(stringResource(R.string.cancel), actions.onCancel, Modifier.fillMaxWidth(), height = 44.dp)
+        }
+        ui.subtitleName != null -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("CC  " + ui.subtitleName, Modifier.weight(1f), color = Q.PrimaryLight, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            GhostButton("✕", actions.onClear, height = 40.dp, description = stringResource(R.string.subtitles_none))
+        }
+        else -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            GhostButton(stringResource(R.string.subtitles_load), actions.onLoad, Modifier.weight(1f).testTag("subs_load"), height = 48.dp)
+            GhostButton(stringResource(R.string.subtitles_generate), { choosing = true }, Modifier.weight(1f).testTag("subs_generate"), height = 48.dp)
+        }
+    }
+    if (choosing) {
+        var spoken by remember { mutableStateOf(SPOKEN.first()) }
+        var shown by remember { mutableStateOf(SPOKEN.first()) }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { choosing = false },
+            containerColor = Q.Card,
+            title = { Text(stringResource(R.string.subtitles_generate_title), color = Q.Text) },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (!actions.supported) { Text(stringResource(R.string.subtitles_unsupported), color = Q.Primary); return@Column }
+                    Text(stringResource(R.string.subtitles_spoken), color = Q.Text, style = MaterialTheme.typography.titleSmall)
+                    LanguageGrid(spoken) { spoken = it }
+                    Text(stringResource(R.string.subtitles_show_in), color = Q.Text, style = MaterialTheme.typography.titleSmall)
+                    LanguageGrid(shown) { shown = it }
+                    Hint(stringResource(R.string.subtitles_generate_note))
+                }
+            },
+            confirmButton = {
+                if (actions.supported) GoldButton(stringResource(R.string.subtitles_generate), {
+                    choosing = false
+                    val label = if (spoken == shown) shown.second else "${shown.second} (from ${spoken.second})"
+                    actions.onGenerate(spoken.first, shown.first, label)
+                }, height = 48.dp)
+            },
+            dismissButton = { GhostButton(stringResource(R.string.cancel), { choosing = false }, height = 48.dp) },
+        )
+    }
+}
+
+/** Language choices as a simple two-column grid of radio rows. */
+@Composable
+private fun LanguageGrid(selected: Pair<String, String>, onSelect: (Pair<String, String>) -> Unit) {
+    SPOKEN.chunked(2).forEach { pair ->
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            pair.forEach { lang ->
+                val on = lang == selected
+                Row(
+                    Modifier.weight(1f).heightIn(min = 44.dp).clip(RoundedCornerShape(12.dp))
+                        .border(BorderStroke(1.dp, if (on) Q.Primary else Q.BorderAccent), RoundedCornerShape(12.dp))
+                        .clickable(role = Role.RadioButton) { onSelect(lang) }.padding(horizontal = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    RadioDot(on)
+                    Text(lang.second, Modifier.padding(start = 8.dp), color = Q.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            if (pair.size == 1) Spacer(Modifier.weight(1f))
+        }
+    }
 }
