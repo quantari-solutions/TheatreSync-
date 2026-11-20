@@ -53,52 +53,118 @@ button{font:inherit;font-weight:700;border-radius:999px;border:1px solid var(--b
 (function(){
   var a=document.getElementById('a'), st=document.getElementById('status'), mv=document.getElementById('movie');
   var id='web-'+Math.random().toString(36).slice(2,10);
-  var offset=null, best=1e9, seq=0, state=null, started=false;
+  // ---- tuning (same rules as the TheatreSync apps)
+  var SETTLE=1000, SEEK_GAP=5000, SEEK_AT=350, NUDGE_AT=25;
+  var samples=[], offset=null, seq=0, state=null, started=false;
+  var lead=200, justStarted=false, calibrated=false, settleUntil=0, lastSeek=0;
+  var lastTime=-1, lastAdvance=0, ctx=null;
   var delay=parseInt(localStorage.getItem('tsDelay')||'0',10);
+  window.tsStats={seeks:0, reloads:0, drift:null, state:'idle', lead:lead};
   function showDelay(){document.getElementById('delay').textContent='Sound delay: '+delay+' ms';}
   showDelay();
   function now(){return performance.now();}
+  function setStatus(t,ok){st.textContent=t; st.className=ok?'pill ok':'pill';}
+  // Clock: NTP-style; keep the best (lowest round trip) of the last 12 samples.
   function ping(){
-    var t0=Math.round(now()), s=seq++;
-    fetch('/clock?seq='+s+'&t0='+t0+'&id='+id,{cache:'no-store'}).then(function(r){return r.json();}).then(function(m){
+    var t0=now(), s=seq++;
+    fetch('/clock?seq='+s+'&t0='+Math.round(t0)+'&id='+id,{cache:'no-store'}).then(function(r){return r.json();}).then(function(m){
       var t3=now(), p=m.payload, rtt=(t3-t0)-(p.t2-p.t1);
-      if(rtt<best){best=rtt; offset=((p.t1-t0)+(p.t2-t3))/2;}
+      var off=((p.t1-t0)+(p.t2-t3))/2;
+      // The host's clock jumped (its app restarted): old samples are useless, start over.
+      if(offset!==null && Math.abs(off-offset)>rtt+1000) samples=[];
+      samples.push({rtt:rtt, off:off}); if(samples.length>12) samples.shift();
+      var best=samples.reduce(function(b,x){return x.rtt<b.rtt?x:b;});
+      offset=best.off;
     }).catch(function(){});
   }
   function poll(){
     fetch('/state',{cache:'no-store'}).then(function(r){return r.json();}).then(function(m){
-      state=m.payload; state.at=now();
-      if(state.mediaTitle) mv.textContent=state.mediaTitle;
-    }).catch(function(){ st.textContent='Can\'t reach the TheatreSync phone'; st.className='pill'; });
+      state=m.payload; if(state.mediaTitle) mv.textContent=state.mediaTitle;
+    }).catch(function(){ setStatus('Can\'t reach the TheatreSync phone',false); });
   }
   function target(){
     if(!state||offset===null) return null;
-    var hostNow=now()+offset;
     var pos=state.mediaPositionMs;
-    if(state.state==='playing') pos+= (hostNow-state.hostTimeMs)*(state.playbackRate||1);
+    if(state.state==='playing') pos+=((now()+offset)-state.hostTimeMs)*(state.playbackRate||1);
     return pos-delay;
   }
-  function step(){
-    if(!started) return;
-    var t=target();
-    if(t===null) return;
-    if(!state||state.state!=='playing'){ if(!a.paused) a.pause(); st.textContent=state&&state.state==='paused'?'Paused':'Waiting for the movie'; st.className='pill'; return; }
-    if(a.paused){ a.currentTime=Math.max(0,(t+250)/1000); a.play().catch(function(){}); return; }
-    var drift=a.currentTime*1000-t;
-    if(Math.abs(drift)>600){ a.currentTime=Math.max(0,(t+150)/1000); a.playbackRate=1; }
-    else if(Math.abs(drift)>40){ a.playbackRate=Math.min(1.05,Math.max(0.95,1-drift/2000)); }
-    else a.playbackRate=1;
-    st.textContent=Math.abs(drift)<=60?'In step':'Getting in step…'; st.className=Math.abs(drift)<=60?'pill ok':'pill';
+  // How late this phone's speakers/headphones play what the page plays (where the browser knows).
+  function outputLatency(){ return ctx ? ((ctx.outputLatency||0)+(ctx.baseLatency||0))*1000 : 0; }
+  function seekTo(t){
+    a.currentTime=Math.max(0,(t+lead)/1000);
+    lastSeek=now(); settleUntil=now()+SETTLE; justStarted=true; window.tsStats.seeks++;
   }
+  var unsupported=false, failed=0, lastReload=0, playPending=false;
+  function reload(){
+    var at=a.currentTime; window.tsStats.reloads++; lastReload=now();
+    a.src='/audio?r='+Date.now(); a.load(); a.currentTime=at; calibrated=false; justStarted=false;
+  }
+  // The sound file failed (checked on every step, so an error before the tap is caught too).
+  function checkError(){
+    if(!a.error) return false;
+    // Code 4 twice: this browser can't play the movie's sound format (e.g. Dolby or DTS). Retrying won't help.
+    if(a.error.code===4&&failed>=1){ unsupported=true; window.tsStats.state='unsupported';
+      setStatus('This movie\'s sound format can\'t play in a browser',false); return true; }
+    if(now()-lastReload>3000){ failed++; reload(); }
+    setStatus('Reconnecting the sound…',false); return true;
+  }
+  function startPlaying(t){
+    seekTo(t); playPending=true;
+    var pr=a.play();
+    if(!pr){ playPending=false; return; }
+    pr.then(function(){ playPending=false; failed=0; }).catch(function(e){
+      playPending=false;
+      if(e&&e.name==='NotAllowedError'){ // the browser wants another tap before it plays sound
+        started=false; var b=document.getElementById('start'); b.disabled=false; b.textContent='▶\u00a0 Tap to start listening';
+        setStatus('Tap the button to start the sound',false);
+      }
+    });
+  }
+  function step(){
+    if(!started||unsupported) return;
+    if(checkError()) return;
+    var t=target(); if(t===null) return;
+    var playing=state.state==='playing';
+    if(!playing){
+      if(!a.paused) a.pause(); a.playbackRate=1; calibrated=false;
+      window.tsStats.state=state.state; window.tsStats.drift=null;
+      setStatus(state.state==='paused'?'Paused':state.state==='buffering'?'The TV is loading…':'Waiting for the movie',false); return;
+    }
+    if(a.paused){ if(!playPending) startPlaying(t); return; }
+    // Loading after a jump (or a slow network): wait; judging drift now would cause jump after jump.
+    if(a.seeking||a.readyState<3){ settleUntil=now()+SETTLE; window.tsStats.state='buffering'; setStatus('Getting the sound…',false); return; }
+    // Stalled (time not moving although "playing"): wait, then restart the stream.
+    if(a.currentTime!==lastTime){ lastTime=a.currentTime; lastAdvance=now(); }
+    else if(now()-lastAdvance>6000){ lastAdvance=now(); reload(); return; }
+    if(now()<settleUntil) return;
+    var drift=a.currentTime*1000-outputLatency()-t;
+    window.tsStats.drift=Math.round(drift); window.tsStats.state='playing'; window.tsStats.outLat=Math.round(outputLatency());
+    if(justStarted){
+      justStarted=false;
+      lead=Math.min(1500,Math.max(0,lead-drift*0.75)); window.tsStats.lead=Math.round(lead);
+      if(!calibrated && Math.abs(drift)>120){ calibrated=true; a.playbackRate=1; seekTo(t); return; }
+      calibrated=true;
+    }
+    if(Math.abs(drift)>SEEK_AT){
+      if(now()-lastSeek>SEEK_GAP||Math.abs(drift)>3000){ a.playbackRate=1; seekTo(t); return; }
+      a.playbackRate=drift>0?0.94:1.06;
+    } else if(Math.abs(drift)>NUDGE_AT){
+      a.playbackRate=Math.min(1.05,Math.max(0.95,1-drift/1500));
+    } else a.playbackRate=1;
+    setStatus(Math.abs(drift)<=60?'In step':'Getting in step…',Math.abs(drift)<=60);
+  }
+  a.addEventListener('error',function(){ if(started) step(); });
+  document.addEventListener('visibilitychange',function(){ if(!document.hidden){ ping(); poll(); setTimeout(step,300); } });
   document.getElementById('start').onclick=function(){
     started=true; this.textContent='Listening'; this.disabled=true;
-    a.play().then(function(){a.pause();}).catch(function(){}); // unlock audio with this tap
+    try{ ctx=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ ctx=null; }
+    var pr=a.play(); if(pr) pr.then(function(){a.pause();}).catch(function(){}); // unlock sound with this tap
     step();
   };
   document.getElementById('early').onclick=function(){delay+=20;localStorage.setItem('tsDelay',delay);showDelay();};
   document.getElementById('late').onclick=function(){delay-=20;localStorage.setItem('tsDelay',delay);showDelay();};
-  for(var i=0;i<8;i++) setTimeout(ping,i*150);
-  setInterval(ping,5000); setInterval(poll,1000); setInterval(step,250); poll();
+  for(var i=0;i<8;i++) setTimeout(ping,i*120);
+  setInterval(ping,3000); setInterval(poll,1000); setInterval(step,250); poll();
 })();
 </script>
 </body></html>

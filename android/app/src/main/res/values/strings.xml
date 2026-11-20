@@ -42,6 +42,7 @@
     <string name="msg_no_cast">Chromecast needs Google Play services, which this phone doesn\'t have.</string>
     <string name="msg_bad_file">That file can\'t be opened. Try another movie file.</string>
     <string name="msg_tv_failed">Couldn\'t connect to the TV. Check it\'s switched on.</string>
+    <string name="guests_sound_unsupported">This movie has Dolby or DTS sound, which phone browsers can\'t play, so TapIn guests won\'t hear it. Your own headphones work as normal.</string>
     <string name="msg_no_wifi">Connect this phone to the same Wi-Fi as the Chromecast.</string>
     <string name="msg_tv_cant_play">The Chromecast couldn\'t play this file. MP4 (H.264 + AAC) files work best.</string>
     <string name="msg_paused_headphones">Paused because the headphones disconnected.</string>

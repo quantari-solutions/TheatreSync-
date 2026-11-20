@@ -14,8 +14,8 @@ android {
         // 29 = Android 10, the first release with AudioPlaybackCapture.
         minSdk = 29
         targetSdk = 35
-        versionCode = 18
-        versionName = "0.5.3"
+        versionCode = 19
+        versionName = "0.5.4"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Where "Send to GitHub" opens a pre-filled crash issue (the owner submits it).
         buildConfigField("String", "CRASH_REPO", "\"quantari-solutions/TheatreSync-\"")

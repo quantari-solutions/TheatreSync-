@@ -2514,6 +2514,7 @@ internal fun AudioSheet(
             if (listenUrl == null) Hint(stringResource(R.string.guests_need_movie))
             else {
                 Hint(stringResource(R.string.guests_hint))
+                if (ui.guestSoundUnsupported) Hint(stringResource(R.string.guests_sound_unsupported))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     GoldButton(stringResource(R.string.share_nfc), onShareNfc, Modifier.weight(1f).testTag("share_nfc"), height = 52.dp)
                     GhostButton(stringResource(R.string.show_qr), onShowQr, Modifier.weight(1f).testTag("show_qr"), height = 52.dp)

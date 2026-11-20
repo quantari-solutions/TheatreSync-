@@ -208,3 +208,14 @@ the YouTube volume changes. Send one screenshot of step 1 and one of step 3, and
 3. YouTube on the TV with an ad: a skippable ad is skipped at once; an unskippable one is silent. A video with a sponsor segment jumps past it.
 
 **Send:** how long step 2 took for how many minutes of video, a photo of the TV with subtitles, and whether ads were skipped/muted.
+
+## HW-18 — TapIn sound stays in step (0.5.4)
+
+1. Start a movie. On a second phone with headphones, open TapIn (NFC tap or QR) → **Start listening**. Sound should start within a few seconds and the pill should say **In step**.
+2. Pause the movie on the TheatreSync phone, wait 10 s, play: the guest's sound stops and comes back in step.
+3. Jump forward and back a few times with the remote: each time the guest's sound catches up within ~3 s.
+4. Lock the guest phone for 30 s, unlock: still in step.
+5. Watch 15 minutes: voices keep matching lips (use **Sound is early/late** once if needed).
+6. Optional: a movie with Dolby sound → the Audio sheet says TapIn guests can't hear it.
+
+**Send:** a screenshot of the guest page, and whether any step lost sound or drifted.

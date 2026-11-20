@@ -1,6 +1,17 @@
 # Project status
 
-_Last updated: 2026-11-20. 0.5.3 (owner releases when ready): subtitles (files + generated on the phone, translated), YouTube ad skipper + SponsorBlock, per-chip APKs_
+_Last updated: 2026-11-20. 0.5.4 (owner releases when ready): TapIn sound reliability_
+
+## 0.5.4: TapIn sound always in step
+
+| Problem | Done | Verified |
+|---|---|---|
+| Guests' phones downloaded the whole movie to play its sound (slow start, slow jumps, gaps on busy Wi-Fi) | `Mp4AudioOnly` (sync-core): a sound-only MP4 built on the fly from the original (rewritten index, sound chunks streamed untouched). Swapped in only before any guest has started, so nobody's file changes under them | Unit tests (synthetic + real ffmpeg files); ffprobe: AAC 5.1, decoded sound identical to the original |
+| Listening page could jump over and over, or stay silent after a pause/jump | Same rules as the headphone player: settle 1 s after any start/jump, at most one jump per 5 s (speed nudges in between), learned start lead, one calibration jump; waits while loading; restarts a stalled stream after 6 s; reconnects after errors; resyncs when the page comes back; asks for another tap if the browser blocks sound; counts the phone's own output delay where the browser reports it | `scripts/tapin-stress/run.sh` in Chromium: 12 situations (pause, jumps, slow Wi-Fi, dropped connection, host clock reset, hidden page) all within ±25 ms |
+| Host app restarted mid-movie → page kept a wrong clock for ~30 s | Clock readings that jump by more than a second start a fresh set | Stress test |
+| Dolby/DTS movies: guests silent with no explanation | Prefers an AAC/MP3/Opus/FLAC sound track when the movie has one; otherwise the page says the sound format can't play in a browser (no endless retries) and the Audio sheet tells the host | Unit test + Chromium with an AC-3 file |
+
+Limits: browsers can't play Dolby/DTS; a guest's Bluetooth delay is only partly known to the browser, so **Sound is early/late** stays for fine-tuning. Real phones + headphones: HW-18.
 
 ## 0.5.3: subtitles and ad skipper
 

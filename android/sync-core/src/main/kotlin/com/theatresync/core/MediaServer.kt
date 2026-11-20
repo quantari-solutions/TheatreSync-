@@ -45,6 +45,20 @@ class MediaServer(
     /** The movie with its sound, for TapIn guests (the TV may get a picture-only copy). Defaults to [media]. */
     @Volatile var audioMedia: MediaSource? = null
 
+    @Volatile private var audioServed = false
+
+    /**
+     * Swaps in a better TapIn sound source (e.g. a sound-only view) — but only if no guest has
+     * fetched /audio yet, so a guest who is already listening never gets bytes from a different file.
+     */
+    @Synchronized fun offerAudio(better: MediaSource): Boolean {
+        if (audioServed) return false
+        audioMedia = better
+        return true
+    }
+
+    @Synchronized private fun audioSource(): MediaSource? { audioServed = true; return audioMedia ?: media }
+
     /** Subtitles for the TV as WebVTT (loaded from a file or generated), or null. */
     @Volatile var subtitlesVtt: String? = null
 
@@ -168,7 +182,7 @@ class MediaServer(
                     path == "/intro" && (method == "GET" || method == "HEAD") ->
                         serveMedia(out, headers["range"], head = method == "HEAD", source = intro)
                     path == "/audio" && (method == "GET" || method == "HEAD") ->
-                        serveMedia(out, headers["range"], head = method == "HEAD", source = audioMedia ?: media)
+                        serveMedia(out, headers["range"], head = method == "HEAD", source = audioSource())
                     method == "OPTIONS" -> writeHead(out, 204, "No Content", "text/plain", 0, mapOf("Access-Control-Allow-Methods" to "GET, HEAD", "Access-Control-Allow-Headers" to "*"))
                     method != "GET" -> respond(out, 405, "Method Not Allowed", "text/plain", "method not allowed")
                     path == "/subs.vtt" -> subtitlesVtt?.let { respond(out, 200, "OK", "text/vtt; charset=utf-8", it) }

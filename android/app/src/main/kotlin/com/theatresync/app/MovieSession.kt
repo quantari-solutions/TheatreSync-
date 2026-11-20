@@ -30,6 +30,7 @@ import com.theatresync.core.CastStatus
 import com.theatresync.core.Dial
 import com.theatresync.core.MediaServer
 import com.theatresync.core.MediaSource
+import com.theatresync.core.Mp4AudioOnly
 import com.theatresync.core.Mp4VideoOnly
 import com.theatresync.core.YouTubeLounge
 import com.theatresync.core.UpNext
@@ -82,6 +83,8 @@ class MovieSession(private val app: Application) {
         val headphoneName: String? = null,
         val friends: Int = 0,
         val joinAddress: String? = null,
+        /** The movie's sound is Dolby/DTS: TapIn guests' browsers can't play it. */
+        val guestSoundUnsupported: Boolean = false,
         val driftMs: Long? = null,
         val message: String? = null,
         /** What each Chromecast is showing right now (YouTube, a mirrored tab, …), from any device. */
@@ -851,10 +854,16 @@ class MovieSession(private val app: Application) {
             },
         )
         srv.media = tvSource
-        srv.audioMedia = m // TapIn guests always get the movie with its sound
+        srv.audioMedia = m // TapIn guests get the movie's sound; until the sound-only view is ready, the whole file
         srv.subtitlesVtt = subtitleCues?.let { Subtitles.toVtt(it) }
         val port = try { srv.start() } catch (_: Exception) { return say(R.string.msg_no_wifi) }
         server = srv
+        // Sound-only view (a few % of the file): guests start and jump almost instantly. Built off the main thread.
+        Thread({
+            val a = Mp4AudioOnly.of(m) ?: return@Thread
+            srv.offerAudio(a)
+            if (!a.browserPlayable && server === srv) _ui.update { it.copy(guestSoundUnsupported = true) }
+        }, "tapin-audio").apply { isDaemon = true }.start()
 
         player = HeadphonePlayer(app, m.uri, playerEvents).also { it.setPreferredOutput(preferredOutputId) }
 
@@ -930,7 +939,7 @@ class MovieSession(private val app: Application) {
         teardown()
         // Close the media player on the Chromecast so it returns to "Ready to cast".
         castContext?.sessionManager?.endCurrentSession(true)
-        _ui.update { it.copy(phase = Phase.SETUP, joinAddress = null, friends = 0, driftMs = null) }
+        _ui.update { it.copy(phase = Phase.SETUP, joinAddress = null, guestSoundUnsupported = false, friends = 0, driftMs = null) }
         publishNowCasting(rawNowCasting)
     }
 

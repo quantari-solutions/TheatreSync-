@@ -187,6 +187,20 @@ class MediaServerTest {
         assertArrayEquals(bytes.copyOfRange(1000, 2000), r.inputStream.readBytes())
     }
 
+    @Test fun soundOnlyViewIsSwappedInOnlyBeforeAnyGuestListens() {
+        val small = object : MediaSource {
+            override val title = "Sound only"
+            override val mimeType = "audio/mp4"
+            override val sizeBytes = 10L
+            override fun open(offset: Long): InputStream = ByteArrayInputStream(ByteArray(10), offset.toInt(), 10 - offset.toInt())
+        }
+        assertTrue(server.offerAudio(small))
+        assertEquals(10, get("/audio").inputStream.readBytes().size)
+        // A guest is now listening: a later swap must not change the file under them.
+        org.junit.Assert.assertFalse(server.offerAudio(movie))
+        assertEquals(10, get("/audio").inputStream.readBytes().size)
+    }
+
     @Test fun introIsServedOnlyWhenSet() {
         assertEquals(404, get("/intro").responseCode)
         server.intro = movie
