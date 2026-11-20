@@ -276,4 +276,11 @@
     <string name="tapin_qr_description">QR code that opens the TapIn listening page</string>
     <string name="tapin_headphones_nfc">Headphones with NFC (like the WH-1000XM4): touch them to the back of this phone to connect; TheatreSync offers to switch to them.</string>
     <string name="tapin_nfc_description">TheatreSync TapIn: share the listening page</string>
+    <string name="experimental">Experimental</string>
+    <string name="experimental_status">Signature intro</string>
+    <string name="signature_intro">Signature Intro</string>
+    <string name="signature_intro_short">Quantari opening titles before each movie</string>
+    <string name="signature_intro_text">Before your movie starts, the TV plays an 8-second opening: the Quantari crystal, then “Presented with TheatreSync · a Quantari Solutions module”. Then the film begins, with headphone sound starting exactly with it.</string>
+    <string name="signature_intro_note">Movies from your phone only. YouTube and mirroring play as normal.</string>
+    <string name="status_intro">Opening titles on the TV…</string>
 </resources>

@@ -82,6 +82,7 @@ class ScreenshotTest {
             moviePlan = CastCompat.Plan.SOUND_ONLY,
         ),
     )
+    @Test fun experimental1() = shot { ExperimentalScreen(Ui(signatureIntro = true), {}, {}) }
     @Test fun setup4_error() = setup(Ui(movieTitle = "Interstellar", message = "Connect this phone to the same Wi-Fi as the Chromecast."))
 
     @Test fun playing1_inSync() = playing(

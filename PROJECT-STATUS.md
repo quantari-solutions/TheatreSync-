@@ -10,6 +10,7 @@ _Last updated: 2026-11-20. 0.5.0 (not released: owner releases when ready): TapI
 | Moving a guest's paired headphones to the host phone | Not possible: Bluetooth headphones only connect to the phone they're paired with. TapIn gives the same result (guest's own phone + headphones) | — |
 | Headphones with NFC | Android itself pairs NFC headphones on touch; TheatreSync then offers to switch to them (new-headphones prompt) | needs HW-14 |
 | Picture in picture | ⧉ button on the movie player and Now casting, and **Pop out** in the casting/movie notifications: floating window with the TV's thumbnail, title, state and a play/pause button | needs HW-14 |
+| Signature Intro (Settings → **Experimental**) | 8.4 s opening on the TV before each movie: the Quantari crystal animation recorded from quantari-solutions.vercel.app, then the wordmark with its gold sheen and “Presented with TheatreSync · a Quantari Solutions module”. Queued ahead of the movie in one Cast queue; headphones stay silent until the film is on screen. Off by default | Video rendered and checked frame by frame; route test; needs HW-14 |
 | Crash reports in one place | Settings → Crash reports now holds automatic upload (setup, connect, test, status) and the timeline; separate row removed | Screenshot, emulator test updated |
 
 ## 0.4.9: owner feedback (Red Eye sound worked in the headphones; conversion too slow)

@@ -187,6 +187,14 @@ class MediaServerTest {
         assertArrayEquals(bytes.copyOfRange(1000, 2000), r.inputStream.readBytes())
     }
 
+    @Test fun introIsServedOnlyWhenSet() {
+        assertEquals(404, get("/intro").responseCode)
+        server.intro = movie
+        val r = get("/intro", "bytes=0-99")
+        assertEquals(206, r.responseCode)
+        assertArrayEquals(bytes.copyOfRange(0, 100), r.inputStream.readBytes())
+    }
+
     @Test fun unknownPathIs404() = assertEquals(404, get("/nope").responseCode)
 
     @Test fun noMovieIs404() {

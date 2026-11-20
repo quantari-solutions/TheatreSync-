@@ -108,7 +108,7 @@ import com.theatresync.core.CastActivity
 import com.theatresync.core.YouTubeLinks
 import kotlin.math.abs
 
-enum class Page { HOME, HEADPHONES, NOW_CASTING, YOUTUBE, MIRROR, SETTINGS, CRASHES, GITHUB, REMOTE, MOVIE, HEADPHONE_SETTINGS }
+enum class Page { HOME, HEADPHONES, NOW_CASTING, YOUTUBE, MIRROR, SETTINGS, CRASHES, GITHUB, REMOTE, MOVIE, HEADPHONE_SETTINGS, EXPERIMENTAL }
 
 class MainActivity : ComponentActivity() {
     private val session: MovieSession get() = (application as TheatreSyncApplication).session
@@ -169,7 +169,7 @@ class MainActivity : ComponentActivity() {
                     fun openHeadphoneSettings(from: Page) { hpSettingsFrom = from; refreshAudio(); page = Page.HEADPHONE_SETTINGS }
                     BackHandler(enabled = page != Page.HOME) {
                         page = when (page) {
-                            Page.CRASHES, Page.GITHUB, Page.REMOTE -> Page.SETTINGS
+                            Page.CRASHES, Page.GITHUB, Page.REMOTE, Page.EXPERIMENTAL -> Page.SETTINGS
                             Page.HEADPHONE_SETTINGS -> hpSettingsFrom
                             else -> Page.HOME
                         }
@@ -221,6 +221,7 @@ class MainActivity : ComponentActivity() {
                         page == Page.GITHUB -> "github"
                         page == Page.REMOTE -> "remote"
                         page == Page.HEADPHONE_SETTINGS -> "hpsettings"
+                        page == Page.EXPERIMENTAL -> "experimental"
                         page == Page.SETTINGS -> "settings"
                         page == Page.CRASHES -> "crashes"
                         page == Page.HEADPHONES -> "headphones"
@@ -237,7 +238,7 @@ class MainActivity : ComponentActivity() {
                     AnimatedContent(
                         targetState = target,
                         transitionSpec = {
-                            val forward = targetState in setOf("headphones", "casting", "youtube", "mirror", "settings", "crashes", "github", "remote", "hpsettings")
+                            val forward = targetState in setOf("headphones", "casting", "youtube", "mirror", "settings", "crashes", "github", "remote", "hpsettings", "experimental")
                             (slideInHorizontally { if (forward) it / 3 else -it / 3 } + fadeIn(tween(220)))
                                 .togetherWith(slideOutHorizontally { if (forward) -it / 3 else it / 3 } + fadeOut(tween(180)))
                         },
@@ -296,6 +297,12 @@ class MainActivity : ComponentActivity() {
                                 onHeadphones = { openHeadphoneSettings(Page.SETTINGS) },
                                 onBack = { page = Page.HOME },
                                 onRemote = { page = Page.REMOTE },
+                                onExperimental = { page = Page.EXPERIMENTAL },
+                            )
+                            "experimental" -> ExperimentalScreen(
+                                ui = ui,
+                                onSignatureIntro = session::setSignatureIntro,
+                                onBack = { page = Page.SETTINGS },
                             )
                             "remote" -> RemoteScreen(
                                 ui = ui,
@@ -853,6 +860,7 @@ internal fun SettingsScreen(
     autoReports: Boolean = false,
     onAutoReports: () -> Unit = {},
     onRemote: () -> Unit = {},
+    onExperimental: () -> Unit = {},
 ) = Screen {
     TopBar(stringResource(R.string.settings), onBack)
     SettingsRow("🎛", stringResource(R.string.remote), null, onRemote, "settings_remote", status = stringResource(R.string.remote_status))
@@ -863,6 +871,7 @@ internal fun SettingsScreen(
         statusOk = autoReports,
     )
     SettingsRow("🎧", stringResource(R.string.headphones), null, onHeadphones, "settings_headphones")
+    SettingsRow("🧪", stringResource(R.string.experimental), null, onExperimental, "settings_experimental", status = stringResource(R.string.experimental_status))
     QCard {
         Text(stringResource(R.string.about), style = MaterialTheme.typography.titleMedium, color = Q.Text)
         Hint(stringResource(R.string.about_text, BuildConfig.VERSION_NAME))
@@ -1170,7 +1179,10 @@ internal fun PlayingScreen(
 ) = Screen {
     TopBar(stringResource(R.string.movie_player), onBack) { PipButton(onPip) }
     Eyebrow(
-        when (ui.phase) {
+        when {
+            ui.introPlaying -> stringResource(R.string.status_intro)
+            else -> null
+        } ?: when (ui.phase) {
             Phase.STARTING -> stringResource(R.string.status_starting, ui.connectedTv ?: "TV")
             Phase.PAUSED -> stringResource(R.string.status_paused)
             Phase.ENDED -> stringResource(R.string.status_ended)
@@ -2160,3 +2172,26 @@ internal fun qrBitmap(text: String, size: Int): androidx.compose.ui.graphics.Ima
     val pixels = IntArray(size * size) { i -> if (matrix.get(i % size, i / size)) android.graphics.Color.BLACK else android.graphics.Color.WHITE }
     android.graphics.Bitmap.createBitmap(pixels, size, size, android.graphics.Bitmap.Config.ARGB_8888).asImageBitmap()
 }.getOrNull()
+
+
+/** Settings → Experimental: features that are fun but optional. */
+@Composable
+internal fun ExperimentalScreen(ui: MovieSession.Ui, onSignatureIntro: (Boolean) -> Unit, onBack: () -> Unit) = Screen {
+    TopBar(stringResource(R.string.experimental), onBack)
+    QCard(highlighted = ui.signatureIntro) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                Text(stringResource(R.string.signature_intro), style = MaterialTheme.typography.titleLarge, color = Q.Text)
+                Hint(stringResource(R.string.signature_intro_short))
+            }
+            Switch(
+                checked = ui.signatureIntro, onCheckedChange = onSignatureIntro,
+                modifier = Modifier.testTag("signature_intro"),
+                colors = SwitchDefaults.colors(checkedThumbColor = Color.Black, checkedTrackColor = Q.Primary),
+            )
+        }
+        Body(stringResource(R.string.signature_intro_text))
+        Hint(stringResource(R.string.signature_intro_note))
+    }
+    Footer()
+}

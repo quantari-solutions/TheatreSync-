@@ -102,6 +102,10 @@ class MovieSession(private val app: Application) {
         val fx: HeadphoneFx.Settings = HeadphoneFx.Settings(),
         /** Surround-sound movies: also give the TV (room speakers) sound, which needs a slower conversion. */
         val roomSoundToo: Boolean = false,
+        /** Experimental: Quantari + TheatreSync titles on the TV before each movie. */
+        val signatureIntro: Boolean = false,
+        /** The signature intro is on the TV right now. */
+        val introPlaying: Boolean = false,
         /** Headphones that just connected (asks "use them?" while a movie plays). */
         val newDevice: NewDevice? = null,
         /** Bumped whenever outputs appear/disappear, so lists refresh at once. */
@@ -624,6 +628,12 @@ class MovieSession(private val app: Application) {
         _ui.update { it.copy(movieTitle = null, movieInfo = null, movieVerdict = null, prepareProgress = null, prepareEtaSec = null, quality = Quality.ORIGINAL, moviePlan = null) }
     }
 
+    /** Address the TV plays the movie from, and the intro's (when the signature intro is on). */
+    private var movieUrl: String? = null
+    private var introUrl: String? = null
+    /** True once the TV has moved from the intro to the movie itself. */
+    private var movieOnScreen = false
+
     /** Sends [m] to the TV and starts headphone sound. */
     private fun castMovie(m: ContentUriSource, tvSource: MediaSource = m) {
         val session = castSession ?: return
@@ -665,10 +675,33 @@ class MovieSession(private val app: Application) {
             .setContentType(tvSource.mimeType)
             .setMetadata(meta)
             .build()
-        client.load(MediaLoadRequestData.Builder().setMediaInfo(info).setAutoplay(true).build())
-            .setResultCallback { result ->
-                if (!result.status.isSuccess) say(R.string.msg_tv_cant_play)
-            }
+        movieUrl = url
+        movieOnScreen = false
+        introUrl = null
+        val request = if (_ui.value.signatureIntro) {
+            // Signature intro: Quantari + TheatreSync titles play first, then the movie (one queue,
+            // so the TV goes straight from the titles into the film).
+            srv.intro = RawResourceSource(app, R.raw.signature_intro, "TheatreSync")
+            val introAt = "http://$ip:$port/intro"
+            introUrl = introAt
+            val introInfo = MediaInfo.Builder(introAt).setContentUrl(introAt)
+                .setStreamType(MediaInfo.STREAM_TYPE_BUFFERED).setContentType("video/mp4")
+                .setMetadata(MediaMetadata(MediaMetadata.MEDIA_TYPE_MOVIE).apply { putString(MediaMetadata.KEY_TITLE, "TheatreSync") })
+                .build()
+            val queue = com.google.android.gms.cast.MediaQueueData.Builder()
+                .setItems(listOf(
+                    com.google.android.gms.cast.MediaQueueItem.Builder(introInfo).setAutoplay(true).setPreloadTime(4.0).build(),
+                    com.google.android.gms.cast.MediaQueueItem.Builder(info).setAutoplay(true).build(),
+                ))
+                .setStartIndex(0)
+                .build()
+            MediaLoadRequestData.Builder().setQueueData(queue).setAutoplay(true).build()
+        } else {
+            MediaLoadRequestData.Builder().setMediaInfo(info).setAutoplay(true).build()
+        }
+        client.load(request).setResultCallback { result ->
+            if (!result.status.isSuccess) say(R.string.msg_tv_cant_play)
+        }
 
         applyTvMute()
         announcer.announce("TheatreSync · ${m.title}".take(60), ip, port)
@@ -749,6 +782,11 @@ class MovieSession(private val app: Application) {
         prefs.edit { putInt("soundDelayMs", 0) }
         _ui.update { it.copy(soundDelayMs = 0) }
         player?.resetSync()
+    }
+
+    fun setSignatureIntro(on: Boolean) = guard("setSignatureIntro") {
+        prefs.edit { putBoolean("signatureIntro", on) }
+        _ui.update { it.copy(signatureIntro = on) }
     }
 
     fun setRoomSoundToo(on: Boolean) = guard("setRoomSoundToo") { _ui.update { it.copy(roomSoundToo = on) } }
@@ -836,6 +874,17 @@ class MovieSession(private val app: Application) {
             return
         }
         val now = SystemClock.elapsedRealtime()
+        // Signature intro on screen: keep the headphones quiet and the movie at 0 until the film starts.
+        val showing = client.mediaInfo?.contentId
+        if (introUrl != null && !movieOnScreen) {
+            if (showing != null && showing == movieUrl) movieOnScreen = true
+            else {
+                player?.follow(0, shouldPlay = false)
+                _ui.update { it.copy(phase = Phase.STARTING, tvBuffering = false, positionMs = 0, introPlaying = showing == introUrl) }
+                return
+            }
+        }
+        if (_ui.value.introPlaying) _ui.update { it.copy(introPlaying = false) }
         val castPos = client.approximateStreamPosition.coerceAtLeast(0)
         val castState = client.playerState
         val playing = castState == MediaStatus.PLAYER_STATE_PLAYING
@@ -1123,7 +1172,7 @@ class MovieSession(private val app: Application) {
     // restarted the app while the file picker was open).
     init {
         main.post { guard("restore movie") { restoreMovie() } }
-        _ui.update { it.copy(autoSwitch = prefs.getBoolean("autoSwitch", false)) }
+        _ui.update { it.copy(autoSwitch = prefs.getBoolean("autoSwitch", false), signatureIntro = prefs.getBoolean("signatureIntro", false)) }
         deviceWatchStartedAt = SystemClock.elapsedRealtime()
         runCatching { audioManager?.registerAudioDeviceCallback(deviceCallback, main) }
         if (castContext == null) {
