@@ -171,3 +171,11 @@ the YouTube volume changes. Send one screenshot of step 1 and one of step 3, and
 3. Pull down the notification shade while casting: tap **Remote** → the app opens on the remote.
 
 **Send:** whether each worked, and a screenshot of anything that didn't.
+
+## HW-14 — TapIn guests, picture in picture (0.5.0)
+
+1. Start a movie. On the movie page, scroll to **TapIn**. A friend connects their headphones to *their* phone (iPhone or Android, no app), unlocks it and holds it to the back of yours. A link opens: tap it, then **Start listening**. (If nothing happens, they scan the QR code with the camera.)
+2. Check the friend hears the movie in step with the TV; use "Sound is early/late" on their page if needed.
+3. Tap ⧉ (top right of the movie page) or **Pop out** in the notification: a small window shows what's playing; its play/pause works.
+
+**Send:** which phones the tap worked on, how in-step it sounded, and a screenshot of anything that didn't work.

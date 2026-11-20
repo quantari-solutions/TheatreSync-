@@ -49,6 +49,7 @@ object CastIndicator {
             .setSilent(true)
             .setCategory(NotificationCompat.CATEGORY_STATUS)
             .addAction(0, context.getString(R.string.remote_short), MainActivity.remoteIntent(context))
+            .addAction(0, context.getString(R.string.pip_short), MainActivity.pipIntent(context))
             .addAction(0, context.getString(R.string.stop_casting), stop)
             .build()
         runCatching { NotificationManagerCompat.from(context).notify(ID, n) }
@@ -67,5 +68,15 @@ class StopCastReceiver : BroadcastReceiver() {
         val tv = intent.getStringExtra(CastIndicator.EXTRA_TV)
         if (tv != null) session.castStop(tv) else session.disconnectTv()
         CastIndicator.hide(context)
+    }
+}
+
+
+/** Play/pause from the picture-in-picture window: the movie if one runs, else what's on the TV. */
+class PipReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action != HostService.ACTION_PLAY_PAUSE_PUBLIC) return
+        val session = (context.applicationContext as TheatreSyncApplication).session
+        session.pipPlayPause()
     }
 }

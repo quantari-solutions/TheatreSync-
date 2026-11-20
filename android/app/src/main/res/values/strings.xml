@@ -80,7 +80,6 @@
     <string name="bluetooth_headphones">Bluetooth headphones</string>
     <string name="wired_headphones">Wired headphones</string>
     <string name="notif_play_pause">Play / Pause</string>
-    <string name="notif_stop">Stop</string>
     <string name="quick_watch">Watch on the TV</string>
     <string name="movie_night">Your movies · sound in headphones</string>
     <string name="youtube">YouTube</string>
@@ -267,4 +266,14 @@
     <string name="now_on_device">Now playing on %1$s</string>
     <string name="auto_switch">Switch to new headphones automatically</string>
     <string name="hp_youtube_note">The TV\'s YouTube app plays the sound itself, through the room speakers, so no phone app can send it to your headphones. The headphones you pick here are used for movies from your phone: they switch the moment you tap them.</string>
+    <string name="crash_timeline">Timeline</string>
+    <string name="pip">Picture in picture</string>
+    <string name="pip_short">Pop out</string>
+    <string name="tapin_title">TapIn · guests listen too</string>
+    <string name="tapin_hint">No app needed. A guest connects their headphones to their own phone, then holds it to the back of this phone, or scans the code. The movie\'s sound plays in their headphones, in step with the TV.</string>
+    <string name="tapin_nfc_ready">Ready: hold a phone to the back of this one</string>
+    <string name="tapin_nfc_off">Turn on NFC for tap-to-listen</string>
+    <string name="tapin_qr_description">QR code that opens the TapIn listening page</string>
+    <string name="tapin_headphones_nfc">Headphones with NFC (like the WH-1000XM4): touch them to the back of this phone to connect; TheatreSync offers to switch to them.</string>
+    <string name="tapin_nfc_description">TheatreSync TapIn: share the listening page</string>
 </resources>

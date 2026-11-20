@@ -84,10 +84,12 @@ class CrashSafetyTest {
     }
 
     @Test
-    fun settingsShowsAutomaticCrashReports() {
+    fun crashReportsPageHasAutomaticReports() {
+        // Owner request: everything about crash reports on one page.
         rule.onNodeWithTag("menu").performClick()
-        rule.onNodeWithTag("settings_github").performClick()
-        rule.onNodeWithText("Automatic crash reports").assertIsDisplayed()
+        rule.onNodeWithTag("settings_crashes").performClick()
+        // Not set up on the test phone: the setup card is shown right on the Crash reports page.
+        rule.onNodeWithTag("github_create_app").performScrollTo().assertIsDisplayed()
     }
 
     /** The headphone pre-screening test plays through Android's audio system and reports the device. */

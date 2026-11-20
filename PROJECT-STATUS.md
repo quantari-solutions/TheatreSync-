@@ -1,6 +1,16 @@
 # Project status
 
-_Last updated: 2026-11-20. 0.4.9 (not released: owner releases when ready): instant start for surround-sound MP4s, new-headphones prompt, notification Remote_
+_Last updated: 2026-11-20. 0.5.0 (not released: owner releases when ready): TapIn guest listening (NFC + QR, no app), picture in picture, one crash-reports page_
+
+## 0.5.0: TapIn, picture in picture, crash reports in one place
+
+| Request | Done | Verified |
+|---|---|---|
+| NFC "third-party connect" for guests without the app (iPhone + Android) | **TapIn**: while a movie plays, the phone serves a listening web page (`/listen`) that plays the movie's sound (`/audio`, always with sound even when the TV gets picture only) in sync using `/clock` + `/state`. Guests open it by **tapping their phone to the host** (Host Card Emulation as an NFC Forum Type 4 tag holding the URL) or by **scanning the QR code**. Guests count as friends listening | Type 4 tag APDU sequence unit-tested; server routes tested; listening page run in Chromium against a stand-in host: **in step within 18 ms**. NFC tap on a real iPhone/Android needs HW-14 |
+| Moving a guest's paired headphones to the host phone | Not possible: Bluetooth headphones only connect to the phone they're paired with. TapIn gives the same result (guest's own phone + headphones) | — |
+| Headphones with NFC | Android itself pairs NFC headphones on touch; TheatreSync then offers to switch to them (new-headphones prompt) | needs HW-14 |
+| Picture in picture | ⧉ button on the movie player and Now casting, and **Pop out** in the casting/movie notifications: floating window with the TV's thumbnail, title, state and a play/pause button | needs HW-14 |
+| Crash reports in one place | Settings → Crash reports now holds automatic upload (setup, connect, test, status) and the timeline; separate row removed | Screenshot, emulator test updated |
 
 ## 0.4.9: owner feedback (Red Eye sound worked in the headphones; conversion too slow)
 

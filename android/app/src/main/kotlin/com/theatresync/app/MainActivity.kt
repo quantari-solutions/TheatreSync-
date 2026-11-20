@@ -38,6 +38,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -83,6 +84,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -228,6 +230,10 @@ class MainActivity : ComponentActivity() {
                         page == Page.MOVIE && ui.phase != Phase.SETUP -> "playing"
                         else -> "setup"
                     }
+                    if (inPip.value) {
+                        PipContent(ui, ui.nowCasting.firstOrNull { it.tvId == castTvId } ?: ui.nowCasting.firstOrNull())
+                        return@GridBackground
+                    }
                     AnimatedContent(
                         targetState = target,
                         transitionSpec = {
@@ -312,6 +318,22 @@ class MainActivity : ComponentActivity() {
                                 onSendGitHub = ::sendToGitHub,
                                 onShare = ::shareCrash,
                                 onBack = { page = Page.SETTINGS },
+                                autoReportsSection = {
+                                    GitHubSection(
+                                        configured = gitHubConfigured.value,
+                                        connected = gitHubConnected.value,
+                                        code = gitHubCode.value,
+                                        state = gitHubState.value,
+                                        onStart = ::startGitHubConnect,
+                                        onOpenGitHub = { c -> runCatching { startActivity(Intent(Intent.ACTION_VIEW, c.verificationUri.toUri())) } },
+                                        onDisconnect = { GitHubLink.disconnect(this@MainActivity); gitHubConnected.value = false; gitHubLastUpload.value = null },
+                                        onCreateApp = { runCatching { startActivity(Intent(Intent.ACTION_VIEW, GitHubLink.createAppUrl.toUri())) } },
+                                        onSaveClientId = { id -> GitHubLink.saveClientId(this@MainActivity, id).also { if (it) gitHubConfigured.value = true } },
+                                        lastUpload = gitHubLastUpload.value,
+                                        testing = gitHubTesting.value,
+                                        onSendTest = ::sendGitHubTest,
+                                    )
+                                },
                             )
                             "youtube" -> YouTubeScreen(
                                 ui = ui,
@@ -338,6 +360,7 @@ class MainActivity : ComponentActivity() {
                                     onPrevious = { session.youTubePrevious(c.tvId) },
                                     onCaptions = { lang -> session.youTubeCaptions(c.tvId, c.activity.contentId, lang) },
                                     onHeadphoneOptions = { openHeadphoneSettings(Page.NOW_CASTING) },
+                                    onPip = ::enterPip,
                                 )
                             }
                             "setup" -> SetupScreen(
@@ -387,6 +410,7 @@ class MainActivity : ComponentActivity() {
                                 onDismiss = session::dismissMessage,
                                 onBack = { page = Page.HOME },
                                 onHeadphoneOptions = { openHeadphoneSettings(Page.MOVIE) },
+                                onPip = ::enterPip,
                             )
                         }
                     }
@@ -425,6 +449,35 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         handleShare(intent)
         if (intent.getStringExtra(EXTRA_OPEN) == OPEN_REMOTE) openRemote.intValue++
+        if (intent.getStringExtra(EXTRA_OPEN) == OPEN_PIP) window.decorView.post { enterPip() }
+    }
+
+    /** True while the app is shown as a small floating picture-in-picture window. */
+    private val inPip = mutableStateOf(false)
+
+    /** Small floating window showing what's on the TV, while you use other apps. */
+    fun enterPip() {
+        if (!packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE)) return
+        runCatching {
+            val params = android.app.PictureInPictureParams.Builder()
+                .setAspectRatio(android.util.Rational(16, 9))
+                .setActions(listOf(pipAction(R.string.notif_play_pause, android.R.drawable.ic_media_pause, HostService.ACTION_PLAY_PAUSE_PUBLIC)))
+                .build()
+            enterPictureInPictureMode(params)
+        }
+    }
+
+    private fun pipAction(title: Int, icon: Int, action: String) = android.app.RemoteAction(
+        android.graphics.drawable.Icon.createWithResource(this, icon), getString(title), getString(title),
+        android.app.PendingIntent.getBroadcast(
+            this, 11, Intent(action).setPackage(packageName),
+            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT,
+        ),
+    )
+
+    override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: android.content.res.Configuration) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        inPip.value = isInPictureInPictureMode
     }
 
     /** Incremented to ask the UI to show the remote (from the notification). */
@@ -568,6 +621,15 @@ class MainActivity : ComponentActivity() {
 
         const val EXTRA_OPEN = "open"
         const val OPEN_REMOTE = "remote"
+        const val OPEN_PIP = "pip"
+
+        /** "Pop out" button in the casting notifications: show the small floating window. */
+        fun pipIntent(context: android.content.Context): android.app.PendingIntent = android.app.PendingIntent.getActivity(
+            context, 8,
+            Intent(context, MainActivity::class.java).putExtra(EXTRA_OPEN, OPEN_PIP)
+                .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT,
+        )
 
         /** "Remote" button in the casting notifications: opens the app on the remote page. */
         fun remoteIntent(context: android.content.Context): android.app.PendingIntent = android.app.PendingIntent.getActivity(
@@ -794,13 +856,12 @@ internal fun SettingsScreen(
 ) = Screen {
     TopBar(stringResource(R.string.settings), onBack)
     SettingsRow("🎛", stringResource(R.string.remote), null, onRemote, "settings_remote", status = stringResource(R.string.remote_status))
+    // Everything about crash reports (automatic upload + timeline) lives on one page.
     SettingsRow(
-        "☁", stringResource(R.string.auto_reports),
-        null, onAutoReports, "settings_github",
+        "🧾", stringResource(R.string.crash_reports), if (crashCount > 0) crashCount.toString() else null, onCrashes, "settings_crashes",
         status = stringResource(if (autoReports) R.string.auto_reports_on else R.string.auto_reports_off),
         statusOk = autoReports,
     )
-    SettingsRow("🧾", stringResource(R.string.crash_reports), if (crashCount > 0) crashCount.toString() else null, onCrashes, "settings_crashes")
     SettingsRow("🎧", stringResource(R.string.headphones), null, onHeadphones, "settings_headphones")
     QCard {
         Text(stringResource(R.string.about), style = MaterialTheme.typography.titleMedium, color = Q.Text)
@@ -839,10 +900,16 @@ internal fun CrashReportsScreen(
     onShare: (CrashReporter.Entry) -> Unit,
     onBack: () -> Unit,
     autoReports: Boolean = false,
+    autoReportsSection: (@Composable () -> Unit)? = null,
 ) {
     var open by remember { mutableStateOf<CrashReporter.Entry?>(null) }
     Screen {
         TopBar(stringResource(R.string.crash_reports), onBack)
+        autoReportsSection?.let {
+            Eyebrow(stringResource(R.string.auto_reports))
+            it()
+            Eyebrow(stringResource(R.string.crash_timeline))
+        }
         Hint(stringResource(if (autoReports) R.string.crash_reports_hint_auto else R.string.crash_reports_hint))
         if (entries.isEmpty()) {
             QCard {
@@ -1099,8 +1166,9 @@ internal fun PlayingScreen(
     onSeekTo: (Long) -> Unit = {},
     onBack: () -> Unit = {},
     onHeadphoneOptions: () -> Unit = {},
+    onPip: () -> Unit = {},
 ) = Screen {
-    TopBar(stringResource(R.string.movie_player), onBack)
+    TopBar(stringResource(R.string.movie_player), onBack) { PipButton(onPip) }
     Eyebrow(
         when (ui.phase) {
             Phase.STARTING -> stringResource(R.string.status_starting, ui.connectedTv ?: "TV")
@@ -1161,6 +1229,7 @@ internal fun PlayingScreen(
             )
         }
     }
+    ui.joinAddress?.let { TapInCard("http://$it/listen") }
 
     HeadphoneOptionsButton(onHeadphoneOptions)
     GhostButton("■  " + stringResource(R.string.stop_movie), onStop, Modifier.fillMaxWidth(), height = 52.dp, description = stringResource(R.string.stop_movie))
@@ -1303,9 +1372,10 @@ internal fun NowCastingScreen(
     onPrevious: () -> Unit = {},
     onCaptions: (String?) -> Unit = {},
     onHeadphoneOptions: () -> Unit = {},
+    onPip: () -> Unit = {},
 ) = Screen {
     val a = item.activity
-    TopBar(stringResource(R.string.now_casting), onBack)
+    TopBar(stringResource(R.string.now_casting), onBack) { PipButton(onPip) }
     Thumb(a, Modifier.fillMaxWidth().aspectRatio(16f / 9f).shadow(22.dp, RoundedCornerShape(18.dp), ambientColor = Q.Glow, spotColor = Q.Glow), big = true)
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         StatusPill(a.label(), if (a.isPlaying || a.kind == CastActivity.Kind.MIRRORING) Q.Success else Q.TextMuted, pulsing = a.isPlaying)
@@ -1509,6 +1579,26 @@ internal fun ConnectGitHubScreen(
     onSendTest: () -> Unit = {},
 ) = Screen {
     TopBar(stringResource(R.string.auto_reports), onBack)
+    GitHubSection(configured = configured, connected = connected, code = code, state = state, onStart = onStart, onOpenGitHub = onOpenGitHub, onDisconnect = onDisconnect, onCreateApp = onCreateApp, onSaveClientId = onSaveClientId, lastUpload = lastUpload, testing = testing, onSendTest = onSendTest)
+    Footer()
+}
+
+/** Automatic crash reports: setup, connect, status and test (shown on the Crash reports page). */
+@Composable
+internal fun GitHubSection(
+    configured: Boolean,
+    connected: Boolean,
+    code: GitHubLink.DeviceCode?,
+    state: GitHubState,
+    onStart: () -> Unit,
+    onOpenGitHub: (GitHubLink.DeviceCode) -> Unit,
+    onDisconnect: () -> Unit,
+    onCreateApp: () -> Unit = {},
+    onSaveClientId: (String) -> Boolean = { false },
+    lastUpload: String? = null,
+    testing: Boolean = false,
+    onSendTest: () -> Unit = {},
+) {
     when {
         connected -> QCard(highlighted = true) {
             StatusPill(stringResource(R.string.auto_reports_on), Q.Success)
@@ -1560,7 +1650,6 @@ internal fun ConnectGitHubScreen(
         }
     }
     Hint(stringResource(R.string.github_privacy))
-    Footer()
 }
 
 
@@ -1995,3 +2084,79 @@ private fun RadioDot(selected: Boolean) {
         if (selected) Box(Modifier.size(10.dp).clip(CircleShape).background(Q.Primary))
     }
 }
+
+
+/** Small "picture in picture" button for the player top bars. */
+@Composable
+private fun PipButton(onClick: () -> Unit) =
+    RoundIconButton("⧉", stringResource(R.string.pip), onClick, Modifier.testTag("pip"))
+
+/** What the floating window shows: the TV's thumbnail, title and state. */
+@Composable
+private fun PipContent(ui: MovieSession.Ui, casting: TvWatchers.NowCasting?) {
+    Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
+        if (casting != null) {
+            Thumb(casting.activity, Modifier.fillMaxSize(), big = true)
+        }
+        Column(
+            Modifier.align(Alignment.BottomStart).fillMaxWidth()
+                .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f))))
+                .padding(8.dp),
+        ) {
+            val title = casting?.activity?.title ?: ui.movieTitle ?: stringResource(R.string.app_name)
+            Text(title, color = Color.White, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            val playing = casting?.activity?.isPlaying ?: (ui.phase == Phase.PLAYING)
+            Text(
+                (if (playing) "▶ " else "❚❚ ") + (casting?.tvName ?: ui.connectedTv ?: ""),
+                color = Q.Primary, style = MaterialTheme.typography.labelSmall, maxLines = 1,
+            )
+        }
+    }
+}
+
+
+/**
+ * TapIn: guests without the app hold their phone to this one (NFC) or scan the code; their
+ * browser opens the listening page and plays the movie's sound in their own headphones.
+ */
+@Composable
+private fun TapInCard(url: String) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    // Phones without NFC (or previews) just show the QR code.
+    val nfc = remember { runCatching { android.nfc.NfcAdapter.getDefaultAdapter(context) }.getOrNull() }
+    fun nfcEnabled() = runCatching { nfc?.isEnabled == true }.getOrDefault(false)
+    var nfcOn by remember { mutableStateOf(nfcEnabled()) }
+    LaunchedEffect(Unit) { while (true) { nfcOn = nfcEnabled(); kotlinx.coroutines.delay(2_000) } }
+    QCard(Modifier.testTag("tapin"), highlighted = true) {
+        Text(stringResource(R.string.tapin_title), style = MaterialTheme.typography.titleLarge, color = Q.Text, modifier = Modifier.semantics { heading() })
+        Hint(stringResource(R.string.tapin_hint))
+        when {
+            nfc == null -> Unit
+            nfcOn -> StatusPill(stringResource(R.string.tapin_nfc_ready), Q.Success, pulsing = true)
+            else -> GhostButton(stringResource(R.string.tapin_nfc_off), {
+                runCatching { context.startActivity(Intent(android.provider.Settings.ACTION_NFC_SETTINGS)) }
+            }, Modifier.fillMaxWidth(), height = 48.dp)
+        }
+        val qr = remember(url) { qrBitmap(url, 512) }
+        if (qr != null) {
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                androidx.compose.foundation.Image(
+                    qr, contentDescription = stringResource(R.string.tapin_qr_description),
+                    modifier = Modifier.size(200.dp).clip(RoundedCornerShape(16.dp)).background(Color.White).padding(10.dp).testTag("tapin_qr"),
+                )
+            }
+        }
+        Text(url, color = Q.TextMuted, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Hint(stringResource(R.string.tapin_headphones_nfc))
+    }
+}
+
+/** QR code (black on white) for [text], or null if it can't be made. */
+internal fun qrBitmap(text: String, size: Int): androidx.compose.ui.graphics.ImageBitmap? = runCatching<androidx.compose.ui.graphics.ImageBitmap> {
+    val matrix = com.google.zxing.qrcode.QRCodeWriter().encode(
+        text, com.google.zxing.BarcodeFormat.QR_CODE, size, size,
+        mapOf(com.google.zxing.EncodeHintType.MARGIN to 1),
+    )
+    val pixels = IntArray(size * size) { i -> if (matrix.get(i % size, i / size)) android.graphics.Color.BLACK else android.graphics.Color.WHITE }
+    android.graphics.Bitmap.createBitmap(pixels, size, size, android.graphics.Bitmap.Config.ARGB_8888).asImageBitmap()
+}.getOrNull()

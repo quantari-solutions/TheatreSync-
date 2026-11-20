@@ -641,6 +641,7 @@ class MovieSession(private val app: Application) {
             },
         )
         srv.media = tvSource
+        srv.audioMedia = m // TapIn guests always get the movie with its sound
         val port = try { srv.start() } catch (_: Exception) { return say(R.string.msg_no_wifi) }
         server = srv
 
@@ -671,6 +672,7 @@ class MovieSession(private val app: Application) {
 
         applyTvMute()
         announcer.announce("TheatreSync · ${m.title}".take(60), ip, port)
+        TapInService.url = "http://$ip:$port/listen"
         wifiLock = (app.getSystemService(Context.WIFI_SERVICE) as WifiManager)
             .createWifiLock(WifiManager.WIFI_MODE_FULL_LOW_LATENCY, "theatresync").apply { acquire() }
         CastIndicator.hide(app) // the movie's own notification takes over (same cast icon)
@@ -697,6 +699,7 @@ class MovieSession(private val app: Application) {
         player = null
         server?.stop()
         server = null
+        TapInService.url = null
         snapshot = null
         announcer.stop()
         wifiLock?.let { if (it.isHeld) it.release() }
@@ -953,6 +956,12 @@ class MovieSession(private val app: Application) {
     fun connectTv(id: String) = guard("connectTv") { connectTvUnsafe(id) }
     fun disconnectTv() = guard("disconnectTv") { disconnectTvUnsafe() }
     fun castPlayPause(tvId: String) = guard("castPlayPause") { castPlayPauseUnsafe(tvId) }
+
+    /** Picture-in-picture play/pause: the movie if one runs, else whatever is on a TV. */
+    fun pipPlayPause() = guard("pipPlayPause") {
+        if (server != null) togglePauseUnsafe()
+        else _ui.value.nowCasting.firstOrNull()?.let { castPlayPauseUnsafe(it.tvId) }
+    }
     fun castStop(tvId: String) = guard("castStop") { castStopUnsafe(tvId) }
     fun startMovie() = guard("startMovie") { startMovieUnsafe() }
     fun stopMovie() = guard("stopMovie") { stopMovieUnsafe() }
