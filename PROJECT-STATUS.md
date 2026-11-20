@@ -1,6 +1,17 @@
 # Project status
 
-_Last updated: 2026-11-19. 0.4.7: headphone sound fixed (seek loop), fast sound-only conversion, YouTube remote controls, Chromecast remote_
+_Last updated: 2026-11-20. 0.4.8: Samsung The Frame (YouTube via DIAL), working remote skip, back to home, headphone settings (EQ, sync tool)_
+
+## 0.4.8: owner feedback on 0.4.7
+
+| Report | Fix | Verified |
+|---|---|---|
+| Samsung "The Frame" not listed | **DIAL** discovery (SSDP) of non-Chromecast smart TVs; YouTube started via DIAL, its screen ID fed to the same Lounge remote. Listed as "Smart TV · YouTube only" (movies still need a Chromecast) | Parser unit tests; needs HW-12 |
+| Remote ±10/30 s did nothing | YouTube ignores media-channel seeks from other senders: play/pause/seek now go through YouTube's Lounge remote (`play`, `pause`, `seekTo`) | needs HW-12 |
+| Couldn't get back to the home screen | The home screen was replaced by the movie player whenever a movie existed (even finished). Movie player is now its own page with ←; home shows a "Playing on …" card | Screenshot |
+| TV chips on the remote; "Living Room" misaligned | Chips removed (remote uses the connected/playing TV). All button labels single-line with "…"; radio marks drawn at fixed size (glyphs differed in width); long-name screenshot test | Screenshots |
+| Headphone options | ⚙ on Headphones page, ☰ → Headphones, and a Headphones button in the movie player and Now casting open **Headphone settings**: device, sync tool (live drift, ±10/±50 ms, Reset sync), equalizer (presets, bass boost, 5 bands; headphone sound only) | Screenshot; EQ needs HW-12 |
+| Real-time sync | Already automatic (drift correction every 200 ms); the sync tool shows it live. Microphone-based calibration not built | — |
 
 ## 0.4.7: owner's test night (crash reports now arrive on GitHub)
 

@@ -154,3 +154,12 @@ the YouTube volume changes. Send one screenshot of step 1 and one of step 3, and
 5. YouTube: try Next, Previous and Captions; then ☰ → Chromecast remote → volume − / +.
 
 **Send:** how long step 1 took, whether step 2 and 3 worked (and how many tries), and a screenshot of anything that didn't.
+
+## HW-12 — The Frame, remote, headphone settings (0.4.8)
+
+1. YouTube → the list should include **Samsung The Frame** ("Smart TV · YouTube only"). Cast a video to it.
+2. ☰ → Chromecast remote while YouTube plays on the Media Room TV: try −10 s / +30 s and pause/play.
+3. Start a movie, press ← : you should see the home screen with a "Playing on …" card; tap it to return.
+4. In the movie player, scroll down → **Headphone options** → pick **Bass** and **Voices**: the headphone sound should change.
+
+**Send:** whether each step worked, and a screenshot of anything that didn't.

@@ -153,8 +153,6 @@
     <string name="github_failed">That didn\'t work. Please try again.</string>
     <string name="github_connected_text">Crash reports and problems upload to GitHub as soon as they happen (or when the app next opens after a crash).</string>
     <string name="github_disconnect">Disconnect</string>
-    <string name="github_not_ready_title">Almost ready</string>
-    <string name="github_not_ready_text">This version doesn\'t have its GitHub app ID yet. Claude adds it in the next build once the GitHub App is set up.</string>
     <string name="github_privacy">Only crash reports are sent, to your own GitHub project. The approval is stored encrypted on this phone.</string>
     <string name="pick_headphones">Choose or connect headphones</string>
     <string name="play_sound_on">Play TheatreSync sound on</string>
@@ -193,7 +191,6 @@
     <string name="verdict_ok">Plays on your TV as it is</string>
     <string name="verdict_codec">Your Chromecast can\'t show this video format. Pick 1080p or 720p</string>
     <string name="verdict_resolution">Too sharp for your Chromecast (max 1080p). Pick 1080p or 720p</string>
-    <string name="verdict_audio">Your Chromecast can\'t play this sound format. Pick 1080p or 720p</string>
     <string name="verdict_bitrate">Very large video. 1080p loads faster on Wi-Fi</string>
     <string name="mute_confirmed">Room speakers muted</string>
     <string name="mute_ignored">The TV didn\'t accept the mute. Turn the receiver\'s volume down for now.</string>
@@ -213,8 +210,14 @@
     <string name="remove_movie">Remove this movie</string>
     <string name="preparing_sound">Fixing the sound for your TV… %1$d%%</string>
     <string name="preparing_sound_hint">Only the sound is converted; the picture is kept exactly as it is. Next time this movie plays instantly.</string>
-    <string name="eta_seconds">About %1$d seconds left</string>
-    <string name="eta_minutes">About %1$d min left</string>
+    <plurals name="eta_seconds">
+        <item quantity="one">About %1$d second left</item>
+        <item quantity="other">About %1$d seconds left</item>
+    </plurals>
+    <plurals name="eta_minutes">
+        <item quantity="one">About %1$d minute left</item>
+        <item quantity="other">About %1$d minutes left</item>
+    </plurals>
     <string name="quality_sound_only_hint">Picture kept as it is. Only the surround sound is turned into stereo for your Chromecast first (usually a minute or two, once).</string>
     <string name="verdict_audio_fix">Your Chromecast can\'t play this surround sound. TheatreSync fixes the sound quickly before playing</string>
     <string name="yt_previous">Previous</string>
@@ -230,4 +233,28 @@
     <string name="remote_volume">Volume %1$d%%</string>
     <string name="remote_home">Stop (TV home)</string>
     <string name="remote_hint">Older Chromecasts have no remote of their own; these are all the controls they accept. Volume changes the Chromecast\'s own level (your receiver may have its own).</string>
+    <string name="movie_player">Movie</string>
+    <string name="movie_playing_on">Playing on %1$s</string>
+    <string name="movie_playing_hint">Tap to open the movie player.</string>
+    <string name="smart_tv_youtube">Smart TV · YouTube only</string>
+    <string name="hp_settings">Headphone settings</string>
+    <string name="hp_options">Headphone options</string>
+    <string name="hp_device">Play the sound on</string>
+    <string name="hp_no_devices">No headphones found. Connect them in Bluetooth first.</string>
+    <string name="hp_connect_other">Connect other</string>
+    <string name="hp_test">Test sound</string>
+    <string name="hp_one_device">Android plays movie sound on one Bluetooth headset at a time. Friends listen with TheatreSync on their own phone.</string>
+    <string name="hp_sync">Sync</string>
+    <string name="hp_sync_live">Live: in step within %1$d ms</string>
+    <string name="hp_sync_idle">Starts measuring when a movie plays</string>
+    <string name="hp_delay_value">Your adjustment: %1$+d ms</string>
+    <string name="hp_sync_hint">TheatreSync keeps the headphones locked to the TV automatically. If voices still don\'t match lips, nudge here: minus = sound earlier, plus = later.</string>
+    <string name="hp_reset_sync">Reset sync</string>
+    <string name="hp_eq">Equalizer</string>
+    <string name="eq_flat">Flat</string>
+    <string name="eq_bass">Bass</string>
+    <string name="eq_dialogue">Voices</string>
+    <string name="eq_cinema">Cinema</string>
+    <string name="eq_bass_boost">Bass boost</string>
+    <string name="hp_eq_hint">Changes only the movie sound in your headphones, never the TV.</string>
 </resources>

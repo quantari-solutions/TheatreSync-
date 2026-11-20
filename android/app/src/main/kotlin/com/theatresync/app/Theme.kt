@@ -214,6 +214,8 @@ fun GoldButton(
             listOfNotNull(leading, text).joinToString("  "),
             color = if (enabled) Color.Black else Q.TextFaint,
             style = MaterialTheme.typography.labelLarge.copy(fontSize = 16.sp),
+            maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
         )
     }
 }
@@ -238,7 +240,8 @@ fun GhostButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier
             .padding(horizontal = 18.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text, color = Q.PrimaryLight, style = MaterialTheme.typography.labelLarge)
+        // One line, "…" if it can't fit: a button label must never wrap letter by letter.
+        Text(text, color = Q.PrimaryLight, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
     }
 }
 
