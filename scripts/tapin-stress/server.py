@@ -1,7 +1,7 @@
 import http.server, json, time, re, threading, sys, os
 # Simulated TheatreSync host. Controls: /ctl?cmd=pause|play|seek&ms=..|slow&kbps=..|fast|offset&ms=..|stallstate
 L=threading.Lock()
-G={}; REMOVED=set(); LEFT=[]
+G={}; REMOVED=set(); LEFT=[]; LEFTIDS=set()
 S={'playing':True,'pos0':10_000,'at':time.monotonic(),'kbps':0,'offset':0,'drop':False}
 def host_ms(): return int(time.monotonic()*1000)+S['offset']
 def pos():
@@ -28,7 +28,7 @@ class H(http.server.BaseHTTPRequestHandler):
         n=int(self.headers.get('Content-Length') or 0)
         if n: self.rfile.read(n)
         p,_,q=self.path.partition('?'); qs=dict(x.split('=',1) for x in q.split('&') if '=' in x)
-        if p=='/leave': G.pop(qs.get('id',''),None); LEFT.append(time.time()); self.send(204,'text/plain',b'')
+        if p=='/leave': LEFTIDS.add(qs.get('id','')); G.pop(qs.get('id',''),None); LEFT.append(time.time()); self.send(204,'text/plain',b'')
         else: self.send(404,'text/plain',b'no')
     def do_GET(self):
         p,_,q=self.path.partition('?'); qs=dict(x.split('=',1) for x in q.split('&') if '=' in x)
@@ -41,10 +41,11 @@ class H(http.server.BaseHTTPRequestHandler):
         elif p=='/truth': self.send(200,'application/json',json.dumps({"pos":pos(),"playing":S['playing']}).encode())
         elif p=='/guest':
             gid=qs.get('id','')
+            if gid in LEFTIDS: self.send(200,'application/json',b'{"muted":false,"volume":100,"removed":false}'); return
             if gid in REMOVED: self.send(200,'application/json',b'{"muted":true,"volume":0,"removed":true}'); return
             from urllib.parse import unquote
             g=G.setdefault(gid,{'muted':False,'volume':100,'joined':time.time()})
-            g.update(name=unquote(qs.get('name','')),drift=qs.get('drift'),status=qs.get('status'),hidden=qs.get('hidden'),seen=time.time())
+            g.update(name=unquote(qs.get('name','')),dev=unquote(qs.get('dev','')),drift=qs.get('drift'),status=qs.get('status'),hidden=qs.get('hidden'),seen=time.time())
             self.send(200,'application/json',json.dumps({"muted":g['muted'],"volume":g['volume'],"removed":False}).encode())
         elif p=='/guests':
             now=time.time()

@@ -223,7 +223,7 @@ the YouTube volume changes. Send one screenshot of step 1 and one of step 3, and
 ## HW-19 — Controlling TapIn guests (0.5.5)
 
 1. Start a movie and open the Audio sheet (headphones button). Your headphones row shows "In step · … ms".
-2. A second phone opens TapIn, types a name, taps **Start listening**: their name appears under **Listening now** straight away, with their sync.
+2. A second phone opens TapIn, types a name and their headphones' name, taps **Start listening**: "Name · Headphones" appears under **Listening now** straight away, with their sync. Their page says "Sync: … ms on <headphones>".
 3. Untick **Sound on** for them: their sound stops within a second. Tick it again: it comes back. Try − / + (Android phones).
 4. On the guest phone tap **Stop listening**: they disappear from your list at once. Start again: they're back.
 5. Tap **Remove**: their page says the host stopped the sound.

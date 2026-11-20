@@ -35,10 +35,10 @@ class ScreenshotTest {
             androidx.compose.ui.Modifier.padding(20.dp),
             verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp),
         ) {
-            val g = com.theatresync.core.Guests.Guest("web-1", "Priya", 0, 0, 14, "playing", hidden = false)
+            val g = com.theatresync.core.Guests.Guest("web-1", "Priya", "AirPods Pro", 0, 0, 14, "playing", hidden = false)
             GuestRow(g, { _, _ -> }, { _, _ -> }, {})
-            GuestRow(g.copy(id = "web-2", name = "Android phone · Samsung Internet with a very long name", driftMs = 230, muted = true, volume = 60), { _, _ -> }, { _, _ -> }, {})
-            GuestRow(g.copy(id = "web-3", name = "iPhone · Safari", hidden = true, driftMs = -8), { _, _ -> }, { _, _ -> }, {})
+            GuestRow(g.copy(id = "web-2", name = "Android phone · Samsung Internet with a very long name", device = null, driftMs = 230, muted = true, volume = 60), { _, _ -> }, { _, _ -> }, {})
+            GuestRow(g.copy(id = "web-3", name = "iPhone · Safari", device = "WH-1000XM4", hidden = true, driftMs = -8), { _, _ -> }, { _, _ -> }, {})
         }
     }
     @Test fun setup2_movieChosen_tvsFound() = setup(Ui(movieTitle = "Interstellar", tvs = listOf(Tv("1", "Theatre Room TV"), Tv("2", "Bedroom TV"))))

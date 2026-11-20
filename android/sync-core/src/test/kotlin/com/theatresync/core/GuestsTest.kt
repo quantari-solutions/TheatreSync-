@@ -22,11 +22,21 @@ class GuestsTest {
         assertEquals(8L, g.list()[0].driftMs)
     }
 
+    @Test fun headphonesNameIsShownAndCanChange() {
+        g.report("web-a", "Sam", 0, "playing", hidden = false, device = "AirPods Pro")
+        assertEquals("AirPods Pro", g.list()[0].device)
+        g.report("web-a", "Sam", 0, "playing", hidden = false, device = "")
+        assertEquals(null, g.list()[0].device)
+    }
+
     @Test fun leavingRemovesAtOnce() {
         g.report("web-a", null, null, "connecting", hidden = false)
         g.leave("web-a")
         assertTrue(g.list().isEmpty())
         assertEquals(2, changes)
+        // A report that was already on its way when they left doesn't bring them back.
+        g.report("web-a", null, null, "playing", hidden = false)
+        assertTrue(g.list().isEmpty())
     }
 
     @Test fun hostControlsReachTheGuestInTheNextAnswer() {

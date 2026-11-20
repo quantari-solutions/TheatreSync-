@@ -2550,7 +2550,7 @@ internal fun GuestRow(
     onRemove: (String) -> Unit,
 ) {
     QCard(Modifier.testTag("guest_${g.id}")) {
-        Text(g.name, style = MaterialTheme.typography.titleMedium, color = Q.Text, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+        Text(g.name + (g.device?.let { " · $it" } ?: ""), style = MaterialTheme.typography.titleMedium, color = Q.Text, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
         val status = when {
             g.status == "unsupported" -> stringResource(R.string.guest_unsupported)
             g.hidden -> stringResource(R.string.guest_screen_off) + (g.driftMs?.let { " · " + syncText(it) } ?: "")

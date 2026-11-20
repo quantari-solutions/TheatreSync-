@@ -40,6 +40,8 @@ input{font:inherit;width:100%;min-height:48px;border-radius:14px;border:1px soli
   <div class="muted">Connect your headphones to this phone first.</div>
   <label class="muted" for="name">Your name (the host sees it)</label>
   <input id="name" maxlength="40" autocomplete="nickname">
+  <label class="muted" for="dev">Your headphones</label>
+  <input id="dev" maxlength="40" placeholder="e.g. AirPods, WH-1000XM4">
   <p><span class="pill" id="status">Waiting for the movie</span></p>
   <div class="muted" id="sync">&nbsp;</div>
   <button class="big" id="start">▶&nbsp; Start listening</button>
@@ -158,7 +160,7 @@ input{font:inherit;width:100%;min-height:48px;border-radius:14px;border:1px soli
     } else a.playbackRate=1;
     if(hostMuted) setStatus('The host turned your sound off',false);
     else setStatus(Math.abs(drift)<=60?'In step':'Getting in step…',Math.abs(drift)<=60);
-    syncEl.textContent='Sync: '+(drift>=0?'+':'')+Math.round(drift)+' ms on this phone';
+    syncEl.textContent='Sync: '+(drift>=0?'+':'')+Math.round(drift)+' ms on '+(myDevice()||'this phone');
   }
   a.addEventListener('error',function(){ if(started) step(); });
 
@@ -173,10 +175,28 @@ input{font:inherit;width:100%;min-height:48px;border-radius:14px;border:1px soli
   nameEl.placeholder=guessName();
   nameEl.onchange=function(){ try{ localStorage.setItem('tsName',nameEl.value.trim()); }catch(e){} report(); };
   function myName(){ return nameEl.value.trim()||guessName(); }
+  // The headphones on this phone. Browsers only name them where they already allow it (no prompt is
+  // shown: asking for the microphone just to read a name can lower Bluetooth sound quality on iPhones),
+  // otherwise the guest types it once.
+  var devEl=document.getElementById('dev'), detected='';
+  try{ devEl.value=localStorage.getItem('tsDev')||''; }catch(e){}
+  devEl.onchange=function(){ try{ localStorage.setItem('tsDev',devEl.value.trim()); }catch(e){} report(); };
+  var BT=/airpods|beats|buds|bluetooth|headphone|headset|momentum|wh-|wf-|jabra|bose|sony|sennheiser|jbl|pixel buds|nothing ear/i;
+  function detectDevice(){
+    if(!(navigator.mediaDevices&&navigator.mediaDevices.enumerateDevices)) return;
+    navigator.mediaDevices.enumerateDevices().then(function(list){
+      var named=list.filter(function(d){ return d.label&&(d.kind==='audiooutput'||d.kind==='audioinput'); });
+      var hit=named.filter(function(d){ return d.kind==='audiooutput'&&BT.test(d.label); })[0]||named.filter(function(d){ return BT.test(d.label); })[0];
+      detected=hit?hit.label.replace(/\s*\(.*\)$/,'').trim().slice(0,40):'';
+      devEl.placeholder=detected||'e.g. AirPods, WH-1000XM4';
+    }).catch(function(){});
+  }
+  detectDevice();
+  function myDevice(){ return devEl.value.trim()||detected; }
   function report(){
     if(!started) return;
     var d=window.tsStats.drift;
-    fetch('/guest?id='+id+'&name='+encodeURIComponent(myName())+'&status='+window.tsStats.state+(d===null?'':'&drift='+d)+'&hidden='+(document.hidden?1:0),{cache:'no-store'})
+    fetch('/guest?id='+id+'&name='+encodeURIComponent(myName())+'&dev='+encodeURIComponent(myDevice())+'&status='+window.tsStats.state+(d===null?'':'&drift='+d)+'&hidden='+(document.hidden?1:0),{cache:'no-store'})
       .then(function(r){return r.json();}).then(function(c){
         if(!started) return;
         if(c.removed){ stop(false); removedByHost=true; setStatus('The host stopped the sound for this phone',false); btn.textContent='▶\u00a0 Listen again'; return; }
@@ -186,7 +206,8 @@ input{font:inherit;width:100%;min-height:48px;border-radius:14px;border:1px soli
   }
   function leave(){ var u='/leave?id='+id; if(!(navigator.sendBeacon&&navigator.sendBeacon(u))) fetch(u,{method:'POST',keepalive:true}).catch(function(){}); }
   function start(){
-    if(removedByHost){ id='web-'+Math.random().toString(36).slice(2,10); removedByHost=false; }
+    // A fresh id each time: the host ignores late reports from a page that already left or was removed.
+    id='web-'+Math.random().toString(36).slice(2,10); removedByHost=false;
     started=true; btn.textContent='■\u00a0 Stop listening'; btn.className='big stop';
     if(!ctx){ try{ ctx=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ ctx=null; } }
     var pr=a.play(); if(pr) pr.then(function(){ a.pause(); }).catch(function(){}); // unlock sound with this tap
@@ -204,7 +225,7 @@ input{font:inherit;width:100%;min-height:48px;border-radius:14px;border:1px soli
   document.addEventListener('visibilitychange',function(){ report(); if(!document.hidden){ ping(); poll(); setTimeout(step,300); } });
   // Headphones switched on this phone: the delay changes, so measure again and allow a correcting jump now.
   if(navigator.mediaDevices&&navigator.mediaDevices.addEventListener)
-    navigator.mediaDevices.addEventListener('devicechange',function(){ if(!started) return; calibrated=false; lastSeek=0; settleUntil=now()+SETTLE; window.tsStats.switches=(window.tsStats.switches||0)+1; });
+    navigator.mediaDevices.addEventListener('devicechange',function(){ detectDevice(); if(!started) return; calibrated=false; lastSeek=0; settleUntil=now()+SETTLE; window.tsStats.switches=(window.tsStats.switches||0)+1; });
   setInterval(report,1000);
   document.getElementById('early').onclick=function(){delay+=20;localStorage.setItem('tsDelay',delay);showDelay();};
   document.getElementById('late').onclick=function(){delay-=20;localStorage.setItem('tsDelay',delay);showDelay();};

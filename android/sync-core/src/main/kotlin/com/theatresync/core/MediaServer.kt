@@ -31,7 +31,7 @@ interface MediaSource {
  *  GET /clock?seq=&t0=&id=        → clock_pong message (contracts/)
  *  GET /state                     → playback_state message: where the TV picture is right now
  *  GET /hello                     → hello message
- *  GET /guest?id=&name=&drift=&status=&hidden= → TapIn guest report; answers the host's controls
+ *  GET /guest?id=&name=&dev=&drift=&status=&hidden= → TapIn guest report; answers the host's controls
  *  GET|POST /leave?id=            → TapIn guest stopped or closed the page
  *
  * See contracts/HTTP-API.md. One instance per movie session.
@@ -209,7 +209,7 @@ class MediaServer(
                     if (id.isBlank()) respond(out, 400, "Bad Request", "text/plain", "need id")
                     else respond(out, 200, "OK", "application/json", guests.report(
                         id, query["name"], query["drift"]?.toDoubleOrNull()?.toLong(),
-                        query["status"].orEmpty(), hidden = query["hidden"] == "1",
+                        query["status"].orEmpty(), hidden = query["hidden"] == "1", device = query["dev"],
                     ).toJson())
                 }
                 path == "/listen" || path == "/" -> respond(out, 200, "OK", "text/html; charset=utf-8", ListenPage.HTML)

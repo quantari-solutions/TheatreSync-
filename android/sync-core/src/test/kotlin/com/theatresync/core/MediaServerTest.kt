@@ -202,10 +202,11 @@ class MediaServerTest {
     }
 
     @Test fun guestReportAndLeaveRoutes() {
-        val c = get("/guest?id=web-x1&name=Sam%20P&drift=14.6&status=playing&hidden=0")
+        val c = get("/guest?id=web-x1&name=Sam%20P&dev=WH-1000XM4&drift=14.6&status=playing&hidden=0")
         assertEquals(200, c.responseCode)
         assertEquals("""{"muted":false,"volume":100,"removed":false}""", c.inputStream.readBytes().decodeToString())
         assertEquals("Sam P", server.guests.list().single().name)
+        assertEquals("WH-1000XM4", server.guests.list().single().device)
         assertEquals(14L, server.guests.list().single().driftMs)
         // Browser pages are guests, not app listeners.
         get("/clock?seq=1&t0=5&id=web-x1").inputStream.readBytes()

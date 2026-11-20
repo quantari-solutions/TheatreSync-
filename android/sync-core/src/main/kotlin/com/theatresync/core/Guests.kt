@@ -22,6 +22,8 @@ class Guests(
     data class Guest(
         val id: String,
         val name: String,
+        /** Their headphones, as their page knows them (detected, or typed by the guest); null if unknown. */
+        val device: String? = null,
         val joinedAtMs: Long,
         val lastSeenMs: Long,
         /** Their sound minus the TV picture, in ms (positive = sound late); null while not playing. */
@@ -44,11 +46,15 @@ class Guests(
     private val guests = ConcurrentHashMap<String, Guest>()
     /** Removed by the host: their page is told so (and stops) instead of being re-added. */
     private val removed = ConcurrentHashMap.newKeySet<String>()
+    /** Left (Stop / page closed). A report already on its way when they left must not add them back;
+     *  the page uses a fresh id each time Start is tapped. */
+    private val left = ConcurrentHashMap.newKeySet<String>()
 
     /** A guest's page reports in. Returns the host's controls for them. */
-    fun report(id: String, name: String?, driftMs: Long?, status: String, hidden: Boolean): Controls {
+    fun report(id: String, name: String?, driftMs: Long?, status: String, hidden: Boolean, device: String? = null): Controls {
         val cleanId = clean(id, 64)
         if (cleanId.isEmpty() || cleanId in removed) return Controls(muted = true, volume = 0, removed = true)
+        if (cleanId in left) return Controls(muted = false, volume = 100, removed = false)
         val now = clockMs()
         var added = false
         val g = guests.compute(cleanId) { _, old ->
@@ -56,6 +62,7 @@ class Guests(
             Guest(
                 id = cleanId,
                 name = name?.let { clean(it, 40) }?.ifBlank { null } ?: old?.name ?: "Guest",
+                device = device?.let { clean(it, 40) }?.ifBlank { null },
                 joinedAtMs = old?.joinedAtMs ?: now,
                 lastSeenMs = now,
                 driftMs = driftMs?.coerceIn(-600_000, 600_000),
@@ -70,7 +77,11 @@ class Guests(
     }
 
     /** The guest tapped Stop or closed the page. */
-    fun leave(id: String) { if (guests.remove(clean(id, 64)) != null) changed() }
+    fun leave(id: String) {
+        val cleanId = clean(id, 64)
+        left += cleanId
+        if (guests.remove(cleanId) != null) changed()
+    }
 
     fun setMuted(id: String, muted: Boolean) = update(id) { it.copy(muted = muted) }
     fun setVolume(id: String, volume: Int) = update(id) { it.copy(volume = volume.coerceIn(0, 100)) }
