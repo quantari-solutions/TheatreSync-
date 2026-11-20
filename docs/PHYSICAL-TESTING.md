@@ -154,3 +154,30 @@ the YouTube volume changes. Send one screenshot of step 1 and one of step 3, and
 5. YouTube: try Next, Previous and Captions; then ☰ → Chromecast remote → volume − / +.
 
 **Send:** how long step 1 took, whether step 2 and 3 worked (and how many tries), and a screenshot of anything that didn't.
+
+## HW-12 — The Frame, remote, headphone settings (0.4.8)
+
+1. YouTube → the list should include **Samsung The Frame** ("Smart TV · YouTube only"). Cast a video to it.
+2. ☰ → Chromecast remote while YouTube plays on the Media Room TV: try −10 s / +30 s and pause/play.
+3. Start a movie, press ← : you should see the home screen with a "Playing on …" card; tap it to return.
+4. In the movie player, scroll down → **Headphone options** → pick **Bass** and **Voices**: the headphone sound should change.
+
+**Send:** whether each step worked, and a screenshot of anything that didn't.
+
+## HW-13 — Instant surround movies, new headphones, notification remote (0.4.9)
+
+1. Choose Red Eye (leave "Room speakers too" off) → Start: the picture should appear within a few seconds, sound in the headphones.
+2. During the movie, connect another pair of headphones: TheatreSync asks "Use …?" → Use: sound moves to them within ~2 s.
+3. Pull down the notification shade while casting: tap **Remote** → the app opens on the remote.
+
+**Send:** whether each worked, and a screenshot of anything that didn't.
+
+## HW-14 — TapIn guests, picture in picture (0.5.0)
+
+1. Start a movie. On the movie page, scroll to **TapIn**. A friend connects their headphones to *their* phone (iPhone or Android, no app), unlocks it and holds it to the back of yours. A link opens: tap it, then **Start listening**. (If nothing happens, they scan the QR code with the camera.)
+2. Check the friend hears the movie in step with the TV; use "Sound is early/late" on their page if needed.
+3. Tap ⧉ (top right of the movie page) or **Pop out** in the notification: a small window shows what's playing; its play/pause works.
+
+**Send:** which phones the tap worked on, how in-step it sounded, and a screenshot of anything that didn't work.
+4. Settings → Experimental → turn on **Signature Intro**, start a movie: the opening titles show on the TV, then the
+   movie; headphone sound should start with the film, not during the titles.

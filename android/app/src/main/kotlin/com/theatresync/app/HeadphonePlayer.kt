@@ -86,6 +86,20 @@ class HeadphonePlayer(context: Context, uri: Uri, private val events: Events) {
             prepare()
         }
 
+    /** Equalizer + bass boost on this player's sound only. */
+    @androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
+    private val fx: HeadphoneFx.Attached? = runCatching { HeadphoneFx.Attached(exo.audioSessionId).also { it.apply(HeadphoneFx.load(contextRef)) } }.getOrNull()
+
+    fun applyFx(settings: HeadphoneFx.Settings) { fx?.apply(settings) }
+
+    /** "Reset sync": forget the learned start lead and re-lock onto the TV from scratch. */
+    fun resetSync() {
+        startLeadMs = 250
+        corrector.reset()
+        exo.setPlaybackSpeed(1f)
+        if (exo.playWhenReady) exo.pause() // the next follow() restarts cleanly in step
+    }
+
     /** Last measured difference between the sound and the target, in ms (positive = sound early). */
     var lastDriftMs: Long? = null
         private set
@@ -180,7 +194,10 @@ class HeadphonePlayer(context: Context, uri: Uri, private val events: Events) {
     /** The user changed the sound delay: apply it smoothly even if it's small. */
     fun onDelayChanged() = corrector.forceCorrect()
 
-    fun release() = exo.release()
+    fun release() {
+        fx?.release()
+        exo.release()
+    }
 
     private companion object {
         const val SETTLE_MS = 1_000L

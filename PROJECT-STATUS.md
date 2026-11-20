@@ -1,6 +1,40 @@
 # Project status
 
-_Last updated: 2026-11-19. 0.4.7: headphone sound fixed (seek loop), fast sound-only conversion, YouTube remote controls, Chromecast remote_
+_Last updated: 2026-11-20. 0.5.0 (not released: owner releases when ready): TapIn guest listening (NFC + QR, no app), picture in picture, one crash-reports page_
+
+## 0.5.0: TapIn, picture in picture, crash reports in one place
+
+| Request | Done | Verified |
+|---|---|---|
+| NFC "third-party connect" for guests without the app (iPhone + Android) | **TapIn**: while a movie plays, the phone serves a listening web page (`/listen`) that plays the movie's sound (`/audio`, always with sound even when the TV gets picture only) in sync using `/clock` + `/state`. Guests open it by **tapping their phone to the host** (Host Card Emulation as an NFC Forum Type 4 tag holding the URL) or by **scanning the QR code**. Guests count as friends listening | Type 4 tag APDU sequence unit-tested; server routes tested; listening page run in Chromium against a stand-in host: **in step within 18 ms**. NFC tap on a real iPhone/Android needs HW-14 |
+| Moving a guest's paired headphones to the host phone | Not possible: Bluetooth headphones only connect to the phone they're paired with. TapIn gives the same result (guest's own phone + headphones) | — |
+| Headphones with NFC | Android itself pairs NFC headphones on touch; TheatreSync then offers to switch to them (new-headphones prompt) | needs HW-14 |
+| Picture in picture | ⧉ button on the movie player and Now casting, and **Pop out** in the casting/movie notifications: floating window with the TV's thumbnail, title, state and a play/pause button | needs HW-14 |
+| Signature Intro (Settings → **Experimental**) | 4.3 s before each movie: the Quantari Solutions logo with its gold sheen (from quantari-solutions.vercel.app), then “Presented with TheatreSync · a Quantari Solutions module”, on the app's dark theme (owner: no cube). Queued ahead of the movie in one Cast queue; headphones stay silent until the film is on screen. Off by default | Video rendered and checked frame by frame; route test; needs HW-14 |
+| Crash reports in one place | Settings → Crash reports now holds automatic upload (setup, connect, test, status) and the timeline; separate row removed | Screenshot, emulator test updated |
+
+## 0.4.9: owner feedback (Red Eye sound worked in the headphones; conversion too slow)
+
+**Release rule from the owner:** don't send an APK until the owner says to release.
+
+| Request | Done | Verified |
+|---|---|---|
+| Conversion very slow | **Picture-only MP4, instant:** for surround-sound MP4s the TV gets the file minus its sound tracks; only the index (moov) is rewritten in memory, chunk offsets shifted for fast-start files, media bytes streamed untouched. Headphones play the original sound. "Room speakers too" switch keeps the old sound conversion | Unit tests (both layouts, range reads); needs HW-13 |
+| New headphones mid-movie | AudioDeviceCallback: prompt "Use MOMENTUM 4?" (or switch automatically, setting); removed headphones fall back at once; lists refresh live | needs HW-13 |
+| YouTube sound to headphones | Not possible (the TV's YouTube app plays the sound). Said plainly in Headphone settings | — |
+| Remote from the notification | "Remote" action in the casting and movie notifications opens the remote page | needs HW-13 |
+| Bigger headphone buttons, instant switch | Rows ≥ 64–80 dp; tapping switches the player's output immediately | Screenshot |
+
+## 0.4.8: owner feedback on 0.4.7
+
+| Report | Fix | Verified |
+|---|---|---|
+| Samsung "The Frame" not listed | **DIAL** discovery (SSDP) of non-Chromecast smart TVs; YouTube started via DIAL, its screen ID fed to the same Lounge remote. Listed as "Smart TV · YouTube only" (movies still need a Chromecast) | Parser unit tests; needs HW-12 |
+| Remote ±10/30 s did nothing | YouTube ignores media-channel seeks from other senders: play/pause/seek now go through YouTube's Lounge remote (`play`, `pause`, `seekTo`) | needs HW-12 |
+| Couldn't get back to the home screen | The home screen was replaced by the movie player whenever a movie existed (even finished). Movie player is now its own page with ←; home shows a "Playing on …" card | Screenshot |
+| TV chips on the remote; "Living Room" misaligned | Chips removed (remote uses the connected/playing TV). All button labels single-line with "…"; radio marks drawn at fixed size (glyphs differed in width); long-name screenshot test | Screenshots |
+| Headphone options | ⚙ on Headphones page, ☰ → Headphones, and a Headphones button in the movie player and Now casting open **Headphone settings**: device, sync tool (live drift, ±10/±50 ms, Reset sync), equalizer (presets, bass boost, 5 bands; headphone sound only) | Screenshot; EQ needs HW-12 |
+| Real-time sync | Already automatic (drift correction every 200 ms); the sync tool shows it live. Microphone-based calibration not built | — |
 
 ## 0.4.7: owner's test night (crash reports now arrive on GitHub)
 

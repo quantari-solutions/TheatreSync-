@@ -57,6 +57,32 @@ class ScreenshotTest {
             {}, { _, _ -> }, { _, _ -> }, { _, _ -> }, {}, {}, { _, _ -> }, {}, {}, {},
         )
     }
+    /** Long and many TV names must never overflow or wrap letter by letter. */
+    @Test fun youtube3_smartTvLongNames() = shot {
+        YouTubeScreen(
+            Ui(tvs = listOf(Tv("1", "Media Room TV"), Tv("2", "Living Room"), Tv("dial:x", "Samsung The Frame (65)", youTubeOnly = true), Tv("4", "Upstairs Bedroom Projector With A Very Long Name"))),
+            "https://youtu.be/dQw4w9WgXcQ", { _, _ -> }, {}, {},
+        )
+    }
+    @Test fun setup12_moviePlayingCard() = setup(
+        Ui(movieTitle = "Red Eye (2005)", connectedTv = "Media Room TV", phase = Phase.PLAYING, positionMs = 600_000, durationMs = 5_130_000),
+    )
+    @Test fun headphones3_settings() = shot {
+        HeadphoneSettingsScreen(
+            Ui(preferredOutputId = 12, soundDelayMs = 20, driftMs = 8, fx = HeadphoneFx.withPreset(HeadphoneFx.Settings(), HeadphoneFx.Preset.CINEMA)),
+            listOf(DiagnosticsReport.Output("MOMENTUM 4", DiagnosticsReport.Kind.BLUETOOTH, 12), DiagnosticsReport.Output("Phone speaker", DiagnosticsReport.Kind.SPEAKER, 2)),
+            {}, {}, {}, {}, {}, {}, {},
+        )
+    }
+    @Test fun setup13_surroundInstant() = setup(
+        Ui(
+            movieTitle = "Red Eye (2005)", connectedTv = "Media Room TV",
+            movieInfo = CastCompat.Media("video/avc", 1280, 720, 24f, "audio/mp4a-latm", 3.0, 6).label,
+            movieVerdict = CastCompat.Verdict(false, listOf(CastCompat.Problem.AUDIO)),
+            moviePlan = CastCompat.Plan.SOUND_ONLY,
+        ),
+    )
+    @Test fun experimental1() = shot { ExperimentalScreen(Ui(signatureIntro = true), {}, {}) }
     @Test fun setup4_error() = setup(Ui(movieTitle = "Interstellar", message = "Connect this phone to the same Wi-Fi as the Chromecast."))
 
     @Test fun playing1_inSync() = playing(

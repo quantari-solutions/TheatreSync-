@@ -26,7 +26,10 @@ import com.google.android.gms.cast.framework.CastSession
 import com.google.android.gms.cast.framework.SessionManagerListener
 import com.theatresync.core.CastActivity
 import com.theatresync.core.CastStatus
+import com.theatresync.core.Dial
 import com.theatresync.core.MediaServer
+import com.theatresync.core.MediaSource
+import com.theatresync.core.Mp4VideoOnly
 import com.theatresync.core.YouTubeLounge
 import com.theatresync.core.YouTubeScreenFinder
 import com.theatresync.core.Payload
@@ -51,7 +54,10 @@ class MovieSession(private val app: Application) {
 
     enum class YouTubeState { IDLE, STARTING, PLAYING, FAILED }
 
-    data class Tv(val id: String, val name: String, val isSpeaker: Boolean = false)
+    data class NewDevice(val id: Int, val name: String)
+
+    /** @param youTubeOnly a smart TV found via DIAL (e.g. Samsung The Frame): YouTube only, no movies. */
+    data class Tv(val id: String, val name: String, val isSpeaker: Boolean = false, val youTubeOnly: Boolean = false)
 
     data class Ui(
         val castAvailable: Boolean = true,
@@ -92,6 +98,20 @@ class MovieSession(private val app: Application) {
         val prepareSoundOnly: Boolean = false,
         /** What Start will do with the chosen movie at the chosen quality on the connected TV. */
         val moviePlan: CastCompat.Plan? = null,
+        /** Headphone equalizer / bass boost. */
+        val fx: HeadphoneFx.Settings = HeadphoneFx.Settings(),
+        /** Surround-sound movies: also give the TV (room speakers) sound, which needs a slower conversion. */
+        val roomSoundToo: Boolean = false,
+        /** Experimental: Quantari + TheatreSync titles on the TV before each movie. */
+        val signatureIntro: Boolean = false,
+        /** The signature intro is on the TV right now. */
+        val introPlaying: Boolean = false,
+        /** Headphones that just connected (asks "use them?" while a movie plays). */
+        val newDevice: NewDevice? = null,
+        /** Bumped whenever outputs appear/disappear, so lists refresh at once. */
+        val audioDevicesVersion: Int = 0,
+        /** Switch to newly connected headphones without asking. */
+        val autoSwitch: Boolean = false,
         /** true = TV confirmed muted, false = TV ignored the mute, null = unknown / not muting. */
         val tvMuteConfirmed: Boolean? = null,
     ) {
@@ -102,7 +122,7 @@ class MovieSession(private val app: Application) {
     private val deviceId: String = prefs.getString("deviceId", null) ?: ("android-" + UUID.randomUUID().toString().take(12))
         .also { prefs.edit { putString("deviceId", it) } }
 
-    private val _ui = MutableStateFlow(Ui(soundDelayMs = prefs.getInt("soundDelayMs", 0)))
+    private val _ui = MutableStateFlow(Ui(soundDelayMs = prefs.getInt("soundDelayMs", 0), fx = HeadphoneFx.load(app)))
     val ui: StateFlow<Ui> = _ui
 
     private val main = Handler(Looper.getMainLooper())
@@ -206,9 +226,62 @@ class MovieSession(private val app: Application) {
 
     /** Call while the setup screen is visible. */
     private fun startTvSearchUnsafe() {
+        scanDial()
         if (castContext == null) return
         applyScanMode()
         refreshTvs()
+    }
+
+    // ------------------------------------------------------------- smart TVs via DIAL (YouTube only)
+
+    private var castTvs: List<Tv> = emptyList()
+    private val dialTvs = java.util.concurrent.ConcurrentHashMap<String, Dial.Device>()
+    @Volatile private var dialScanning = false
+    private var lastDialScanMs = 0L
+
+    private fun publishTvs() {
+        val castNames = castTvs.map { it.name.lowercase() }.toSet()
+        val smart = dialTvs.map { (id, d) -> Tv(id, d.name.removePrefix("[TV] ").trim(), youTubeOnly = true) }
+            .filter { it.name.lowercase() !in castNames }
+            .sortedBy { it.name }
+        _ui.update { it.copy(tvs = castTvs + smart) }
+    }
+
+    /** Looks for Samsung/LG/Sony… TVs on the Wi-Fi (at most once every 30 s). */
+    private fun scanDial() {
+        val now = SystemClock.elapsedRealtime()
+        if (dialScanning || now - lastDialScanMs < 30_000) return
+        dialScanning = true
+        lastDialScanMs = now
+        Thread({
+            val wifi = app.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            val lock = runCatching { wifi.createMulticastLock("theatresync-dial").apply { setReferenceCounted(false); acquire() } }.getOrNull()
+            try {
+                val found = Dial.discover()
+                main.post {
+                    dialTvs.clear()
+                    found.forEach { dialTvs["dial:${it.id}"] = it }
+                    publishTvs()
+                }
+            } catch (e: Exception) {
+                lastYouTubeError = "TV search (DIAL) failed: ${e.javaClass.simpleName}: ${e.message}"
+            } finally {
+                runCatching { lock?.release() }
+                dialScanning = false
+            }
+        }, "dial-scan").apply { isDaemon = true }.start()
+    }
+
+    private fun isDial(tvId: String) = tvId.startsWith("dial:")
+
+    private fun tvName(tvId: String): String? =
+        dialTvs[tvId]?.name?.removePrefix("[TV] ")?.trim() ?: knownTvs.firstOrNull { it.id == tvId }?.name
+
+    /** The YouTube "screen ID" of a Chromecast (Cast connection) or a smart TV (DIAL). Blocking. */
+    private fun youTubeScreenId(tvId: String): String {
+        dialTvs[tvId]?.let { return Dial.youTubeScreenId(it) }
+        val tv = knownTvs.firstOrNull { it.id == tvId } ?: throw java.io.IOException("TV not found")
+        return YouTubeScreenFinder({ TvWatchers.openTls(tv.address, tv.port) }).screenId()
     }
 
     /**
@@ -230,13 +303,12 @@ class MovieSession(private val app: Application) {
 
     private fun refreshTvs() {
         val routes = router.routes.filter { !it.isDefault && it.isEnabled && it.matchesSelector(selector) }
-        _ui.update {
-            it.copy(tvs = routes.map { r ->
-                val device = CastDevice.getFromBundle(r.extras)
-                // Speakers (e.g. Nest Audio) can't show video: use a speaker icon for them.
-                Tv(r.id, r.name, isSpeaker = device != null && !device.hasCapability(CastDevice.CAPABILITY_VIDEO_OUT))
-            })
+        castTvs = routes.map { r ->
+            val device = CastDevice.getFromBundle(r.extras)
+            // Speakers (e.g. Nest Audio) can't show video: use a speaker icon for them.
+            Tv(r.id, r.name, isSpeaker = device != null && !device.hasCapability(CastDevice.CAPABILITY_VIDEO_OUT))
         }
+        publishTvs()
         knownTvs = routes.mapNotNull { r ->
             val device = CastDevice.getFromBundle(r.extras) ?: return@mapNotNull null
             val address = device.inetAddress ?: return@mapNotNull null
@@ -289,14 +361,65 @@ class MovieSession(private val app: Application) {
         return now - prev.second > 45_000 // "playing" with the clock stuck for 45 s: a stale report
     }
 
+    /** What a TV is doing: its real status, or (smart TVs, which report nothing) our own record. */
+    private fun activityFor(tvId: String): CastActivity? =
+        rawNowCasting.firstOrNull { it.tvId == tvId }?.activity ?: optimistic?.takeIf { it.tvId == tvId }?.activity
+
+    /** YouTube on any TV is controlled through YouTube's own remote link (the TV's media channel ignores us). */
+    private fun usesYouTubeRemote(tvId: String) = isDial(tvId) || activityFor(tvId)?.kind == CastActivity.Kind.YOUTUBE
+
+    /** Where a smart TV's video is now (it reports nothing back), estimated from our own commands. */
+    private var dialPosSec = 0.0
+    private var dialPosAtMs = 0L
+    private fun dialPositionSec(tvId: String): Double {
+        val playing = activityFor(tvId)?.isPlaying == true
+        return dialPosSec + if (playing) (SystemClock.elapsedRealtime() - dialPosAtMs) / 1000.0 else 0.0
+    }
+    private fun setDialPosition(sec: Double, playing: Boolean? = null) {
+        dialPosSec = sec.coerceAtLeast(0.0)
+        dialPosAtMs = SystemClock.elapsedRealtime()
+        optimistic?.let { o ->
+            optimistic = o.copy(activity = o.activity.copy(currentTimeSec = dialPosSec, playerState = playing?.let { if (it) "PLAYING" else "PAUSED" } ?: o.activity.playerState))
+            publishNowCasting(rawNowCasting)
+        }
+    }
+
     private fun castPlayPauseUnsafe(tvId: String) {
-        val a = rawNowCasting.firstOrNull { it.tvId == tvId }?.activity ?: return
-        tvWatchers.playPause(tvId, play = !a.isPlaying)
+        val a = activityFor(tvId) ?: return
+        if (usesYouTubeRemote(tvId)) {
+            if (isDial(tvId)) setDialPosition(dialPositionSec(tvId), playing = !a.isPlaying)
+            youTubeRemote(tvId, if (a.isPlaying) "pause" else "play")
+        } else {
+            tvWatchers.playPause(tvId, play = !a.isPlaying)
+        }
+    }
+
+    private fun castSeekToUnsafe(tvId: String, seconds: Double) {
+        val t = seconds.coerceAtLeast(0.0)
+        if (usesYouTubeRemote(tvId)) {
+            if (isDial(tvId)) setDialPosition(t)
+            youTubeRemote(tvId, "seekTo", mapOf("newTime" to "%.1f".format(java.util.Locale.US, t)))
+        } else {
+            tvWatchers.seekTo(tvId, t)
+        }
+    }
+
+    private fun castSkipUnsafe(tvId: String, deltaSec: Double) {
+        val now = if (isDial(tvId)) dialPositionSec(tvId) else activityFor(tvId)?.currentTimeSec ?: return
+        castSeekToUnsafe(tvId, now + deltaSec)
     }
 
 
     /** Stops whatever is on that TV. If it's our own Cast session, end that cleanly too. */
     private fun castStopUnsafe(tvId: String) {
+        if (isDial(tvId)) {
+            youTubeRemote(tvId, "stopVideo")
+            optimistic = null
+            publishNowCasting(rawNowCasting)
+            resetYouTube()
+            CastIndicator.hide(app)
+            return
+        }
         val a = rawNowCasting.firstOrNull { it.tvId == tvId }?.activity
         // Close the card immediately; the TV goes back to its "Ready to cast" screen.
         a?.sessionId?.let { stoppedSessions += it }
@@ -322,10 +445,10 @@ class MovieSession(private val app: Application) {
         youTubeRemote(tvId, "setSubtitlesTrack", mapOf("videoId" to (videoId ?: ""), "languageCode" to (language ?: "")))
 
     private fun youTubeRemote(tvId: String, command: String, params: Map<String, String> = emptyMap()) = guard("YouTube $command") {
-        val tv = knownTvs.firstOrNull { it.id == tvId } ?: return@guard say(R.string.yt_no_tv)
+        if (tvName(tvId) == null) return@guard say(R.string.yt_no_tv)
         Thread({
             fun link(): Pair<YouTubeLounge, YouTubeLounge.Session> {
-                val screenId = YouTubeScreenFinder({ TvWatchers.openTls(tv.address, tv.port) }).screenId()
+                val screenId = youTubeScreenId(tvId)
                 val lounge = YouTubeLounge()
                 return (lounge to lounge.bind(lounge.loungeToken(screenId))).also { synchronized(youTubeRemotes) { youTubeRemotes[tvId] = it } }
             }
@@ -336,7 +459,7 @@ class MovieSession(private val app: Application) {
                     val (l2, s2) = link()
                     l2.command(s2, command, params)
                 }
-                main.postDelayed({ tvWatchers.pollNow(tvId) }, 800)
+                if (!isDial(tvId)) main.postDelayed({ tvWatchers.pollNow(tvId) }, 800)
             } catch (e: Exception) {
                 lastYouTubeError = "YouTube $command failed: ${e.javaClass.simpleName}: ${e.message}"
                 CrashReporter.handled(app, "YouTube $command", e)
@@ -353,14 +476,18 @@ class MovieSession(private val app: Application) {
 
     private fun castYouTubeUnsafe(videoId: String, tvId: String) {
         if (server != null) return say(R.string.yt_stop_movie_first)
-        val tv = knownTvs.firstOrNull { it.id == tvId } ?: return say(R.string.yt_no_tv)
+        val name = tvName(tvId) ?: return say(R.string.yt_no_tv)
+        val tv = object { val id = tvId; val name = name }
         _ui.update { it.copy(youTube = YouTubeState.STARTING, youTubeVideoId = videoId, youTubeTvId = tv.id, message = null) }
         Thread({
             var step = "starting YouTube on the TV"
             val ok = try {
-                val screenId = YouTubeScreenFinder({ TvWatchers.openTls(tv.address, tv.port) }).screenId()
+                val screenId = youTubeScreenId(tvId)
                 step = "asking YouTube to play the video"
-                YouTubeLounge().play(screenId, videoId)
+                val lounge = YouTubeLounge()
+                val session = lounge.bind(lounge.loungeToken(screenId))
+                lounge.setPlaylist(session, videoId)
+                synchronized(youTubeRemotes) { youTubeRemotes[tvId] = lounge to session }
                 lastYouTubeError = null
                 true
             } catch (e: Exception) {
@@ -379,9 +506,12 @@ class MovieSession(private val app: Application) {
                             imageUrl = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg", playerState = "BUFFERING",
                         ),
                     )
-                    optimisticUntilMs = SystemClock.elapsedRealtime() + 20_000
+                    // Smart TVs (DIAL) send no status back, so keep their card until stopped.
+                    optimisticUntilMs = SystemClock.elapsedRealtime() + if (isDial(tv.id)) 6 * 3_600_000L else 20_000L
+                    if (isDial(tv.id)) { dialPosSec = 0.0; dialPosAtMs = SystemClock.elapsedRealtime() }
+                    if (isDial(tv.id)) optimistic = optimistic?.copy(activity = optimistic!!.activity.copy(playerState = "PLAYING", contentId = videoId, title = null))
                     publishNowCasting(rawNowCasting)
-                    tvWatchers.pollNow(tv.id)
+                    if (!isDial(tv.id)) tvWatchers.pollNow(tv.id)
                     CastIndicator.show(app, app.getString(R.string.casting_youtube_to, tv.name), tv.id)
                 }
                 _ui.update { it.copy(youTube = if (ok) YouTubeState.PLAYING else YouTubeState.FAILED) }
@@ -446,6 +576,22 @@ class MovieSession(private val app: Application) {
         val q = _ui.value.quality
         val plan = currentPlan()
         if (plan == CastCompat.Plan.NONE) return castMovie(original)
+        if (plan == CastCompat.Plan.SOUND_ONLY && !_ui.value.roomSoundToo) {
+            // Instant: the TV gets the picture only (index rewritten on the fly, nothing copied);
+            // the sound plays in the headphones from the original file. Falls back to converting.
+            _ui.update { it.copy(prepareProgress = 0, prepareEtaSec = null, prepareSoundOnly = false, message = null) }
+            Thread({
+                val pictureOnly = Mp4VideoOnly.of(original)
+                main.post {
+                    guard("cast picture only") {
+                        _ui.update { it.copy(prepareProgress = null) }
+                        if (pictureOnly != null) castMovie(original, tvSource = pictureOnly)
+                        else { _ui.update { it.copy(roomSoundToo = true) }; startMovieUnsafe() }
+                    }
+                }
+            }, "picture-only").start()
+            return
+        }
         converter.cachedFile(original.uri, q, plan)?.let { f ->
             return castMovie(ContentUriSource.from(app, Uri.fromFile(f))?.withTitle(original.title) ?: return say(R.string.msg_bad_file))
         }
@@ -482,8 +628,14 @@ class MovieSession(private val app: Application) {
         _ui.update { it.copy(movieTitle = null, movieInfo = null, movieVerdict = null, prepareProgress = null, prepareEtaSec = null, quality = Quality.ORIGINAL, moviePlan = null) }
     }
 
+    /** Address the TV plays the movie from, and the intro's (when the signature intro is on). */
+    private var movieUrl: String? = null
+    private var introUrl: String? = null
+    /** True once the TV has moved from the intro to the movie itself. */
+    private var movieOnScreen = false
+
     /** Sends [m] to the TV and starts headphone sound. */
-    private fun castMovie(m: ContentUriSource) {
+    private fun castMovie(m: ContentUriSource, tvSource: MediaSource = m) {
         val session = castSession ?: return
         val client = session.remoteMediaClient ?: return say(R.string.msg_tv_failed)
         // Give the TV the address on its own network (a phone can have several).
@@ -498,7 +650,8 @@ class MovieSession(private val app: Application) {
                 Payload.Hello(Build.MODEL.take(64).ifBlank { "Android" }, Platform.ANDROID, Role.HOST, BuildConfig.VERSION_NAME, listOf(1))
             },
         )
-        srv.media = m
+        srv.media = tvSource
+        srv.audioMedia = m // TapIn guests always get the movie with its sound
         val port = try { srv.start() } catch (_: Exception) { return say(R.string.msg_no_wifi) }
         server = srv
 
@@ -519,16 +672,40 @@ class MovieSession(private val app: Application) {
         val info = MediaInfo.Builder(url)
             .setContentUrl(url)
             .setStreamType(MediaInfo.STREAM_TYPE_BUFFERED)
-            .setContentType(m.mimeType)
+            .setContentType(tvSource.mimeType)
             .setMetadata(meta)
             .build()
-        client.load(MediaLoadRequestData.Builder().setMediaInfo(info).setAutoplay(true).build())
-            .setResultCallback { result ->
-                if (!result.status.isSuccess) say(R.string.msg_tv_cant_play)
-            }
+        movieUrl = url
+        movieOnScreen = false
+        introUrl = null
+        val request = if (_ui.value.signatureIntro) {
+            // Signature intro: Quantari + TheatreSync titles play first, then the movie (one queue,
+            // so the TV goes straight from the titles into the film).
+            srv.intro = RawResourceSource(app, R.raw.signature_intro, "TheatreSync")
+            val introAt = "http://$ip:$port/intro"
+            introUrl = introAt
+            val introInfo = MediaInfo.Builder(introAt).setContentUrl(introAt)
+                .setStreamType(MediaInfo.STREAM_TYPE_BUFFERED).setContentType("video/mp4")
+                .setMetadata(MediaMetadata(MediaMetadata.MEDIA_TYPE_MOVIE).apply { putString(MediaMetadata.KEY_TITLE, "TheatreSync") })
+                .build()
+            val queue = com.google.android.gms.cast.MediaQueueData.Builder()
+                .setItems(listOf(
+                    com.google.android.gms.cast.MediaQueueItem.Builder(introInfo).setAutoplay(true).setPreloadTime(4.0).build(),
+                    com.google.android.gms.cast.MediaQueueItem.Builder(info).setAutoplay(true).build(),
+                ))
+                .setStartIndex(0)
+                .build()
+            MediaLoadRequestData.Builder().setQueueData(queue).setAutoplay(true).build()
+        } else {
+            MediaLoadRequestData.Builder().setMediaInfo(info).setAutoplay(true).build()
+        }
+        client.load(request).setResultCallback { result ->
+            if (!result.status.isSuccess) say(R.string.msg_tv_cant_play)
+        }
 
         applyTvMute()
         announcer.announce("TheatreSync · ${m.title}".take(60), ip, port)
+        TapInService.url = "http://$ip:$port/listen"
         wifiLock = (app.getSystemService(Context.WIFI_SERVICE) as WifiManager)
             .createWifiLock(WifiManager.WIFI_MODE_FULL_LOW_LATENCY, "theatresync").apply { acquire() }
         CastIndicator.hide(app) // the movie's own notification takes over (same cast icon)
@@ -555,6 +732,7 @@ class MovieSession(private val app: Application) {
         player = null
         server?.stop()
         server = null
+        TapInService.url = null
         snapshot = null
         announcer.stop()
         wifiLock?.let { if (it.isHeld) it.release() }
@@ -592,6 +770,26 @@ class MovieSession(private val app: Application) {
         _ui.update { it.copy(soundDelayMs = v) }
         player?.onDelayChanged()
     }
+
+    fun setFx(settings: HeadphoneFx.Settings) = guard("setFx") {
+        HeadphoneFx.save(app, settings)
+        player?.applyFx(settings)
+        _ui.update { it.copy(fx = settings) }
+    }
+
+    /** Headphone settings → Reset sync: sound delay back to 0 and re-lock onto the TV. */
+    fun resetHeadphoneSync() = guard("resetHeadphoneSync") {
+        prefs.edit { putInt("soundDelayMs", 0) }
+        _ui.update { it.copy(soundDelayMs = 0) }
+        player?.resetSync()
+    }
+
+    fun setSignatureIntro(on: Boolean) = guard("setSignatureIntro") {
+        prefs.edit { putBoolean("signatureIntro", on) }
+        _ui.update { it.copy(signatureIntro = on) }
+    }
+
+    fun setRoomSoundToo(on: Boolean) = guard("setRoomSoundToo") { _ui.update { it.copy(roomSoundToo = on) } }
 
     fun setHeadphonesHere(on: Boolean) = _ui.update { it.copy(headphonesHere = on) }
 
@@ -676,6 +874,17 @@ class MovieSession(private val app: Application) {
             return
         }
         val now = SystemClock.elapsedRealtime()
+        // Signature intro on screen: keep the headphones quiet and the movie at 0 until the film starts.
+        val showing = client.mediaInfo?.contentId
+        if (introUrl != null && !movieOnScreen) {
+            if (showing != null && showing == movieUrl) movieOnScreen = true
+            else {
+                player?.follow(0, shouldPlay = false)
+                _ui.update { it.copy(phase = Phase.STARTING, tvBuffering = false, positionMs = 0, introPlaying = showing == introUrl) }
+                return
+            }
+        }
+        if (_ui.value.introPlaying) _ui.update { it.copy(introPlaying = false) }
         val castPos = client.approximateStreamPosition.coerceAtLeast(0)
         val castState = client.playerState
         val playing = castState == MediaStatus.PLAYER_STATE_PLAYING
@@ -782,6 +991,7 @@ class MovieSession(private val app: Application) {
     }
 
     private fun say(res: Int) = _ui.update { it.copy(message = app.getString(res)) }
+    private fun say(text: String) = _ui.update { it.copy(message = text) }
 
     // ---------------------------------------------------------------- crash safety
     //
@@ -795,6 +1005,12 @@ class MovieSession(private val app: Application) {
     fun connectTv(id: String) = guard("connectTv") { connectTvUnsafe(id) }
     fun disconnectTv() = guard("disconnectTv") { disconnectTvUnsafe() }
     fun castPlayPause(tvId: String) = guard("castPlayPause") { castPlayPauseUnsafe(tvId) }
+
+    /** Picture-in-picture play/pause: the movie if one runs, else whatever is on a TV. */
+    fun pipPlayPause() = guard("pipPlayPause") {
+        if (server != null) togglePauseUnsafe()
+        else _ui.value.nowCasting.firstOrNull()?.let { castPlayPauseUnsafe(it.tvId) }
+    }
     fun castStop(tvId: String) = guard("castStop") { castStopUnsafe(tvId) }
     fun startMovie() = guard("startMovie") { startMovieUnsafe() }
     fun stopMovie() = guard("stopMovie") { stopMovieUnsafe() }
@@ -802,19 +1018,25 @@ class MovieSession(private val app: Application) {
     fun skip(deltaMs: Long) = guard("skip") { skipUnsafe(deltaMs) }
     fun setMuteTv(on: Boolean) = guard("setMuteTv") { setMuteTvUnsafe(on) }
 
-    fun castSkip(tvId: String, deltaSec: Double) = guard("castSkip") { tvWatchers.seekBy(tvId, deltaSec) }
-    fun castSeekTo(tvId: String, seconds: Double) = guard("castSeekTo") { tvWatchers.seekTo(tvId, seconds) }
-    fun castVolume(tvId: String, level: Double) = guard("castVolume") { tvWatchers.setVolume(tvId, level) }
+    fun castSkip(tvId: String, deltaSec: Double) = guard("castSkip") { castSkipUnsafe(tvId, deltaSec) }
+    fun castSeekTo(tvId: String, seconds: Double) = guard("castSeekTo") { castSeekToUnsafe(tvId, seconds) }
+    fun castVolume(tvId: String, level: Double) = guard("castVolume") {
+        lastVolume[tvId] = level
+        // Smart TVs: YouTube's own volume (0–100). Chromecasts: the Chromecast's volume.
+        if (isDial(tvId)) youTubeRemote(tvId, "setVolume", mapOf("volume" to "${(level * 100).toInt()}")) else tvWatchers.setVolume(tvId, level)
+    }
     /** Remote − / + : change the TV volume by [delta] (0..1 scale). */
     fun castVolumeStep(tvId: String, delta: Double) = guard("castVolumeStep") {
         val now = rawNowCasting.firstOrNull { it.tvId == tvId }?.activity?.volumeLevel ?: lastVolume[tvId] ?: 0.5
         val next = (now + delta).coerceIn(0.0, 1.0)
-        lastVolume[tvId] = next
-        tvWatchers.setVolume(tvId, next)
+        castVolume(tvId, next)
     }
     private val lastVolume = HashMap<String, Double>()
 
-    fun castMute(tvId: String, muted: Boolean) = guard("castMute") { tvWatchers.setMuted(tvId, muted) }
+    fun castMute(tvId: String, muted: Boolean) = guard("castMute") {
+        if (isDial(tvId)) youTubeRemote(tvId, "setVolume", mapOf("volume" to if (muted) "0" else "${((lastVolume[tvId] ?: 0.5) * 100).toInt()}"))
+        else tvWatchers.setMuted(tvId, muted)
+    }
 
     private inline fun guard(where: String, block: () -> Unit) {
         try {
@@ -898,8 +1120,49 @@ class MovieSession(private val app: Application) {
 
     fun setPreferredOutput(id: Int?) = guard("choose output") {
         preferredOutputId = id
-        _ui.update { it.copy(preferredOutputId = id) }
+        _ui.update { it.copy(preferredOutputId = id, newDevice = null) }
         player?.setPreferredOutput(id)
+    }
+
+    fun dismissNewDevice() = _ui.update { it.copy(newDevice = null) }
+
+    fun setAutoSwitch(on: Boolean) = guard("setAutoSwitch") {
+        prefs.edit { putBoolean("autoSwitch", on) }
+        _ui.update { it.copy(autoSwitch = on) }
+    }
+
+    // ------------------------------------------------------------- headphones coming and going
+
+    private val audioManager = app.getSystemService(android.media.AudioManager::class.java)
+    private var deviceWatchStartedAt = 0L
+
+    // The BLE types are plain int constants: on older Android they simply never match.
+    @android.annotation.SuppressLint("InlinedApi")
+    private fun isHeadphone(d: android.media.AudioDeviceInfo) = d.isSink && d.type in setOf(
+        android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, android.media.AudioDeviceInfo.TYPE_BLE_HEADSET,
+        android.media.AudioDeviceInfo.TYPE_BLE_SPEAKER, android.media.AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+        android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET, android.media.AudioDeviceInfo.TYPE_USB_HEADSET,
+    )
+
+    private val deviceCallback = object : android.media.AudioDeviceCallback() {
+        override fun onAudioDevicesAdded(added: Array<out android.media.AudioDeviceInfo>) = guard("headphones added") {
+            _ui.update { it.copy(audioDevicesVersion = it.audioDevicesVersion + 1) }
+            // The first callback lists devices that were already there: not "new".
+            if (SystemClock.elapsedRealtime() - deviceWatchStartedAt < 1_500) return@guard
+            val d = added.firstOrNull(::isHeadphone) ?: return@guard
+            val name = d.productName?.toString()?.takeIf { it.isNotBlank() } ?: app.getString(R.string.headphones)
+            when {
+                player == null -> Unit // nothing of ours playing: Android routes new headphones itself
+                _ui.value.autoSwitch -> { setPreferredOutput(d.id); say(app.getString(R.string.now_on_device, name)) }
+                else -> _ui.update { it.copy(newDevice = NewDevice(d.id, name)) }
+            }
+        }
+
+        override fun onAudioDevicesRemoved(removed: Array<out android.media.AudioDeviceInfo>) = guard("headphones removed") {
+            _ui.update { it.copy(audioDevicesVersion = it.audioDevicesVersion + 1) }
+            if (removed.any { it.id == preferredOutputId }) setPreferredOutput(null) // follow Android to what's left
+            if (removed.any { it.id == _ui.value.newDevice?.id }) dismissNewDevice()
+        }
     }
 
     // IMPORTANT: this init block must stay LAST in the class. Kotlin runs property
@@ -909,6 +1172,9 @@ class MovieSession(private val app: Application) {
     // restarted the app while the file picker was open).
     init {
         main.post { guard("restore movie") { restoreMovie() } }
+        _ui.update { it.copy(autoSwitch = prefs.getBoolean("autoSwitch", false), signatureIntro = prefs.getBoolean("signatureIntro", false)) }
+        deviceWatchStartedAt = SystemClock.elapsedRealtime()
+        runCatching { audioManager?.registerAudioDeviceCallback(deviceCallback, main) }
         if (castContext == null) {
             _ui.update { it.copy(castAvailable = false, message = app.getString(R.string.msg_no_cast)) }
         } else {

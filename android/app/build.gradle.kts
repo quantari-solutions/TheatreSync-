@@ -14,8 +14,8 @@ android {
         // 29 = Android 10, the first release with AudioPlaybackCapture.
         minSdk = 29
         targetSdk = 35
-        versionCode = 12
-        versionName = "0.4.7"
+        versionCode = 15
+        versionName = "0.5.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Where "Send to GitHub" opens a pre-filled crash issue (the owner submits it).
         buildConfigField("String", "CRASH_REPO", "\"quantari-solutions/TheatreSync-\"")
@@ -50,6 +50,9 @@ android {
         disable += setOf("GradleDependency", "NewerVersionAvailable", "AndroidGradlePluginVersion", "OldTargetApi")
         // Adaptive icons must stay in mipmap-anydpi-v26 (aapt2 rejects them in plain anydpi).
         disable += "ObsoleteSdkInt"
+        // Picture in picture opens only when the owner asks (never automatically on leaving the app),
+        // so the auto-enter / source-rect advice doesn't apply.
+        disable += "PictureInPictureIssue"
         xmlReport = true
         htmlReport = true
     }
@@ -60,6 +63,7 @@ kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarg
 dependencies {
     implementation(project(":sync-core"))
     implementation(libs.androidx.core.ktx)
+    implementation(libs.zxing.core) // QR code for TapIn (encoding only, pure Java)
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)

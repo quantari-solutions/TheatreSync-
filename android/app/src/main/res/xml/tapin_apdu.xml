@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- TapIn: this phone acts as an NFC tag holding the guest listening address (NDEF Type 4). -->
+<host-apdu-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/tapin_nfc_description"
+    android:requireDeviceUnlock="false">
+    <aid-group android:category="other" android:description="@string/tapin_nfc_description">
+        <aid-filter android:name="D2760000850101" />
+    </aid-group>
+</host-apdu-service>

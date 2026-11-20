@@ -161,6 +161,40 @@ class MediaServerTest {
         assertEquals(200, get("/media").responseCode) // server still alive
     }
 
+    // ---- TapIn: guests listen in a browser
+
+    @Test fun listenPageIsServed() {
+        val c = get("/listen")
+        assertEquals(200, c.responseCode)
+        assertTrue(c.contentType.startsWith("text/html"))
+        val html = c.inputStream.readBytes().decodeToString()
+        assertTrue(html.contains("/audio") && html.contains("/clock") && html.contains("/state"))
+    }
+
+    @Test fun audioServesTheMovieWithSoundEvenWhenTheTvGetsPictureOnly() {
+        val pictureOnly = object : MediaSource {
+            override val title = "Test movie"
+            override val mimeType = "video/mp4"
+            override val sizeBytes = 10L
+            override fun open(offset: Long): InputStream = ByteArrayInputStream(ByteArray(10), offset.toInt(), 10 - offset.toInt())
+        }
+        server.media = pictureOnly
+        server.audioMedia = movie
+        assertEquals(10, get("/media").inputStream.readBytes().size)
+        assertArrayEquals(bytes, get("/audio").inputStream.readBytes())
+        val r = get("/audio", "bytes=1000-1999")
+        assertEquals(206, r.responseCode)
+        assertArrayEquals(bytes.copyOfRange(1000, 2000), r.inputStream.readBytes())
+    }
+
+    @Test fun introIsServedOnlyWhenSet() {
+        assertEquals(404, get("/intro").responseCode)
+        server.intro = movie
+        val r = get("/intro", "bytes=0-99")
+        assertEquals(206, r.responseCode)
+        assertArrayEquals(bytes.copyOfRange(0, 100), r.inputStream.readBytes())
+    }
+
     @Test fun unknownPathIs404() = assertEquals(404, get("/nope").responseCode)
 
     @Test fun noMovieIs404() {

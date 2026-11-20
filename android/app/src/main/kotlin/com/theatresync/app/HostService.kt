@@ -46,7 +46,9 @@ class HostService : Service() {
             .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .addAction(0, getString(R.string.notif_play_pause), action(ACTION_PLAY_PAUSE, 1))
-            .addAction(0, getString(R.string.notif_stop), action(ACTION_STOP, 2))
+            .addAction(0, getString(R.string.remote_short), MainActivity.remoteIntent(this))
+            .addAction(0, getString(R.string.pip_short), MainActivity.pipIntent(this))
+            // Android shows three buttons at most: Stop lives in the app (and the movie page).
             .build()
         ServiceCompat.startForeground(this, 1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
         running = true
@@ -67,6 +69,8 @@ class HostService : Service() {
     companion object {
         private const val CHANNEL = "movie"
         private const val ACTION_PLAY_PAUSE = "com.theatresync.app.PLAY_PAUSE"
+        /** Broadcast used by the picture-in-picture window's play/pause button. */
+        const val ACTION_PLAY_PAUSE_PUBLIC = "com.theatresync.app.PIP_PLAY_PAUSE"
         private const val ACTION_STOP = "com.theatresync.app.STOP"
         @Volatile var running = false
             private set

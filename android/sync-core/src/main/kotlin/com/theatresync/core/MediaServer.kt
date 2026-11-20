@@ -42,6 +42,12 @@ class MediaServer(
 ) {
     @Volatile var media: MediaSource? = null
 
+    /** The movie with its sound, for TapIn guests (the TV may get a picture-only copy). Defaults to [media]. */
+    @Volatile var audioMedia: MediaSource? = null
+
+    /** Optional intro clip played on the TV before the movie (Settings → Experimental). */
+    @Volatile var intro: MediaSource? = null
+
     private var serverSocket: ServerSocket? = null
     private val pool: ExecutorService = Executors.newCachedThreadPool { r ->
         Thread(r, "theatresync-http").apply { isDaemon = true }
@@ -156,6 +162,10 @@ class MediaServer(
                         mediaRequestCount.incrementAndGet()
                         serveMedia(out, headers["range"], head = method == "HEAD")
                     }
+                    path == "/intro" && (method == "GET" || method == "HEAD") ->
+                        serveMedia(out, headers["range"], head = method == "HEAD", source = intro)
+                    path == "/audio" && (method == "GET" || method == "HEAD") ->
+                        serveMedia(out, headers["range"], head = method == "HEAD", source = audioMedia ?: media)
                     method != "GET" -> respond(out, 405, "Method Not Allowed", "text/plain", "method not allowed")
                     path == "/clock" -> serveClock(out, query, receivedAt)
                     path == "/state" -> serveJson(
@@ -164,6 +174,7 @@ class MediaServer(
                             .let { stateProvider() ?: it },
                     )
                 path == "/hello" -> serveJson(out, helloProvider())
+                path == "/listen" || path == "/" -> respond(out, 200, "OK", "text/html; charset=utf-8", ListenPage.HTML)
                 else -> respond(out, 404, "Not Found", "text/plain", "not found")
             }
         }
@@ -188,8 +199,8 @@ class MediaServer(
         respond(out, 200, "OK", "application/json", body)
     }
 
-    private fun serveMedia(out: OutputStream, rangeHeader: String?, head: Boolean) {
-        val m = media
+    private fun serveMedia(out: OutputStream, rangeHeader: String?, head: Boolean, source: MediaSource? = media) {
+        val m = source
         if (m == null) {
             respond(out, 404, "Not Found", "text/plain", "no movie loaded")
             return
