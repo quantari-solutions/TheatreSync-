@@ -36,3 +36,31 @@ class UpNextTest {
         org.junit.Assert.assertEquals(emptyList<String>(), UpNext.parse("""[[1,["noop"]]]"""))
     }
 }
+
+class AdSkipperParsingTest {
+    @org.junit.Test fun parsesLoungeEvents() {
+        val text = """152
+[[40,["onAdStateChange",{"adState":"1","currentTime":"3","isSkipEnabled":"false"}]]
+,[41,["onAdStateChange",{"adState":"1","currentTime":"6","isSkipEnabled":"true"}]]
+,[42,["onStateChange",{"currentTime":"12.5","state":"1","duration":"300"}]]
+,[43,["noop"]]]"""
+        val e = LoungeEvents.parse(text)
+        org.junit.Assert.assertEquals(listOf(40L, 41L, 42L, 43L), e.map { it.id })
+        org.junit.Assert.assertEquals("true", e[1].fields["isSkipEnabled"])
+        org.junit.Assert.assertEquals("12.5", e[2].fields["currentTime"])
+        org.junit.Assert.assertEquals("noop", e[3].name)
+    }
+
+    @org.junit.Test fun sponsorBlockPicksOurVideoAndSkipsInsideSegments() {
+        val json = """[{"videoID":"other123456","segments":[{"segment":[1,50],"category":"sponsor"}]},
+            {"videoID":"dQw4w9WgXcQ","segments":[{"segment":[30.5,61.2],"category":"sponsor","UUID":"x"},{"segment":[200,200.4],"category":"selfpromo"}]}]"""
+        val segs = SponsorBlock.parse(json, "dQw4w9WgXcQ")
+        org.junit.Assert.assertEquals(1, segs.size) // the 0.4 s one is ignored
+        org.junit.Assert.assertEquals(30.5, segs[0].startSec, 0.001)
+        org.junit.Assert.assertNotNull(SponsorBlock.current(segs, 31.0))
+        org.junit.Assert.assertNull(SponsorBlock.current(segs, 61.0)) // already at the end
+        org.junit.Assert.assertNull(SponsorBlock.current(segs, 10.0))
+        org.junit.Assert.assertEquals(4, SponsorBlock.hashPrefix("dQw4w9WgXcQ").length)
+        org.junit.Assert.assertTrue(SponsorBlock.url("dQw4w9WgXcQ").contains("category=sponsor"))
+    }
+}

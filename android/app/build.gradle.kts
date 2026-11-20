@@ -14,8 +14,8 @@ android {
         // 29 = Android 10, the first release with AudioPlaybackCapture.
         minSdk = 29
         targetSdk = 35
-        versionCode = 17
-        versionName = "0.5.2"
+        versionCode = 18
+        versionName = "0.5.3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Where "Send to GitHub" opens a pre-filled crash issue (the owner submits it).
         buildConfigField("String", "CRASH_REPO", "\"quantari-solutions/TheatreSync-\"")
@@ -32,6 +32,17 @@ android {
             // Internal testing: signed with the build machine's debug key so it installs for
             // device tests. Play Store signing keys must come from GitHub secrets, never the repo.
             signingConfig = signingConfigs.getByName("debug")
+        }
+    }
+
+    // One APK per phone chip type instead of one with all four: the on-device translator brings
+    // ~15 MB of native code per type. arm64 = real phones (owner's Motorola); x86_64 = CI emulator.
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "x86_64")
+            isUniversalApk = false
         }
     }
 
@@ -64,6 +75,7 @@ dependencies {
     implementation(project(":sync-core"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.zxing.core) // QR code for TapIn (encoding only, pure Java)
+    implementation(libs.mlkit.translate) // on-device subtitle translation (models downloaded on first use)
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)

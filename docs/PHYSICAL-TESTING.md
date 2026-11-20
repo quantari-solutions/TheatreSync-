@@ -200,3 +200,11 @@ the YouTube volume changes. Send one screenshot of step 1 and one of step 3, and
 5. Settings → Share TheatreSync → send to another Android phone; it installs.
 6. Experimental → Share audio on → Settings shows **Share audio**: it says whether this phone supports sharing to two headsets.
 7. Choose your TV lists Samsung The Frame as "YouTube only".
+
+## HW-17 — Subtitles and ad skipper (0.5.3)
+
+1. Choose a movie → Subtitles → **Load file** → pick an .srt: start the movie; subtitles show on the TV; CC switch on the movie page turns them off/on.
+2. Choose a short video (a few minutes) → **Generate** → spoken English, show in English. Note how long it takes and how good the words are. Then try "Show in Hindi".
+3. YouTube on the TV with an ad: a skippable ad is skipped at once; an unskippable one is silent. A video with a sponsor segment jumps past it.
+
+**Send:** how long step 2 took for how many minutes of video, a photo of the TV with subtitles, and whether ads were skipped/muted.

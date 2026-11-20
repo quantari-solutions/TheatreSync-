@@ -41,6 +41,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
@@ -141,6 +142,27 @@ class MainActivity : ComponentActivity() {
 
     private val askPermissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         refreshAudio()
+    }
+
+    private val pickSubtitles = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) session.loadSubtitles(uri)
+    }
+
+    /** Subtitle generation waits for the speech-recognizer permission, then starts. */
+    private var pendingSubtitles: Triple<String, String, String>? = null
+    private val askMic = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val job = pendingSubtitles
+        pendingSubtitles = null
+        if (granted && job != null) session.generateSubtitles(job.first, job.second, job.third)
+    }
+
+    private fun generateSubtitles(spoken: String, shownIn: String, label: String) {
+        if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            session.generateSubtitles(spoken, shownIn, label)
+        } else {
+            pendingSubtitles = Triple(spoken, shownIn, label)
+            askMic.launch(android.Manifest.permission.RECORD_AUDIO)
+        }
     }
 
     private val deviceCallback = object : AudioDeviceCallback() {
@@ -407,6 +429,7 @@ class MainActivity : ComponentActivity() {
                                     ui = ui,
                                     onSignatureIntro = session::setSignatureIntro,
                                     onMultiAudio = session::setMultiAudio,
+                                    onAdSkipper = session::setAdSkipper,
                                     onBack = { page = Page.SETTINGS },
                                 )
                                 "multiaudio" -> MultiAudioScreen(
@@ -505,6 +528,13 @@ class MainActivity : ComponentActivity() {
                                     onOpenMovie = { page = Page.MOVIE },
                                     onRoomSound = session::setRoomSoundToo,
                                 onSmartTv = { smartTvInfo.value = true },
+                                onSubtitles = SubtitleActions(
+                                    supported = session.subtitlesSupported(),
+                                    onLoad = { pickSubtitles.launch(arrayOf("application/x-subrip", "text/vtt", "text/*", "application/octet-stream")) },
+                                    onGenerate = ::generateSubtitles,
+                                    onCancel = session::cancelSubtitles,
+                                    onClear = session::clearSubtitles,
+                                ),
                                     onDisconnectTv = session::disconnectTv,
                                     onStart = {
                                         askPermissions.launch(runtimePermissions())
@@ -539,6 +569,7 @@ class MainActivity : ComponentActivity() {
                                     onBack = { page = Page.HOME },
                                     onHeadphoneOptions = { openHeadphoneSettings(Page.MOVIE) },
                                     onPip = ::enterPip,
+                                    onSubtitlesOn = session::setSubtitlesOn,
                                     onAudio = { refreshAudio(); audioSheet.value = true },
                                     onRemote = { page = Page.REMOTE },
                                 )
@@ -899,6 +930,7 @@ internal fun SetupScreen(
     onOpenMovie: () -> Unit = {},
     onRoomSound: (Boolean) -> Unit = {},
     onSmartTv: () -> Unit = {},
+    onSubtitles: SubtitleActions = SubtitleActions(),
     pendingCrash: CrashReporter.Entry? = null,
     onSendCrash: (CrashReporter.Entry) -> Unit = {},
     onShareCrash: (CrashReporter.Entry) -> Unit = {},
@@ -936,6 +968,7 @@ internal fun SetupScreen(
                 }
             }
             MovieQuality(ui, onQuality, onRoomSound)
+            SubtitlesSection(ui, onSubtitles)
         } else {
             GoldButton(stringResource(R.string.choose_movie), onChooseMovie, Modifier.fillMaxWidth())
             Hint(stringResource(R.string.movie_hint))
@@ -1355,6 +1388,7 @@ internal fun PlayingScreen(
     onPip: () -> Unit = {},
     onAudio: () -> Unit = {},
     onRemote: () -> Unit = {},
+    onSubtitlesOn: (Boolean) -> Unit = {},
 ) = Screen {
     TopBar(stringResource(R.string.movie_player), onBack) { PlayerActions(onAudio, onRemote, onPip) }
     Eyebrow(
@@ -1395,6 +1429,7 @@ internal fun PlayingScreen(
     }
 
     AudioSummary(ui, onAudio)
+    if (ui.subtitleName != null) QCard { SwitchRow("CC", stringResource(R.string.subtitles_on), ui.subtitlesOn, onSubtitlesOn) }
 
     QCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2334,8 +2369,21 @@ internal fun qrBitmap(text: String, size: Int): androidx.compose.ui.graphics.Ima
 
 /** Settings → Experimental: features that are fun but optional. */
 @Composable
-internal fun ExperimentalScreen(ui: MovieSession.Ui, onSignatureIntro: (Boolean) -> Unit, onBack: () -> Unit, onMultiAudio: (Boolean) -> Unit = {}) = Screen {
+internal fun ExperimentalScreen(ui: MovieSession.Ui, onSignatureIntro: (Boolean) -> Unit, onBack: () -> Unit, onMultiAudio: (Boolean) -> Unit = {}, onAdSkipper: (Boolean) -> Unit = {}) = Screen {
     TopBar(stringResource(R.string.experimental), onBack)
+    QCard(highlighted = ui.adSkipper) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                Text(stringResource(R.string.ad_skipper), style = MaterialTheme.typography.titleLarge, color = Q.Text)
+                Hint(stringResource(R.string.ad_skipper_short))
+            }
+            Switch(
+                checked = ui.adSkipper, onCheckedChange = onAdSkipper, modifier = Modifier.testTag("ad_skipper"),
+                colors = SwitchDefaults.colors(checkedThumbColor = Color.Black, checkedTrackColor = Q.Primary),
+            )
+        }
+        Hint(stringResource(R.string.ad_skipper_text))
+    }
     QCard(highlighted = ui.multiAudio) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f).padding(end = 12.dp)) {
@@ -2598,5 +2646,92 @@ private fun UpNextRow(videos: List<MovieSession.UpNextVideo>, onPlay: (String) -
             }
         }
         Hint(stringResource(R.string.up_next_hint))
+    }
+}
+
+
+/** What the Subtitles section can do (bundled to keep the setup screen's parameter list short). */
+class SubtitleActions(
+    val supported: Boolean = false,
+    val onLoad: () -> Unit = {},
+    val onGenerate: (spoken: String, shownIn: String, label: String) -> Unit = { _, _, _ -> },
+    val onCancel: () -> Unit = {},
+    val onClear: () -> Unit = {},
+)
+
+private val SPOKEN = listOf("en-US" to "English", "hi-IN" to "Hindi", "gu-IN" to "Gujarati", "es-ES" to "Spanish", "fr-FR" to "French", "de-DE" to "German", "ja-JP" to "Japanese", "ko-KR" to "Korean")
+
+/** Subtitles for the chosen movie: load a .srt file, or generate them on the phone. */
+@Composable
+private fun SubtitlesSection(ui: MovieSession.Ui, actions: SubtitleActions) {
+    var choosing by remember { mutableStateOf(false) }
+    Text(stringResource(R.string.subtitles), style = MaterialTheme.typography.titleMedium, color = Q.Text)
+    val progress = ui.subtitleProgress
+    when {
+        progress != null -> {
+            StatusPill(stringResource(R.string.subtitles_generating, progress), Q.Primary, pulsing = true)
+            GoldProgress(progress / 100f)
+            ui.subtitleEtaSec?.let { eta ->
+                Hint(if (eta < 60) pluralStringResource(R.plurals.eta_seconds, eta.toInt(), eta.toInt()) else ((eta + 59) / 60).toInt().let { m -> pluralStringResource(R.plurals.eta_minutes, m, m) })
+            }
+            GhostButton(stringResource(R.string.cancel), actions.onCancel, Modifier.fillMaxWidth(), height = 44.dp)
+        }
+        ui.subtitleName != null -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("CC  " + ui.subtitleName, Modifier.weight(1f), color = Q.PrimaryLight, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            GhostButton("✕", actions.onClear, height = 40.dp, description = stringResource(R.string.subtitles_none))
+        }
+        else -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            GhostButton(stringResource(R.string.subtitles_load), actions.onLoad, Modifier.weight(1f).testTag("subs_load"), height = 48.dp)
+            GhostButton(stringResource(R.string.subtitles_generate), { choosing = true }, Modifier.weight(1f).testTag("subs_generate"), height = 48.dp)
+        }
+    }
+    if (choosing) {
+        var spoken by remember { mutableStateOf(SPOKEN.first()) }
+        var shown by remember { mutableStateOf(SPOKEN.first()) }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { choosing = false },
+            containerColor = Q.Card,
+            title = { Text(stringResource(R.string.subtitles_generate_title), color = Q.Text) },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (!actions.supported) { Text(stringResource(R.string.subtitles_unsupported), color = Q.Primary); return@Column }
+                    Text(stringResource(R.string.subtitles_spoken), color = Q.Text, style = MaterialTheme.typography.titleSmall)
+                    LanguageGrid(spoken) { spoken = it }
+                    Text(stringResource(R.string.subtitles_show_in), color = Q.Text, style = MaterialTheme.typography.titleSmall)
+                    LanguageGrid(shown) { shown = it }
+                    Hint(stringResource(R.string.subtitles_generate_note))
+                }
+            },
+            confirmButton = {
+                if (actions.supported) GoldButton(stringResource(R.string.subtitles_generate), {
+                    choosing = false
+                    val label = if (spoken == shown) shown.second else "${shown.second} (from ${spoken.second})"
+                    actions.onGenerate(spoken.first, shown.first, label)
+                }, height = 48.dp)
+            },
+            dismissButton = { GhostButton(stringResource(R.string.cancel), { choosing = false }, height = 48.dp) },
+        )
+    }
+}
+
+/** Language choices as a simple two-column grid of radio rows. */
+@Composable
+private fun LanguageGrid(selected: Pair<String, String>, onSelect: (Pair<String, String>) -> Unit) {
+    SPOKEN.chunked(2).forEach { pair ->
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            pair.forEach { lang ->
+                val on = lang == selected
+                Row(
+                    Modifier.weight(1f).heightIn(min = 44.dp).clip(RoundedCornerShape(12.dp))
+                        .border(BorderStroke(1.dp, if (on) Q.Primary else Q.BorderAccent), RoundedCornerShape(12.dp))
+                        .clickable(role = Role.RadioButton) { onSelect(lang) }.padding(horizontal = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    RadioDot(on)
+                    Text(lang.second, Modifier.padding(start = 8.dp), color = Q.Text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            if (pair.size == 1) Spacer(Modifier.weight(1f))
+        }
     }
 }

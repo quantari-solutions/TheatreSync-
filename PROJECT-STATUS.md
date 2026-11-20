@@ -1,6 +1,16 @@
 # Project status
 
-_Last updated: 2026-11-20. 0.5.2 (owner releases when ready): intro before YouTube/mirroring, opening animation, Up next, The Frame listed, battery, Share app, experimental Share audio_
+_Last updated: 2026-11-20. 0.5.3 (owner releases when ready): subtitles (files + generated on the phone, translated), YouTube ad skipper + SponsorBlock, per-chip APKs_
+
+## 0.5.3: subtitles and ad skipper
+
+| Request | Done | Verified |
+|---|---|---|
+| Load .srt subtitles | Subtitles row under the movie: **Load file** (.srt/.vtt) → converted to WebVTT, served at `/subs.vtt` (CORS), added as a Cast text track; **CC** switch on the movie page | Parser/route unit tests; needs HW-17 |
+| Auto-generated subtitles for own videos, any language | **Generate**: decodes the movie's sound, cuts it at pauses (energy VAD, 1.5–12 s pieces), runs Android's **on-device** speech recognizer on each piece (Android 13+ audio-from-file), writes timed cues; **translation** on the phone with ML Kit (language downloaded once). Saved per movie. Progress + time left; Cancel | Chunker/resampler/cue unit tests; recognition speed and accuracy need HW-17 (depends on the phone's offline speech models) |
+| Ad blocker like ReVanced | ReVanced patches the YouTube app *on the phone*; ads on the TV come from the TV's own YouTube app, which can't be patched. Built instead what open-source **iSponsorBlockTV** does over YouTube's remote protocol: press **Skip ad** as soon as allowed, **mute** unskippable ads, skip **SponsorBlock** segments (sponsor, self-promo, interaction). Command names checked against the pyytlounge source. Experimental → Ad skipper (on by default) | Event/SponsorBlock parser tests; needs HW-17 |
+| Two Bluetooth headsets on one phone | Not possible for one app: Android keeps two headsets *connected* but streams media to one *active* device (A2DP); there is no API to send audio to both. Exceptions are LE Audio/Auracast (Share audio page) and some brands' own "dual audio" in their system software | — |
+| APK size | ML Kit's translator adds ~16 MB native code per chip type → one APK per type (arm64 for phones: 24 MB; x86_64 for the CI emulator) | Built |
 
 ## 0.5.2: owner feedback
 

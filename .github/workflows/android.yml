@@ -111,7 +111,7 @@ jobs:
           script: |
             adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS || true
             ./gradlew --no-daemon :app:connectedDebugAndroidTest :app:assembleRelease
-            adb install -r app/build/outputs/apk/release/app-release.apk
+            adb install -r app/build/outputs/apk/release/app-x86_64-release.apk
             adb logcat -c
             adb shell am start -W -n com.theatresync.app/.MainActivity
             sleep 8

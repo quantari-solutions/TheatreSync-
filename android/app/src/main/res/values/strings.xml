@@ -323,4 +323,21 @@
     <string name="up_next">Up next</string>
     <string name="up_next_empty">Nothing queued yet. In a playlist or Mix, the next videos show here.</string>
     <string name="up_next_hint">Tap a video to play it now. Swipe the big picture left for next, right for previous.</string>
+    <string name="subtitles">Subtitles</string>
+    <string name="subtitles_none">No subtitles</string>
+    <string name="subtitles_load">Load file (.srt)</string>
+    <string name="subtitles_generate">Generate</string>
+    <string name="subtitles_generating">Making subtitles… %1$d%%</string>
+    <string name="subtitles_generate_title">Generate subtitles</string>
+    <string name="subtitles_spoken">Language spoken in the movie</string>
+    <string name="subtitles_show_in">Show subtitles in</string>
+    <string name="subtitles_generate_note">Made on this phone from the movie\'s speech; nothing is uploaded. Takes a while for a full movie (once; it\'s saved). Translation downloads that language once.</string>
+    <string name="subtitles_unsupported">This phone has no offline speech recognition (Android 13+ with Google\'s offline speech). Load a .srt file instead.</string>
+    <string name="subtitles_on">Subtitles on the TV</string>
+    <string name="msg_bad_subtitles">That file has no subtitles TheatreSync can read (.srt or .vtt).</string>
+    <string name="msg_subtitles_failed">Couldn\'t make subtitles (%1$s).</string>
+    <string name="msg_subtitles_next_start">Subtitles ready. They show from the next start of the movie.</string>
+    <string name="ad_skipper">Ad skipper</string>
+    <string name="ad_skipper_short">YouTube on the TV: skip ads and sponsor segments</string>
+    <string name="ad_skipper_text">Presses “Skip ad” the moment YouTube allows it, mutes ads that can\'t be skipped (sound returns when the video resumes), and skips sponsor, self-promotion and “like and subscribe” segments using SponsorBlock\'s community database. Works for YouTube on your TVs, cast from any phone.</string>
 </resources>

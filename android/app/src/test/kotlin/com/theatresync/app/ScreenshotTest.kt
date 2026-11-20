@@ -94,6 +94,8 @@ class ScreenshotTest {
         )
     }
     @Test fun setup14_smartTvListed() = setup(Ui(movieTitle = "Interstellar", tvs = listOf(Tv("1", "Media Room TV"), Tv("dial:x", "Samsung The Frame (65)", youTubeOnly = true))))
+    @Test fun setup15_subtitlesGenerating() = setup(Ui(movieTitle = "Red Eye (2005)", connectedTv = "Media Room TV", subtitleProgress = 37, subtitleEtaSec = 540))
+    @Test fun setup16_subtitlesLoaded() = setup(Ui(movieTitle = "Red Eye (2005)", connectedTv = "Media Room TV", subtitleName = "Red.Eye.2005.en.srt"))
     @Test fun setup4_error() = setup(Ui(movieTitle = "Interstellar", message = "Connect this phone to the same Wi-Fi as the Chromecast."))
 
     @Test fun playing1_inSync() = playing(

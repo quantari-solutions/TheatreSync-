@@ -195,6 +195,16 @@ class MediaServerTest {
         assertArrayEquals(bytes.copyOfRange(0, 100), r.inputStream.readBytes())
     }
 
+    @Test fun subtitlesServedAsVttWithCors() {
+        assertEquals(404, get("/subs.vtt").responseCode)
+        server.subtitlesVtt = "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nHi\n"
+        val c = get("/subs.vtt")
+        assertEquals(200, c.responseCode)
+        assertTrue(c.contentType.startsWith("text/vtt"))
+        assertEquals("*", c.getHeaderField("Access-Control-Allow-Origin"))
+        assertEquals(204, get("/subs.vtt", method = "OPTIONS").responseCode)
+    }
+
     @Test fun unknownPathIs404() = assertEquals(404, get("/nope").responseCode)
 
     @Test fun noMovieIs404() {

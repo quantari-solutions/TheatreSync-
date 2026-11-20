@@ -10,6 +10,9 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- TapIn: guests tap their phone to this one to open the listening page. -->
     <uses-permission android:name="android.permission.NFC" />
+    <!-- Subtitle generation: Android's on-device speech recognizer requires it, even though it reads
+         the movie's own sound (from a file), never the microphone. Asked only when generating. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-feature android:name="android.hardware.nfc.hce" android:required="false" />
     <!-- Finding smart TVs that aren't Chromecasts (DIAL/SSDP), e.g. Samsung The Frame. -->
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />

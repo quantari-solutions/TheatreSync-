@@ -45,6 +45,9 @@ class MediaServer(
     /** The movie with its sound, for TapIn guests (the TV may get a picture-only copy). Defaults to [media]. */
     @Volatile var audioMedia: MediaSource? = null
 
+    /** Subtitles for the TV as WebVTT (loaded from a file or generated), or null. */
+    @Volatile var subtitlesVtt: String? = null
+
     /** Optional intro clip played on the TV before the movie (Settings → Experimental). */
     @Volatile var intro: MediaSource? = null
 
@@ -166,7 +169,10 @@ class MediaServer(
                         serveMedia(out, headers["range"], head = method == "HEAD", source = intro)
                     path == "/audio" && (method == "GET" || method == "HEAD") ->
                         serveMedia(out, headers["range"], head = method == "HEAD", source = audioMedia ?: media)
+                    method == "OPTIONS" -> writeHead(out, 204, "No Content", "text/plain", 0, mapOf("Access-Control-Allow-Methods" to "GET, HEAD", "Access-Control-Allow-Headers" to "*"))
                     method != "GET" -> respond(out, 405, "Method Not Allowed", "text/plain", "method not allowed")
+                    path == "/subs.vtt" -> subtitlesVtt?.let { respond(out, 200, "OK", "text/vtt; charset=utf-8", it) }
+                        ?: respond(out, 404, "Not Found", "text/plain", "no subtitles")
                     path == "/clock" -> serveClock(out, query, receivedAt)
                     path == "/state" -> serveJson(
                         out,

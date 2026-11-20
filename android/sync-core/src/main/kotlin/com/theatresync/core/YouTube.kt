@@ -153,10 +153,10 @@ class YouTubeLounge(private val baseUrl: String = "https://www.youtube.com/") {
      * Reads the TV's recent remote-control events (queue and "up next"). Long-poll style: returns
      * whatever arrived within [waitMs]. Blocking; call off the main thread.
      */
-    fun events(s: Session, waitMs: Int = 4_000): String {
+    fun events(s: Session, waitMs: Int = 4_000, afterId: Long = 0): String {
         val query = encode(mapOf(
             "SID" to s.sid, "gsessionid" to s.gsessionId, "RID" to "rpc", "VER" to "8", "CVER" to "1",
-            "TYPE" to "xmlhttp", "CI" to "0", "AID" to "0",
+            "TYPE" to "xmlhttp", "CI" to "0", "AID" to "$afterId",
         ))
         val c = URL(baseUrl + "api/lounge/bc/bind?" + query).openConnection() as HttpURLConnection
         c.connectTimeout = 8_000
@@ -205,6 +205,8 @@ class YouTubeLounge(private val baseUrl: String = "https://www.youtube.com/") {
             "mdx-version" to "3",
             "pairing_type" to "cast",
             "app" to "android-phone-13.14.55",
+            // Queue, ad and playback events (needed for Up next and the ad skipper).
+            "capabilities" to "que,dsdtr,atp,vsp",
         )
     }
 }
@@ -226,4 +228,55 @@ object UpNext {
     /** The playlist / Mix ID, if the TV is playing one (needed to jump within it). */
     fun listId(events: String): String? =
         Regex(""""listId"\s*:\s*"([^"]+)"""").findAll(events).lastOrNull()?.groupValues?.get(1)?.takeIf { it.isNotBlank() }
+}
+
+/** Lounge event stream → events. Pure, unit-tested. */
+object LoungeEvents {
+    data class Event(val id: Long, val name: String, val fields: Map<String, String>)
+
+    private val EVENT = Regex("""\[(\d+),\["([A-Za-z]+)"(?:,(\{[^\[\]]*?\}))?\]\]""")
+    private val FIELD = Regex(""""([A-Za-z]+)"\s*:\s*"([^"]*)"""")
+
+    fun parse(text: String): List<Event> = EVENT.findAll(text).map { m ->
+        val fields = m.groupValues[3].let { body -> FIELD.findAll(body).associate { it.groupValues[1] to it.groupValues[2] } }
+        Event(m.groupValues[1].toLong(), m.groupValues[2], fields)
+    }.toList()
+}
+
+/**
+ * SponsorBlock (sponsor.ajay.app): community-marked segments (sponsors, self-promotion,
+ * "like and subscribe") to skip. The video ID is sent only as the first 4 hex characters of its
+ * SHA-256, as SponsorBlock recommends for privacy. Parsing is pure and unit-tested.
+ */
+object SponsorBlock {
+    data class Segment(val startSec: Double, val endSec: Double, val category: String)
+
+    val DEFAULT_CATEGORIES = listOf("sponsor", "selfpromo", "interaction")
+
+    fun hashPrefix(videoId: String): String =
+        java.security.MessageDigest.getInstance("SHA-256").digest(videoId.toByteArray()).joinToString("") { "%02x".format(it) }.take(4)
+
+    fun url(videoId: String, categories: List<String> = DEFAULT_CATEGORIES): String =
+        "https://sponsor.ajay.app/api/skipSegments/${hashPrefix(videoId)}?service=YouTube&actionType=skip" +
+            categories.joinToString("") { "&category=$it" }
+
+    /** Segments for [videoId] from the hashed-prefix response (which lists several videos). */
+    fun parse(json: String, videoId: String): List<Segment> {
+        val root = runCatching { kotlinx.serialization.json.Json.parseToJsonElement(json) }.getOrNull() as? kotlinx.serialization.json.JsonArray ?: return emptyList()
+        val entry = root.firstOrNull { (it as? kotlinx.serialization.json.JsonObject)?.get("videoID")?.let { v -> (v as? kotlinx.serialization.json.JsonPrimitive)?.content } == videoId }
+            as? kotlinx.serialization.json.JsonObject ?: return emptyList()
+        val segments = entry["segments"] as? kotlinx.serialization.json.JsonArray ?: return emptyList()
+        return segments.mapNotNull { s ->
+            val o = s as? kotlinx.serialization.json.JsonObject ?: return@mapNotNull null
+            val pair = o["segment"] as? kotlinx.serialization.json.JsonArray ?: return@mapNotNull null
+            val start = (pair.getOrNull(0) as? kotlinx.serialization.json.JsonPrimitive)?.content?.toDoubleOrNull() ?: return@mapNotNull null
+            val end = (pair.getOrNull(1) as? kotlinx.serialization.json.JsonPrimitive)?.content?.toDoubleOrNull() ?: return@mapNotNull null
+            val category = (o["category"] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: "sponsor"
+            if (end - start >= 1.0) Segment(start, end, category) else null
+        }.sortedBy { it.startSec }
+    }
+
+    /** The segment [positionSec] is inside (skip to its end), if any. */
+    fun current(segments: List<Segment>, positionSec: Double): Segment? =
+        segments.firstOrNull { positionSec >= it.startSec && positionSec < it.endSec - 0.5 }
 }
