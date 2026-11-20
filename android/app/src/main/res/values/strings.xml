@@ -219,7 +219,7 @@
         <item quantity="other">About %1$d minutes left</item>
     </plurals>
     <string name="quality_sound_only_hint">Picture kept as it is. Only the surround sound is turned into stereo for your Chromecast first (usually a minute or two, once).</string>
-    <string name="verdict_audio_fix">Your Chromecast can\'t play this surround sound. TheatreSync fixes the sound quickly before playing</string>
+    <string name="verdict_audio_fix">Your Chromecast can\'t play this surround sound. The TV gets the picture, your headphones get the sound</string>
     <string name="yt_previous">Previous</string>
     <string name="yt_next">Next</string>
     <string name="yt_captions_on">Captions on</string>
@@ -257,4 +257,14 @@
     <string name="eq_cinema">Cinema</string>
     <string name="eq_bass_boost">Bass boost</string>
     <string name="hp_eq_hint">Changes only the movie sound in your headphones, never the TV.</string>
+    <string name="quality_picture_only_hint">Starts instantly: the TV shows the picture and the sound plays in your headphones. Turn on Room speakers too if you also want sound from the TV.</string>
+    <string name="room_sound_too">Room speakers too (slower start)</string>
+    <string name="remote_short">Remote</string>
+    <string name="new_device_title">New headphones connected</string>
+    <string name="new_device_text">Play the movie sound on %1$s?</string>
+    <string name="new_device_use">Use %1$s</string>
+    <string name="new_device_keep">Keep current</string>
+    <string name="now_on_device">Now playing on %1$s</string>
+    <string name="auto_switch">Switch to new headphones automatically</string>
+    <string name="hp_youtube_note">The TV\'s YouTube app plays the sound itself, through the room speakers, so no phone app can send it to your headphones. The headphones you pick here are used for movies from your phone: they switch the moment you tap them.</string>
 </resources>

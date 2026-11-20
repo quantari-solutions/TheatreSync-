@@ -43,6 +43,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
@@ -150,6 +151,7 @@ class MainActivity : ComponentActivity() {
         audioManager = getSystemService(AudioManager::class.java)
         refreshCrashes()
         handleShare(intent)
+        if (intent?.getStringExtra(EXTRA_OPEN) == OPEN_REMOTE) openRemote.intValue++
         mirroringLabel = getString(R.string.screen_mirroring)
         mirroringHeadline = getString(R.string.mirroring_a_screen)
         videoLabel = getString(R.string.video_label)
@@ -186,6 +188,19 @@ class MainActivity : ComponentActivity() {
                         if (lastPhase == Phase.SETUP && ui.phase != Phase.SETUP && page == Page.HOME) page = Page.MOVIE
                         if (ui.phase == Phase.SETUP && page == Page.MOVIE) page = Page.HOME
                         lastPhase = ui.phase
+                    }
+                    LaunchedEffect(openRemote.intValue) { if (openRemote.intValue > 0) page = Page.REMOTE }
+                    // Headphones connected or removed: refresh the device lists straight away.
+                    LaunchedEffect(ui.audioDevicesVersion) { refreshAudio() }
+                    ui.newDevice?.let { d ->
+                        androidx.compose.material3.AlertDialog(
+                            onDismissRequest = session::dismissNewDevice,
+                            containerColor = Q.Card,
+                            title = { Text(stringResource(R.string.new_device_title), color = Q.Text) },
+                            text = { Text(stringResource(R.string.new_device_text, d.name), color = Q.TextMuted) },
+                            confirmButton = { GoldButton(stringResource(R.string.new_device_use, d.name), { session.setPreferredOutput(d.id) }, Modifier.testTag("use_new_device"), height = 48.dp) },
+                            dismissButton = { GhostButton(stringResource(R.string.new_device_keep), session::dismissNewDevice, height = 48.dp) },
+                        )
                     }
                     // Shared from the YouTube app: jump straight to the YouTube page.
                     LaunchedEffect(sharedLink.value) { if (sharedLink.value != null) page = Page.YOUTUBE }
@@ -247,6 +262,7 @@ class MainActivity : ComponentActivity() {
                                 onFx = session::setFx,
                                 onSoundTest = { refreshAudio(); page = Page.HEADPHONES },
                                 onBack = { page = hpSettingsFrom },
+                                onAutoSwitch = session::setAutoSwitch,
                             )
                             "reconnecting" -> ReconnectingScreen(onBack = { page = Page.HOME })
                             "github" -> ConnectGitHubScreen(
@@ -337,6 +353,7 @@ class MainActivity : ComponentActivity() {
                                 onCancelPrepare = session::cancelPrepare,
                                 onClearMovie = session::clearMovie,
                                 onOpenMovie = { page = Page.MOVIE },
+                                onRoomSound = session::setRoomSoundToo,
                                 onDisconnectTv = session::disconnectTv,
                                 onStart = {
                                     askPermissions.launch(runtimePermissions())
@@ -407,7 +424,11 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleShare(intent)
+        if (intent.getStringExtra(EXTRA_OPEN) == OPEN_REMOTE) openRemote.intValue++
     }
+
+    /** Incremented to ask the UI to show the remote (from the notification). */
+    private val openRemote = androidx.compose.runtime.mutableIntStateOf(0)
 
     /** "Share → TheatreSync" from the YouTube app (or any app sharing a YouTube link). */
     private fun handleShare(intent: Intent?) {
@@ -545,6 +566,17 @@ class MainActivity : ComponentActivity() {
     companion object {
         const val STEP_MS = 20
 
+        const val EXTRA_OPEN = "open"
+        const val OPEN_REMOTE = "remote"
+
+        /** "Remote" button in the casting notifications: opens the app on the remote page. */
+        fun remoteIntent(context: android.content.Context): android.app.PendingIntent = android.app.PendingIntent.getActivity(
+            context, 7,
+            Intent(context, MainActivity::class.java).putExtra(EXTRA_OPEN, OPEN_REMOTE)
+                .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+
         /** ReVanced, ReVanced Extended, then official YouTube. */
         val YOUTUBE_PACKAGES = listOf(
             "app.revanced.android.youtube", "app.rvx.android.youtube", "com.google.android.youtube",
@@ -627,6 +659,7 @@ internal fun SetupScreen(
     onCancelPrepare: () -> Unit = {},
     onClearMovie: () -> Unit = {},
     onOpenMovie: () -> Unit = {},
+    onRoomSound: (Boolean) -> Unit = {},
     pendingCrash: CrashReporter.Entry? = null,
     onSendCrash: (CrashReporter.Entry) -> Unit = {},
     onShareCrash: (CrashReporter.Entry) -> Unit = {},
@@ -663,7 +696,7 @@ internal fun SetupScreen(
                     GhostButton("✕", onClearMovie, Modifier.testTag("clear_movie"), height = 40.dp, description = stringResource(R.string.remove_movie))
                 }
             }
-            MovieQuality(ui, onQuality)
+            MovieQuality(ui, onQuality, onRoomSound)
         } else {
             GoldButton(stringResource(R.string.choose_movie), onChooseMovie, Modifier.fillMaxWidth())
             Hint(stringResource(R.string.movie_hint))
@@ -1390,7 +1423,7 @@ internal fun HeadphonesScreen(
             outputs.forEach { o ->
                 val selected = preferredOutputId == o.id || (preferredOutputId == null && o == headphones.first())
                 QCard(
-                    Modifier.clickable(role = Role.RadioButton) { onSelectOutput(o.id) }
+                    Modifier.heightIn(min = 80.dp).clickable(role = Role.RadioButton) { onSelectOutput(o.id) }
                         .semantics { stateDescription = if (selected) "Selected" else "Not selected" }
                         .testTag("output_${o.id}"),
                     highlighted = selected,
@@ -1596,7 +1629,7 @@ private fun SoundTestRoute(r: SoundTest.Result) {
 
 /** What the chosen movie is, whether the TV can show it, and the quality to cast it at. */
 @Composable
-private fun MovieQuality(ui: MovieSession.Ui, onQuality: (Quality) -> Unit) {
+private fun MovieQuality(ui: MovieSession.Ui, onQuality: (Quality) -> Unit, onRoomSound: (Boolean) -> Unit = {}) {
     ui.movieInfo?.let { Hint(it) }
     val verdict = ui.movieVerdict
     if (verdict != null) {
@@ -1635,12 +1668,15 @@ private fun MovieQuality(ui: MovieSession.Ui, onQuality: (Quality) -> Unit) {
     Hint(
         stringResource(
             when (plan) {
-                CastCompat.Plan.SOUND_ONLY -> R.string.quality_sound_only_hint
+                CastCompat.Plan.SOUND_ONLY -> if (ui.roomSoundToo) R.string.quality_sound_only_hint else R.string.quality_picture_only_hint
                 CastCompat.Plan.FULL -> R.string.quality_convert_hint
                 else -> R.string.quality_original_hint
             },
         ),
     )
+    if (plan == CastCompat.Plan.SOUND_ONLY) {
+        SwitchRow("🔊", stringResource(R.string.room_sound_too), ui.roomSoundToo, onRoomSound)
+    }
 }
 
 
@@ -1828,8 +1864,16 @@ internal fun HeadphoneSettingsScreen(
     onFx: (HeadphoneFx.Settings) -> Unit,
     onSoundTest: () -> Unit,
     onBack: () -> Unit,
+    onAutoSwitch: (Boolean) -> Unit = {},
 ) = Screen {
     TopBar(stringResource(R.string.hp_settings), onBack)
+    // Be upfront: choosing headphones here can't move YouTube's sound off the TV.
+    if (ui.phase == Phase.SETUP && ui.nowCasting.any { it.activity.kind == CastActivity.Kind.YOUTUBE }) {
+        QCard(highlighted = true) {
+            Text(stringResource(R.string.cast_sound_title), style = MaterialTheme.typography.titleMedium, color = Q.Text)
+            Hint(stringResource(R.string.hp_youtube_note))
+        }
+    }
 
     // Device
     QCard {
@@ -1842,7 +1886,8 @@ internal fun HeadphoneSettingsScreen(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
                     .border(BorderStroke(1.dp, if (selected) Q.Primary else Q.BorderAccent), RoundedCornerShape(14.dp))
                     .clickable(role = Role.RadioButton) { onSelectOutput(o.id) }
-                    .padding(14.dp)
+                    .heightIn(min = 64.dp)
+                    .padding(horizontal = 16.dp, vertical = 18.dp)
                     .semantics { stateDescription = if (selected) "Selected" else "Not selected" },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -1850,6 +1895,7 @@ internal fun HeadphoneSettingsScreen(
                 Text(o.name, Modifier.padding(start = 12.dp).weight(1f), color = Q.Text, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
+        SwitchRow("⚡", stringResource(R.string.auto_switch), ui.autoSwitch, onAutoSwitch)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             GhostButton(stringResource(R.string.hp_connect_other), onPickDevice, Modifier.weight(1f), height = 48.dp)
             GhostButton(stringResource(R.string.hp_test), onSoundTest, Modifier.weight(1f), height = 48.dp)

@@ -28,6 +28,8 @@ import com.theatresync.core.CastActivity
 import com.theatresync.core.CastStatus
 import com.theatresync.core.Dial
 import com.theatresync.core.MediaServer
+import com.theatresync.core.MediaSource
+import com.theatresync.core.Mp4VideoOnly
 import com.theatresync.core.YouTubeLounge
 import com.theatresync.core.YouTubeScreenFinder
 import com.theatresync.core.Payload
@@ -51,6 +53,8 @@ class MovieSession(private val app: Application) {
     enum class Phase { SETUP, STARTING, PLAYING, PAUSED, ENDED }
 
     enum class YouTubeState { IDLE, STARTING, PLAYING, FAILED }
+
+    data class NewDevice(val id: Int, val name: String)
 
     /** @param youTubeOnly a smart TV found via DIAL (e.g. Samsung The Frame): YouTube only, no movies. */
     data class Tv(val id: String, val name: String, val isSpeaker: Boolean = false, val youTubeOnly: Boolean = false)
@@ -96,6 +100,14 @@ class MovieSession(private val app: Application) {
         val moviePlan: CastCompat.Plan? = null,
         /** Headphone equalizer / bass boost. */
         val fx: HeadphoneFx.Settings = HeadphoneFx.Settings(),
+        /** Surround-sound movies: also give the TV (room speakers) sound, which needs a slower conversion. */
+        val roomSoundToo: Boolean = false,
+        /** Headphones that just connected (asks "use them?" while a movie plays). */
+        val newDevice: NewDevice? = null,
+        /** Bumped whenever outputs appear/disappear, so lists refresh at once. */
+        val audioDevicesVersion: Int = 0,
+        /** Switch to newly connected headphones without asking. */
+        val autoSwitch: Boolean = false,
         /** true = TV confirmed muted, false = TV ignored the mute, null = unknown / not muting. */
         val tvMuteConfirmed: Boolean? = null,
     ) {
@@ -560,6 +572,22 @@ class MovieSession(private val app: Application) {
         val q = _ui.value.quality
         val plan = currentPlan()
         if (plan == CastCompat.Plan.NONE) return castMovie(original)
+        if (plan == CastCompat.Plan.SOUND_ONLY && !_ui.value.roomSoundToo) {
+            // Instant: the TV gets the picture only (index rewritten on the fly, nothing copied);
+            // the sound plays in the headphones from the original file. Falls back to converting.
+            _ui.update { it.copy(prepareProgress = 0, prepareEtaSec = null, prepareSoundOnly = false, message = null) }
+            Thread({
+                val pictureOnly = Mp4VideoOnly.of(original)
+                main.post {
+                    guard("cast picture only") {
+                        _ui.update { it.copy(prepareProgress = null) }
+                        if (pictureOnly != null) castMovie(original, tvSource = pictureOnly)
+                        else { _ui.update { it.copy(roomSoundToo = true) }; startMovieUnsafe() }
+                    }
+                }
+            }, "picture-only").start()
+            return
+        }
         converter.cachedFile(original.uri, q, plan)?.let { f ->
             return castMovie(ContentUriSource.from(app, Uri.fromFile(f))?.withTitle(original.title) ?: return say(R.string.msg_bad_file))
         }
@@ -597,7 +625,7 @@ class MovieSession(private val app: Application) {
     }
 
     /** Sends [m] to the TV and starts headphone sound. */
-    private fun castMovie(m: ContentUriSource) {
+    private fun castMovie(m: ContentUriSource, tvSource: MediaSource = m) {
         val session = castSession ?: return
         val client = session.remoteMediaClient ?: return say(R.string.msg_tv_failed)
         // Give the TV the address on its own network (a phone can have several).
@@ -612,7 +640,7 @@ class MovieSession(private val app: Application) {
                 Payload.Hello(Build.MODEL.take(64).ifBlank { "Android" }, Platform.ANDROID, Role.HOST, BuildConfig.VERSION_NAME, listOf(1))
             },
         )
-        srv.media = m
+        srv.media = tvSource
         val port = try { srv.start() } catch (_: Exception) { return say(R.string.msg_no_wifi) }
         server = srv
 
@@ -633,7 +661,7 @@ class MovieSession(private val app: Application) {
         val info = MediaInfo.Builder(url)
             .setContentUrl(url)
             .setStreamType(MediaInfo.STREAM_TYPE_BUFFERED)
-            .setContentType(m.mimeType)
+            .setContentType(tvSource.mimeType)
             .setMetadata(meta)
             .build()
         client.load(MediaLoadRequestData.Builder().setMediaInfo(info).setAutoplay(true).build())
@@ -719,6 +747,8 @@ class MovieSession(private val app: Application) {
         _ui.update { it.copy(soundDelayMs = 0) }
         player?.resetSync()
     }
+
+    fun setRoomSoundToo(on: Boolean) = guard("setRoomSoundToo") { _ui.update { it.copy(roomSoundToo = on) } }
 
     fun setHeadphonesHere(on: Boolean) = _ui.update { it.copy(headphonesHere = on) }
 
@@ -909,6 +939,7 @@ class MovieSession(private val app: Application) {
     }
 
     private fun say(res: Int) = _ui.update { it.copy(message = app.getString(res)) }
+    private fun say(text: String) = _ui.update { it.copy(message = text) }
 
     // ---------------------------------------------------------------- crash safety
     //
@@ -1031,8 +1062,49 @@ class MovieSession(private val app: Application) {
 
     fun setPreferredOutput(id: Int?) = guard("choose output") {
         preferredOutputId = id
-        _ui.update { it.copy(preferredOutputId = id) }
+        _ui.update { it.copy(preferredOutputId = id, newDevice = null) }
         player?.setPreferredOutput(id)
+    }
+
+    fun dismissNewDevice() = _ui.update { it.copy(newDevice = null) }
+
+    fun setAutoSwitch(on: Boolean) = guard("setAutoSwitch") {
+        prefs.edit { putBoolean("autoSwitch", on) }
+        _ui.update { it.copy(autoSwitch = on) }
+    }
+
+    // ------------------------------------------------------------- headphones coming and going
+
+    private val audioManager = app.getSystemService(android.media.AudioManager::class.java)
+    private var deviceWatchStartedAt = 0L
+
+    // The BLE types are plain int constants: on older Android they simply never match.
+    @android.annotation.SuppressLint("InlinedApi")
+    private fun isHeadphone(d: android.media.AudioDeviceInfo) = d.isSink && d.type in setOf(
+        android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, android.media.AudioDeviceInfo.TYPE_BLE_HEADSET,
+        android.media.AudioDeviceInfo.TYPE_BLE_SPEAKER, android.media.AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+        android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET, android.media.AudioDeviceInfo.TYPE_USB_HEADSET,
+    )
+
+    private val deviceCallback = object : android.media.AudioDeviceCallback() {
+        override fun onAudioDevicesAdded(added: Array<out android.media.AudioDeviceInfo>) = guard("headphones added") {
+            _ui.update { it.copy(audioDevicesVersion = it.audioDevicesVersion + 1) }
+            // The first callback lists devices that were already there: not "new".
+            if (SystemClock.elapsedRealtime() - deviceWatchStartedAt < 1_500) return@guard
+            val d = added.firstOrNull(::isHeadphone) ?: return@guard
+            val name = d.productName?.toString()?.takeIf { it.isNotBlank() } ?: app.getString(R.string.headphones)
+            when {
+                player == null -> Unit // nothing of ours playing: Android routes new headphones itself
+                _ui.value.autoSwitch -> { setPreferredOutput(d.id); say(app.getString(R.string.now_on_device, name)) }
+                else -> _ui.update { it.copy(newDevice = NewDevice(d.id, name)) }
+            }
+        }
+
+        override fun onAudioDevicesRemoved(removed: Array<out android.media.AudioDeviceInfo>) = guard("headphones removed") {
+            _ui.update { it.copy(audioDevicesVersion = it.audioDevicesVersion + 1) }
+            if (removed.any { it.id == preferredOutputId }) setPreferredOutput(null) // follow Android to what's left
+            if (removed.any { it.id == _ui.value.newDevice?.id }) dismissNewDevice()
+        }
     }
 
     // IMPORTANT: this init block must stay LAST in the class. Kotlin runs property
@@ -1042,6 +1114,9 @@ class MovieSession(private val app: Application) {
     // restarted the app while the file picker was open).
     init {
         main.post { guard("restore movie") { restoreMovie() } }
+        _ui.update { it.copy(autoSwitch = prefs.getBoolean("autoSwitch", false)) }
+        deviceWatchStartedAt = SystemClock.elapsedRealtime()
+        runCatching { audioManager?.registerAudioDeviceCallback(deviceCallback, main) }
         if (castContext == null) {
             _ui.update { it.copy(castAvailable = false, message = app.getString(R.string.msg_no_cast)) }
         } else {

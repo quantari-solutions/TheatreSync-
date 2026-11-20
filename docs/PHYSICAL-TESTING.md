@@ -163,3 +163,11 @@ the YouTube volume changes. Send one screenshot of step 1 and one of step 3, and
 4. In the movie player, scroll down → **Headphone options** → pick **Bass** and **Voices**: the headphone sound should change.
 
 **Send:** whether each step worked, and a screenshot of anything that didn't.
+
+## HW-13 — Instant surround movies, new headphones, notification remote (0.4.9)
+
+1. Choose Red Eye (leave "Room speakers too" off) → Start: the picture should appear within a few seconds, sound in the headphones.
+2. During the movie, connect another pair of headphones: TheatreSync asks "Use …?" → Use: sound moves to them within ~2 s.
+3. Pull down the notification shade while casting: tap **Remote** → the app opens on the remote.
+
+**Send:** whether each worked, and a screenshot of anything that didn't.

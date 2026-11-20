@@ -46,6 +46,7 @@ class HostService : Service() {
             .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .addAction(0, getString(R.string.notif_play_pause), action(ACTION_PLAY_PAUSE, 1))
+            .addAction(0, getString(R.string.remote_short), MainActivity.remoteIntent(this))
             .addAction(0, getString(R.string.notif_stop), action(ACTION_STOP, 2))
             .build()
         ServiceCompat.startForeground(this, 1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)

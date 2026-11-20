@@ -48,6 +48,7 @@ object CastIndicator {
             .setOngoing(true)
             .setSilent(true)
             .setCategory(NotificationCompat.CATEGORY_STATUS)
+            .addAction(0, context.getString(R.string.remote_short), MainActivity.remoteIntent(context))
             .addAction(0, context.getString(R.string.stop_casting), stop)
             .build()
         runCatching { NotificationManagerCompat.from(context).notify(ID, n) }

@@ -1,6 +1,18 @@
 # Project status
 
-_Last updated: 2026-11-20. 0.4.8: Samsung The Frame (YouTube via DIAL), working remote skip, back to home, headphone settings (EQ, sync tool)_
+_Last updated: 2026-11-20. 0.4.9 (not released: owner releases when ready): instant start for surround-sound MP4s, new-headphones prompt, notification Remote_
+
+## 0.4.9: owner feedback (Red Eye sound worked in the headphones; conversion too slow)
+
+**Release rule from the owner:** don't send an APK until the owner says to release.
+
+| Request | Done | Verified |
+|---|---|---|
+| Conversion very slow | **Picture-only MP4, instant:** for surround-sound MP4s the TV gets the file minus its sound tracks; only the index (moov) is rewritten in memory, chunk offsets shifted for fast-start files, media bytes streamed untouched. Headphones play the original sound. "Room speakers too" switch keeps the old sound conversion | Unit tests (both layouts, range reads); needs HW-13 |
+| New headphones mid-movie | AudioDeviceCallback: prompt "Use MOMENTUM 4?" (or switch automatically, setting); removed headphones fall back at once; lists refresh live | needs HW-13 |
+| YouTube sound to headphones | Not possible (the TV's YouTube app plays the sound). Said plainly in Headphone settings | — |
+| Remote from the notification | "Remote" action in the casting and movie notifications opens the remote page | needs HW-13 |
+| Bigger headphone buttons, instant switch | Rows ≥ 64–80 dp; tapping switches the player's output immediately | Screenshot |
 
 ## 0.4.8: owner feedback on 0.4.7
 

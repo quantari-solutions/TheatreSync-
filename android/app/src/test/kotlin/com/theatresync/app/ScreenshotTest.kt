@@ -74,6 +74,14 @@ class ScreenshotTest {
             {}, {}, {}, {}, {}, {}, {},
         )
     }
+    @Test fun setup13_surroundInstant() = setup(
+        Ui(
+            movieTitle = "Red Eye (2005)", connectedTv = "Media Room TV",
+            movieInfo = CastCompat.Media("video/avc", 1280, 720, 24f, "audio/mp4a-latm", 3.0, 6).label,
+            movieVerdict = CastCompat.Verdict(false, listOf(CastCompat.Problem.AUDIO)),
+            moviePlan = CastCompat.Plan.SOUND_ONLY,
+        ),
+    )
     @Test fun setup4_error() = setup(Ui(movieTitle = "Interstellar", message = "Connect this phone to the same Wi-Fi as the Chromecast."))
 
     @Test fun playing1_inSync() = playing(
