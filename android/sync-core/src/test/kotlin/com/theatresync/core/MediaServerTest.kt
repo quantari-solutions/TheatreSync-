@@ -187,6 +187,35 @@ class MediaServerTest {
         assertArrayEquals(bytes.copyOfRange(1000, 2000), r.inputStream.readBytes())
     }
 
+    @Test fun soundOnlyViewIsSwappedInOnlyBeforeAnyGuestListens() {
+        val small = object : MediaSource {
+            override val title = "Sound only"
+            override val mimeType = "audio/mp4"
+            override val sizeBytes = 10L
+            override fun open(offset: Long): InputStream = ByteArrayInputStream(ByteArray(10), offset.toInt(), 10 - offset.toInt())
+        }
+        assertTrue(server.offerAudio(small))
+        assertEquals(10, get("/audio").inputStream.readBytes().size)
+        // A guest is now listening: a later swap must not change the file under them.
+        org.junit.Assert.assertFalse(server.offerAudio(movie))
+        assertEquals(10, get("/audio").inputStream.readBytes().size)
+    }
+
+    @Test fun guestReportAndLeaveRoutes() {
+        val c = get("/guest?id=web-x1&name=Sam%20P&dev=WH-1000XM4&drift=14.6&status=playing&hidden=0")
+        assertEquals(200, c.responseCode)
+        assertEquals("""{"muted":false,"volume":100,"removed":false}""", c.inputStream.readBytes().decodeToString())
+        assertEquals("Sam P", server.guests.list().single().name)
+        assertEquals("WH-1000XM4", server.guests.list().single().device)
+        assertEquals(14L, server.guests.list().single().driftMs)
+        // Browser pages are guests, not app listeners.
+        get("/clock?seq=1&t0=5&id=web-x1").inputStream.readBytes()
+        assertEquals(0, server.activeListeners())
+        assertEquals(204, get("/leave?id=web-x1", method = "POST").responseCode)
+        assertTrue(server.guests.list().isEmpty())
+        assertEquals(400, get("/guest").responseCode)
+    }
+
     @Test fun introIsServedOnlyWhenSet() {
         assertEquals(404, get("/intro").responseCode)
         server.intro = movie

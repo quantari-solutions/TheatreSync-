@@ -1,6 +1,29 @@
 # Project status
 
-_Last updated: 2026-11-20. 0.5.3 (owner releases when ready): subtitles (files + generated on the phone, translated), YouTube ad skipper + SponsorBlock, per-chip APKs_
+_Last updated: 2026-11-20. 0.5.5 (owner releases when ready): host controls TapIn guests; live join/leave; sync for every device_
+
+## 0.5.5: host controls TapIn guests
+
+| Request | Done | Verified |
+|---|---|---|
+| Host controls guests using the web page | Audio sheet → **Listening now**: each guest's name, sync and status, with **Sound on** (mute), **volume** (− / +) and **Remove**. Changes reach the guest within ~1 s (their page reports every second and gets the controls back). iPhones ignore page volume (mute works) | `Guests` + route unit tests; browser test: mute 0.7 s, unmute/volume ≤ 1 s, remove 0.1 s |
+| Leaving/joining shows immediately | Guest appears on the host the moment they tap **Start listening**; **Stop listening** or closing the page sends `/leave` (sendBeacon) → gone at once. A page that disappears without it is dropped after 4 s; a locked screen (still listening) after 10 min | Browser test: join 4 ms, Stop 46 ms, page closed 6 ms |
+| Sound starts right away | Unchanged fast start (sound-only stream from 0.5.4); Start → sound in ~0.1 s in the browser test | Browser test |
+| Sync for all outputs on the phone | Your playing headphones show "In step · +12 ms" in Audio sources; each guest shows theirs | Screenshot `guests1`; needs HW-19 |
+| Guest page shows only their own Bluetooth device | "Sync: +12 ms on AirPods Pro". Phone browsers don't tell web pages which headphones are connected (only after a microphone prompt, which can lower Bluetooth quality on iPhones, so not used): the name is read where the browser already allows it, else the guest types it once (remembered). Host list shows "Priya · AirPods Pro" | Browser test |
+| Fix found while testing | A report already on its way when a guest closed the page could add them back for 4 s; late reports from a page that left are now ignored (fresh id per Start) | Unit test; browser test 3× clean |
+| Smooth switching between headphones | Guest page: switching headphones re-measures and allows one correcting jump straight away. Host phone: unchanged (settle + relock on route change) | Browser test (simulated switch: −19 ms after) |
+
+## 0.5.4: TapIn sound always in step
+
+| Problem | Done | Verified |
+|---|---|---|
+| Guests' phones downloaded the whole movie to play its sound (slow start, slow jumps, gaps on busy Wi-Fi) | `Mp4AudioOnly` (sync-core): a sound-only MP4 built on the fly from the original (rewritten index, sound chunks streamed untouched). Swapped in only before any guest has started, so nobody's file changes under them | Unit tests (synthetic + real ffmpeg files); ffprobe: AAC 5.1, decoded sound identical to the original |
+| Listening page could jump over and over, or stay silent after a pause/jump | Same rules as the headphone player: settle 1 s after any start/jump, at most one jump per 5 s (speed nudges in between), learned start lead, one calibration jump; waits while loading; restarts a stalled stream after 6 s; reconnects after errors; resyncs when the page comes back; asks for another tap if the browser blocks sound; counts the phone's own output delay where the browser reports it | `scripts/tapin-stress/run.sh` in Chromium: 12 situations (pause, jumps, slow Wi-Fi, dropped connection, host clock reset, hidden page) all within ±25 ms |
+| Host app restarted mid-movie → page kept a wrong clock for ~30 s | Clock readings that jump by more than a second start a fresh set | Stress test |
+| Dolby/DTS movies: guests silent with no explanation | Prefers an AAC/MP3/Opus/FLAC sound track when the movie has one; otherwise the page says the sound format can't play in a browser (no endless retries) and the Audio sheet tells the host | Unit test + Chromium with an AC-3 file |
+
+Limits: browsers can't play Dolby/DTS; a guest's Bluetooth delay is only partly known to the browser, so **Sound is early/late** stays for fine-tuning. Real phones + headphones: HW-18.
 
 ## 0.5.3: subtitles and ad skipper
 

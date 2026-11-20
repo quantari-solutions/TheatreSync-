@@ -1,6 +1,8 @@
 package com.theatresync.app
 
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.unit.dp
 import app.cash.paparazzi.DeviceConfig
 import app.cash.paparazzi.Paparazzi
 import com.theatresync.app.MovieSession.Phase
@@ -27,6 +29,18 @@ class ScreenshotTest {
     private fun playing(ui: Ui) = shot { PlayingScreen(ui, {}, {}, {}, {}, {}, {}, {}, {}) }
 
     @Test fun setup1_empty() = setup(Ui())
+    /** TapIn guests on the host: sync for each, sound/volume/remove; long names stay on one line. */
+    @Test fun guests1() = shot {
+        androidx.compose.foundation.layout.Column(
+            androidx.compose.ui.Modifier.padding(20.dp),
+            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp),
+        ) {
+            val g = com.theatresync.core.Guests.Guest("web-1", "Priya", "AirPods Pro", 0, 0, 14, "playing", hidden = false)
+            GuestRow(g, { _, _ -> }, { _, _ -> }, {})
+            GuestRow(g.copy(id = "web-2", name = "Android phone · Samsung Internet with a very long name", device = null, driftMs = 230, muted = true, volume = 60), { _, _ -> }, { _, _ -> }, {})
+            GuestRow(g.copy(id = "web-3", name = "iPhone · Safari", device = "WH-1000XM4", hidden = true, driftMs = -8), { _, _ -> }, { _, _ -> }, {})
+        }
+    }
     @Test fun setup2_movieChosen_tvsFound() = setup(Ui(movieTitle = "Interstellar", tvs = listOf(Tv("1", "Theatre Room TV"), Tv("2", "Bedroom TV"))))
     @Test fun setup3_ready() = setup(Ui(movieTitle = "Interstellar", connectedTv = "Theatre Room TV"))
     @Test fun setup8_needsConversion() = setup(
