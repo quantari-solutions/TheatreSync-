@@ -302,4 +302,25 @@
         <item quantity="one">%1$d guest</item>
         <item quantity="other">%1$d guests</item>
     </plurals>
+    <string name="smart_tv_title">YouTube only on this TV</string>
+    <string name="smart_tv_text">This is a smart TV, not a Chromecast. TheatreSync can play YouTube on it (cast from the YouTube page), but movies from your phone with sound in headphones need a Chromecast, like the Media Room TV.</string>
+    <string name="multi_audio">Share audio</string>
+    <string name="multi_audio_status">Several headphones</string>
+    <string name="multi_audio_short">Same sound on two or more headphones</string>
+    <string name="multi_audio_toggle_hint">Adds a “Share audio” page to the menu.</string>
+    <string name="multi_audio_phone_title">Music, calls, anything</string>
+    <string name="multi_audio_supported">This phone supports audio sharing</string>
+    <string name="multi_audio_unsupported">This phone can\'t share to two headsets</string>
+    <string name="multi_audio_supported_text">Your phone can send the same sound to several headphones with Bluetooth LE Audio (Auracast). The headphones must support LE Audio / Auracast too. Open Android\'s audio sharing, add the headphones, and everything you play goes to all of them.</string>
+    <string name="multi_audio_unsupported_text">Sending the same sound to two headsets needs Bluetooth LE Audio (Auracast) in both the phone and the headphones. This phone doesn\'t report it, so Android plays to one headset at a time. Newer phones and headphones (including some with a firmware update) have it.</string>
+    <string name="multi_audio_open">Open Android audio sharing</string>
+    <string name="multi_audio_connected">Connected now: %1$s</string>
+    <string name="multi_audio_movies_title">Movies with TheatreSync</string>
+    <string name="multi_audio_movies_text">For movies this already works with any headphones: each extra pair listens through another phone with TapIn, in sync. No app needed on their phone.</string>
+    <string name="share_app">Share TheatreSync</string>
+    <string name="share_app_status">Android app · iPhone via TapIn</string>
+    <string name="share_app_text">TheatreSync, from Quantari Solutions: movie on the big screen, sound in everyone\'s headphones. Android: open the attached app to install it. iPhone: no install needed, scan or tap the TapIn code on the host\'s phone during a movie.</string>
+    <string name="up_next">Up next</string>
+    <string name="up_next_empty">Nothing queued yet. In a playlist or Mix, the next videos show here.</string>
+    <string name="up_next_hint">Tap a video to play it now. Swipe the big picture left for next, right for previous.</string>
 </resources>

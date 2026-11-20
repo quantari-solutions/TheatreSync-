@@ -25,12 +25,14 @@ import com.google.android.gms.cast.framework.CastContext
 import com.google.android.gms.cast.framework.CastSession
 import com.google.android.gms.cast.framework.SessionManagerListener
 import com.theatresync.core.CastActivity
+import com.theatresync.core.CastIntro
 import com.theatresync.core.CastStatus
 import com.theatresync.core.Dial
 import com.theatresync.core.MediaServer
 import com.theatresync.core.MediaSource
 import com.theatresync.core.Mp4VideoOnly
 import com.theatresync.core.YouTubeLounge
+import com.theatresync.core.UpNext
 import com.theatresync.core.YouTubeScreenFinder
 import com.theatresync.core.Payload
 import com.theatresync.core.Platform
@@ -55,6 +57,10 @@ class MovieSession(private val app: Application) {
     enum class YouTubeState { IDLE, STARTING, PLAYING, FAILED }
 
     data class NewDevice(val id: Int, val name: String)
+
+    data class UpNextVideo(val videoId: String, val title: String?, val channel: String?) {
+        val thumbnail: String get() = "https://i.ytimg.com/vi/$videoId/mqdefault.jpg"
+    }
 
     /** @param youTubeOnly a smart TV found via DIAL (e.g. Samsung The Frame): YouTube only, no movies. */
     data class Tv(val id: String, val name: String, val isSpeaker: Boolean = false, val youTubeOnly: Boolean = false)
@@ -106,6 +112,10 @@ class MovieSession(private val app: Application) {
         val roomSoundToo: Boolean = false,
         /** Experimental: Quantari + TheatreSync titles on the TV before each movie. */
         val signatureIntro: Boolean = false,
+        /** Experimental: "Share audio" page (several headphones) shown in the menu. */
+        val multiAudio: Boolean = false,
+        /** YouTube: what's coming up on each TV (tvId → videos). */
+        val upNext: Map<String, List<UpNextVideo>> = emptyMap(),
         /** The signature intro is on the TV right now. */
         val introPlaying: Boolean = false,
         /** Headphones that just connected (asks "use them?" while a movie plays). */
@@ -435,6 +445,85 @@ class MovieSession(private val app: Application) {
         if (castSession == null) CastIndicator.hide(app)
     }
 
+    /**
+     * Signature Intro before YouTube or mirroring: plays the clip on a Chromecast and returns when it
+     * ends (blocking; call off the main thread). Skipped for smart TVs (no media player we can use),
+     * when switched off, or while a movie is running.
+     */
+    private fun playIntroBlocking(tvId: String) {
+        if (!_ui.value.signatureIntro || isDial(tvId) || server != null) return
+        val tv = knownTvs.firstOrNull { it.id == tvId } ?: return
+        val ip = NetworkInfo.localIpv4For(app, tv.address) ?: return
+        val srv = MediaServer(
+            senderId = deviceId,
+            clockMs = { SystemClock.elapsedRealtime() },
+            stateProvider = { null },
+            helloProvider = { Payload.Hello(Build.MODEL.take(64).ifBlank { "Android" }, Platform.ANDROID, Role.HOST, BuildConfig.VERSION_NAME, listOf(1)) },
+        )
+        srv.intro = RawResourceSource(app, R.raw.signature_intro, "TheatreSync")
+        try {
+            val port = srv.start()
+            CastIntro({ TvWatchers.openTls(tv.address, tv.port) }).play("http://$ip:$port/intro")
+        } catch (e: Exception) {
+            CrashReporter.handled(app, "signature intro before cast", e) // never block the cast itself
+        } finally {
+            srv.stop()
+        }
+    }
+
+    /** Mirroring: show the intro on the TV first, then hand over to Android's screen-cast screen. */
+    fun playIntroThen(tvId: String?, then: () -> Unit) = guard("intro then") {
+        if (tvId == null || !_ui.value.signatureIntro) return@guard then()
+        Thread({ playIntroBlocking(tvId); main.post(then) }, "intro").start()
+    }
+
+    /** The TV to use when the owner didn't pick one: the connected TV, else the only Chromecast with a screen. */
+    fun defaultTvId(): String? =
+        _ui.value.tvs.firstOrNull { it.name == _ui.value.connectedTv }?.id
+            ?: _ui.value.tvs.filter { !it.youTubeOnly && !it.isSpeaker }.singleOrNull()?.id
+
+    private val titleCache = java.util.concurrent.ConcurrentHashMap<String, Pair<String?, String?>>()
+    private val upNextList = java.util.concurrent.ConcurrentHashMap<String, String>() // tvId → playlist ID
+
+    /** Reads what's queued on the TV's YouTube and looks up the titles (YouTube oEmbed). */
+    fun refreshUpNext(tvId: String) = guard("refreshUpNext") {
+        if (tvName(tvId) == null) return@guard
+        Thread({
+            runCatching {
+                val (lounge, session) = synchronized(youTubeRemotes) { youTubeRemotes[tvId] }
+                    ?: YouTubeLounge().let { l -> (l to l.bind(l.loungeToken(youTubeScreenId(tvId)))).also { synchronized(youTubeRemotes) { youTubeRemotes[tvId] = it } } }
+                val events = lounge.events(session)
+                UpNext.listId(events)?.let { upNextList[tvId] = it }
+                val ids = UpNext.parse(events)
+                if (ids.isEmpty()) return@runCatching
+                val videos = ids.map { id ->
+                    val (title, channel) = titleCache.getOrPut(id) { oEmbed(id) }
+                    UpNextVideo(id, title, channel)
+                }
+                main.post { _ui.update { it.copy(upNext = it.upNext + (tvId to videos)) } }
+            }
+        }, "up-next").apply { isDaemon = true }.start()
+    }
+
+    /** Title and channel of a YouTube video from its public oEmbed page; nulls if offline. */
+    private fun oEmbed(videoId: String): Pair<String?, String?> = runCatching {
+        val c = java.net.URL("https://www.youtube.com/oembed?format=json&url=" +
+            java.net.URLEncoder.encode("https://www.youtube.com/watch?v=$videoId", "UTF-8")).openConnection() as java.net.HttpURLConnection
+        c.connectTimeout = 5_000; c.readTimeout = 5_000
+        val body = c.inputStream.use { it.readBytes().decodeToString() }
+        fun field(name: String) = Regex(""""$name"\s*:\s*"((?:[^"\\]|\\.)*)"""").find(body)?.groupValues?.get(1)
+            ?.replace("\\u0026", "&")?.replace("\\\"", "\"")
+        field("title") to field("author_name")
+    }.getOrDefault(null to null)
+
+    /** Play one of the Up next videos now (inside the same playlist / Mix when there is one). */
+    fun playUpNext(tvId: String, videoId: String) {
+        val params = mutableMapOf("videoId" to videoId, "currentTime" to "0")
+        upNextList[tvId]?.let { params["listId"] = it }
+        youTubeRemote(tvId, "setPlaylist", params)
+        _ui.update { it.copy(upNext = it.upNext + (tvId to (it.upNext[tvId].orEmpty().dropWhile { v -> v.videoId != videoId }.drop(1)))) }
+    }
+
     /** One YouTube remote link per TV, reused so Next/Previous/captions respond quickly. */
     private val youTubeRemotes = HashMap<String, Pair<YouTubeLounge, YouTubeLounge.Session>>()
 
@@ -498,8 +587,10 @@ class MovieSession(private val app: Application) {
         val tv = object { val id = tvId; val name = name }
         _ui.update { it.copy(youTube = YouTubeState.STARTING, youTubeVideoId = videoId, youTubeTvId = tv.id, message = null) }
         Thread({
-            var step = "starting YouTube on the TV"
+            var step = "playing the Signature Intro"
             val ok = try {
+                playIntroBlocking(tvId)
+                step = "starting YouTube on the TV"
                 val screenId = youTubeScreenId(tvId)
                 step = "asking YouTube to play the video"
                 val lounge = YouTubeLounge()
@@ -806,6 +897,11 @@ class MovieSession(private val app: Application) {
         prefs.edit { putInt("soundDelayMs", 0) }
         _ui.update { it.copy(soundDelayMs = 0) }
         player?.resetSync()
+    }
+
+    fun setMultiAudio(on: Boolean) = guard("setMultiAudio") {
+        prefs.edit { putBoolean("multiAudio", on) }
+        _ui.update { it.copy(multiAudio = on) }
     }
 
     fun setSignatureIntro(on: Boolean) = guard("setSignatureIntro") {
@@ -1226,7 +1322,7 @@ class MovieSession(private val app: Application) {
     // restarted the app while the file picker was open).
     init {
         main.post { guard("restore movie") { restoreMovie() } }
-        _ui.update { it.copy(autoSwitch = prefs.getBoolean("autoSwitch", false), signatureIntro = prefs.getBoolean("signatureIntro", true)) }
+        _ui.update { it.copy(autoSwitch = prefs.getBoolean("autoSwitch", false), signatureIntro = prefs.getBoolean("signatureIntro", true), multiAudio = prefs.getBoolean("multiAudio", false)) }
         prefs.getBoolean("roomSpeakers", false).let { on -> _ui.update { it.copy(muteTv = !on, roomSoundToo = on) } }
         deviceWatchStartedAt = SystemClock.elapsedRealtime()
         runCatching { audioManager?.registerAudioDeviceCallback(deviceCallback, main) }

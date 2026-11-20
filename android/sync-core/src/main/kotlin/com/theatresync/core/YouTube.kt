@@ -149,6 +149,34 @@ class YouTubeLounge(private val baseUrl: String = "https://www.youtube.com/") {
         )
     }
 
+    /**
+     * Reads the TV's recent remote-control events (queue and "up next"). Long-poll style: returns
+     * whatever arrived within [waitMs]. Blocking; call off the main thread.
+     */
+    fun events(s: Session, waitMs: Int = 4_000): String {
+        val query = encode(mapOf(
+            "SID" to s.sid, "gsessionid" to s.gsessionId, "RID" to "rpc", "VER" to "8", "CVER" to "1",
+            "TYPE" to "xmlhttp", "CI" to "0", "AID" to "0",
+        ))
+        val c = URL(baseUrl + "api/lounge/bc/bind?" + query).openConnection() as HttpURLConnection
+        c.connectTimeout = 8_000
+        c.readTimeout = waitMs
+        c.setRequestProperty("Origin", baseUrl)
+        c.setRequestProperty("X-YouTube-LoungeId-Token", s.loungeToken)
+        val buf = StringBuilder()
+        try {
+            c.inputStream.bufferedReader().use { r ->
+                val chunk = CharArray(4096)
+                while (true) { val n = r.read(chunk); if (n < 0) break; buf.append(chunk, 0, n) }
+            }
+        } catch (_: java.net.SocketTimeoutException) {
+            // long poll: keep what arrived
+        } finally {
+            c.disconnect()
+        }
+        return buf.toString()
+    }
+
     private fun post(path: String, params: Map<String, String>, form: Map<String, String>, token: String?): String {
         val query = if (params.isEmpty()) "" else "?" + encode(params)
         val c = URL(baseUrl + path + query).openConnection() as HttpURLConnection
@@ -179,4 +207,23 @@ class YouTubeLounge(private val baseUrl: String = "https://www.youtube.com/") {
             "app" to "android-phone-13.14.55",
         )
     }
+}
+
+/** What's coming up on the TV's YouTube, parsed from Lounge events. Pure, unit-tested. */
+object UpNext {
+    private val ID = Regex("^[A-Za-z0-9_-]{11}$")
+
+    /** Video IDs after the current one (playlist or Mix), then YouTube's autoplay pick; newest event wins. */
+    fun parse(events: String, limit: Int = 10): List<String> {
+        val playlist = Regex(""""videoIds"\s*:\s*"([^"]+)"""").findAll(events).lastOrNull()?.groupValues?.get(1)
+            ?.split(',')?.map { it.trim() }?.filter { ID.matches(it) }.orEmpty()
+        val index = Regex(""""currentIndex"\s*:\s*"?(\d+)""").findAll(events).lastOrNull()?.groupValues?.get(1)?.toIntOrNull() ?: -1
+        val after = if (index in playlist.indices) playlist.drop(index + 1) else playlist
+        val autoplay = Regex(""""autoplayUpNext"\s*,\s*\{[^}]*"videoId"\s*:\s*"([A-Za-z0-9_-]{11})"""").findAll(events).lastOrNull()?.groupValues?.get(1)
+        return (after + listOfNotNull(autoplay)).distinct().take(limit)
+    }
+
+    /** The playlist / Mix ID, if the TV is playing one (needed to jump within it). */
+    fun listId(events: String): String? =
+        Regex(""""listId"\s*:\s*"([^"]+)"""").findAll(events).lastOrNull()?.groupValues?.get(1)?.takeIf { it.isNotBlank() }
 }

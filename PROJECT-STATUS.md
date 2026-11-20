@@ -1,6 +1,20 @@
 # Project status
 
-_Last updated: 2026-11-20. 0.5.1 (owner releases when ready): Audio sheet with checkboxes, room speakers fixed, pull to refresh, NFC share on request, remote from players, playing glow_
+_Last updated: 2026-11-20. 0.5.2 (owner releases when ready): intro before YouTube/mirroring, opening animation, Up next, The Frame listed, battery, Share app, experimental Share audio_
+
+## 0.5.2: owner feedback
+
+| Request | Done | Verified |
+|---|---|---|
+| Signature intro before YouTube and mirroring | `CastIntro` (sync-core) plays the clip through the Default Media Receiver and waits for it to finish, then YouTube starts / Android's cast screen opens. For YouTube cast *from TheatreSync* and Mirror from TheatreSync. Casting from other apps (YouTube/ReVanced cast button, laptop Chrome) can't be intercepted. Smart TVs (DIAL) have no player for it | Load/status unit tests; needs HW-16 |
+| Opening animation on app start | Same clip full screen on a fresh start (new process) only; coming back from another app resumes where you were. Tap to skip | Compiles; skipped under instrumentation |
+| Up next + swipe | Reads the TV's YouTube queue from Lounge events (playlist/Mix + autoplay pick), titles via YouTube oEmbed; row of thumbnails, tap to play; swipe the big picture left/right for next/previous. No animations | Parser unit tests; needs HW-16 |
+| No animations | Page changes are instant | — |
+| The Frame not under Choose your TV | Listed there as "Smart TV · YouTube only"; tapping explains and offers YouTube | Screenshot |
+| Headphone battery | Shown in Audio sources where the phone shares it (Android has no public API; read via the hidden getBatteryLevel, else omitted) | needs HW-16 |
+| Share app | Settings → Share TheatreSync: sends the APK (Android); text tells iPhone users to join with TapIn (iPhones can't install outside the App Store) | needs HW-16 |
+| Same sound on 2+ headphones (music/calls) | Experimental → **Share audio** switch; when on, a menu page checks LE Audio broadcast (Auracast) support and opens Android's audio sharing. Needs LE Audio in phone *and* headphones; otherwise Android allows one headset. Movies: TapIn | needs HW-16 |
+| Fix found while doing this | An unchecked text replacement in 0.5.1 had silently skipped wiring "dismiss message" on the remote page; all edits now use checked replacements and a wiring audit | — |
 
 ## 0.5.1: owner feedback on 0.5.0
 

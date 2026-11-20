@@ -190,3 +190,13 @@ the YouTube volume changes. Send one screenshot of step 1 and one of step 3, and
 4. In Audio sources tap **Share by NFC**, hold a friend's phone to yours: no "which app" question should appear.
 5. Pull down on the home page: the TV list refreshes.
 6. YouTube single video → remote → Next: a message explains there's no next video; in a Mix, Next changes video.
+
+## HW-16 — Intro everywhere, Up next, battery, sharing (0.5.2)
+
+1. Close TheatreSync fully (swipe it away), open it: the Quantari opening plays once. Switch apps and back: no opening.
+2. YouTube page → cast a video: the titles play on the TV first, then the video. Mirror screen: titles first, then pick the TV.
+3. Cast a Mix/playlist: **Up next** shows the coming videos; tap one; swipe the big picture left/right.
+4. Audio sources shows battery % next to the headphones (if the phone shares it).
+5. Settings → Share TheatreSync → send to another Android phone; it installs.
+6. Experimental → Share audio on → Settings shows **Share audio**: it says whether this phone supports sharing to two headsets.
+7. Choose your TV lists Samsung The Frame as "YouTube only".

@@ -83,6 +83,17 @@ class ScreenshotTest {
         ),
     )
     @Test fun experimental1() = shot { ExperimentalScreen(Ui(signatureIntro = true), {}, {}) }
+    @Test fun multiAudio1_unsupported() = shot { MultiAudioScreen(AudioSharing.UNSUPPORTED, listOf("MOMENTUM 4", "WH-1000XM4"), {}, {}, {}) }
+    @Test fun casting4_upNext() = shot {
+        NowCastingScreen(
+            youtube, {}, {}, {},
+            upNext = listOf(
+                MovieSession.UpNextVideo("aaaaaaaaaaa", "Interstellar – Official Trailer 2", "Warner Bros. Pictures"),
+                MovieSession.UpNextVideo("bbbbbbbbbbb", "Hans Zimmer – No Time for Caution (Live)", "Hans Zimmer"),
+            ),
+        )
+    }
+    @Test fun setup14_smartTvListed() = setup(Ui(movieTitle = "Interstellar", tvs = listOf(Tv("1", "Media Room TV"), Tv("dial:x", "Samsung The Frame (65)", youTubeOnly = true))))
     @Test fun setup4_error() = setup(Ui(movieTitle = "Interstellar", message = "Connect this phone to the same Wi-Fi as the Chromecast."))
 
     @Test fun playing1_inSync() = playing(
