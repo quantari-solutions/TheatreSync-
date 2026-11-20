@@ -85,6 +85,8 @@ class MovieSession(private val app: Application) {
         val joinAddress: String? = null,
         /** The movie's sound is Dolby/DTS: TapIn guests' browsers can't play it. */
         val guestSoundUnsupported: Boolean = false,
+        /** TapIn guests listening in a browser right now, with their sync and the host's controls. */
+        val guests: List<com.theatresync.core.Guests.Guest> = emptyList(),
         val driftMs: Long? = null,
         val message: String? = null,
         /** What each Chromecast is showing right now (YouTube, a mirrored tab, …), from any device. */
@@ -858,6 +860,8 @@ class MovieSession(private val app: Application) {
         srv.subtitlesVtt = subtitleCues?.let { Subtitles.toVtt(it) }
         val port = try { srv.start() } catch (_: Exception) { return say(R.string.msg_no_wifi) }
         server = srv
+        // A guest joining, leaving or being changed shows on the host's screen at once.
+        srv.guests.onChange = { if (server === srv) _ui.update { it.copy(guests = srv.guests.list()) } }
         // Sound-only view (a few % of the file): guests start and jump almost instantly. Built off the main thread.
         Thread({
             val a = Mp4AudioOnly.of(m) ?: return@Thread
@@ -939,7 +943,7 @@ class MovieSession(private val app: Application) {
         teardown()
         // Close the media player on the Chromecast so it returns to "Ready to cast".
         castContext?.sessionManager?.endCurrentSession(true)
-        _ui.update { it.copy(phase = Phase.SETUP, joinAddress = null, guestSoundUnsupported = false, friends = 0, driftMs = null) }
+        _ui.update { it.copy(phase = Phase.SETUP, joinAddress = null, guestSoundUnsupported = false, guests = emptyList(), friends = 0, driftMs = null) }
         publishNowCasting(rawNowCasting)
     }
 
@@ -1220,6 +1224,7 @@ class MovieSession(private val app: Application) {
                 positionMs = castPos,
                 durationMs = maxOf(0, client.streamDuration),
                 friends = server?.activeListeners() ?: 0,
+                guests = server?.guests?.list() ?: emptyList(),
                 driftMs = player?.lastDriftMs,
             )
         }
@@ -1233,6 +1238,11 @@ class MovieSession(private val app: Application) {
         } ?: return null
         return bt.productName?.toString()?.takeIf { it.isNotBlank() }
     }
+
+    /** Host controls for a TapIn guest; they reach the guest's phone within a second. */
+    fun setGuestSound(id: String, on: Boolean) { server?.guests?.setMuted(id, !on) }
+    fun setGuestVolume(id: String, volume: Int) { server?.guests?.setVolume(id, volume) }
+    fun removeGuest(id: String) { server?.guests?.remove(id) }
 
     private fun say(res: Int) = _ui.update { it.copy(message = app.getString(res)) }
     private fun say(text: String) = _ui.update { it.copy(message = text) }

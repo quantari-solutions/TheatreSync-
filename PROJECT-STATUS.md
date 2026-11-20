@@ -1,6 +1,17 @@
 # Project status
 
-_Last updated: 2026-11-20. 0.5.4 (owner releases when ready): TapIn sound reliability_
+_Last updated: 2026-11-20. 0.5.5 (owner releases when ready): host controls TapIn guests; live join/leave; sync for every device_
+
+## 0.5.5: host controls TapIn guests
+
+| Request | Done | Verified |
+|---|---|---|
+| Host controls guests using the web page | Audio sheet → **Listening now**: each guest's name, sync and status, with **Sound on** (mute), **volume** (− / +) and **Remove**. Changes reach the guest within ~1 s (their page reports every second and gets the controls back). iPhones ignore page volume (mute works) | `Guests` + route unit tests; browser test: mute 0.7 s, unmute/volume ≤ 1 s, remove 0.1 s |
+| Leaving/joining shows immediately | Guest appears on the host the moment they tap **Start listening**; **Stop listening** or closing the page sends `/leave` (sendBeacon) → gone at once. A page that disappears without it is dropped after 4 s; a locked screen (still listening) after 10 min | Browser test: join 4 ms, Stop 46 ms, page closed 6 ms |
+| Sound starts right away | Unchanged fast start (sound-only stream from 0.5.4); Start → sound in ~0.1 s in the browser test | Browser test |
+| Sync for all outputs on the phone | Your playing headphones show "In step · +12 ms" in Audio sources; each guest shows theirs | Screenshot `guests1`; needs HW-19 |
+| Guest page shows only their own device | "Sync: +12 ms on this phone"; optional name field (default "Android phone · Chrome" etc.) | Browser test |
+| Smooth switching between headphones | Guest page: switching headphones re-measures and allows one correcting jump straight away. Host phone: unchanged (settle + relock on route change) | Browser test (simulated switch: −19 ms after) |
 
 ## 0.5.4: TapIn sound always in step
 

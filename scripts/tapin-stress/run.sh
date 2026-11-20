@@ -15,3 +15,4 @@ sound="${1:-$here/build/tone.mp4}"
   -af "pan=5.1|FL=c0|FR=c0|FC=c0|LFE=c0|BL=c0|BR=c0" -c:a aac -b:a 384k "$sound"
 python3 "$here/server.py" "$sound" & srv=$!; trap 'kill $srv' EXIT; sleep 1
 node "$here/stress.js"
+node "$here/guests.js"

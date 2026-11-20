@@ -31,6 +31,8 @@ interface MediaSource {
  *  GET /clock?seq=&t0=&id=        → clock_pong message (contracts/)
  *  GET /state                     → playback_state message: where the TV picture is right now
  *  GET /hello                     → hello message
+ *  GET /guest?id=&name=&drift=&status=&hidden= → TapIn guest report; answers the host's controls
+ *  GET|POST /leave?id=            → TapIn guest stopped or closed the page
  *
  * See contracts/HTTP-API.md. One instance per movie session.
  */
@@ -70,6 +72,9 @@ class MediaServer(
         Thread(r, "theatresync-http").apply { isDaemon = true }
     }
     private val listenerLastSeen = ConcurrentHashMap<String, Long>()
+
+    /** TapIn guests listening in a browser: who, how well in step, and the host's controls for each. */
+    val guests = Guests(clockMs)
     private val mediaRequestCount = java.util.concurrent.atomic.AtomicInteger(0)
 
     private val bytesSent = java.util.concurrent.atomic.AtomicLong(0)
@@ -103,7 +108,8 @@ class MediaServer(
     /** Number of listener devices (friends' phones) that synced their clock recently. */
     fun activeListeners(windowMs: Long = 5_000): Int {
         val now = clockMs()
-        return listenerLastSeen.values.count { now - it <= windowMs }
+        // TapIn browser pages ("web-…") are counted in [guests] instead.
+        return listenerLastSeen.entries.count { !it.key.startsWith("web-") && now - it.value <= windowMs }
     }
 
     private fun acceptLoop(ss: ServerSocket) {
@@ -184,6 +190,10 @@ class MediaServer(
                     path == "/audio" && (method == "GET" || method == "HEAD") ->
                         serveMedia(out, headers["range"], head = method == "HEAD", source = audioSource())
                     method == "OPTIONS" -> writeHead(out, 204, "No Content", "text/plain", 0, mapOf("Access-Control-Allow-Methods" to "GET, HEAD", "Access-Control-Allow-Headers" to "*"))
+                    path == "/leave" && (method == "POST" || method == "GET") -> { // POST: the page's sendBeacon on close
+                        query["id"]?.let { guests.leave(it) }
+                        writeHead(out, 204, "No Content", "text/plain", 0, mapOf("Cache-Control" to "no-store"))
+                    }
                     method != "GET" -> respond(out, 405, "Method Not Allowed", "text/plain", "method not allowed")
                     path == "/subs.vtt" -> subtitlesVtt?.let { respond(out, 200, "OK", "text/vtt; charset=utf-8", it) }
                         ?: respond(out, 404, "Not Found", "text/plain", "no subtitles")
@@ -194,6 +204,14 @@ class MediaServer(
                             .let { stateProvider() ?: it },
                     )
                 path == "/hello" -> serveJson(out, helloProvider())
+                path == "/guest" -> {
+                    val id = query["id"].orEmpty()
+                    if (id.isBlank()) respond(out, 400, "Bad Request", "text/plain", "need id")
+                    else respond(out, 200, "OK", "application/json", guests.report(
+                        id, query["name"], query["drift"]?.toDoubleOrNull()?.toLong(),
+                        query["status"].orEmpty(), hidden = query["hidden"] == "1",
+                    ).toJson())
+                }
                 path == "/listen" || path == "/" -> respond(out, 200, "OK", "text/html; charset=utf-8", ListenPage.HTML)
                 else -> respond(out, 404, "Not Found", "text/plain", "not found")
             }

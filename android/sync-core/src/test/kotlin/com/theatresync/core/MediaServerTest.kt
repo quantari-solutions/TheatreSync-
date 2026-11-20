@@ -201,6 +201,20 @@ class MediaServerTest {
         assertEquals(10, get("/audio").inputStream.readBytes().size)
     }
 
+    @Test fun guestReportAndLeaveRoutes() {
+        val c = get("/guest?id=web-x1&name=Sam%20P&drift=14.6&status=playing&hidden=0")
+        assertEquals(200, c.responseCode)
+        assertEquals("""{"muted":false,"volume":100,"removed":false}""", c.inputStream.readBytes().decodeToString())
+        assertEquals("Sam P", server.guests.list().single().name)
+        assertEquals(14L, server.guests.list().single().driftMs)
+        // Browser pages are guests, not app listeners.
+        get("/clock?seq=1&t0=5&id=web-x1").inputStream.readBytes()
+        assertEquals(0, server.activeListeners())
+        assertEquals(204, get("/leave?id=web-x1", method = "POST").responseCode)
+        assertTrue(server.guests.list().isEmpty())
+        assertEquals(400, get("/guest").responseCode)
+    }
+
     @Test fun introIsServedOnlyWhenSet() {
         assertEquals(404, get("/intro").responseCode)
         server.intro = movie

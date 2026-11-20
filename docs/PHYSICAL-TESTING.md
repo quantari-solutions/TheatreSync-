@@ -219,3 +219,14 @@ the YouTube volume changes. Send one screenshot of step 1 and one of step 3, and
 6. Optional: a movie with Dolby sound → the Audio sheet says TapIn guests can't hear it.
 
 **Send:** a screenshot of the guest page, and whether any step lost sound or drifted.
+
+## HW-19 — Controlling TapIn guests (0.5.5)
+
+1. Start a movie and open the Audio sheet (headphones button). Your headphones row shows "In step · … ms".
+2. A second phone opens TapIn, types a name, taps **Start listening**: their name appears under **Listening now** straight away, with their sync.
+3. Untick **Sound on** for them: their sound stops within a second. Tick it again: it comes back. Try − / + (Android phones).
+4. On the guest phone tap **Stop listening**: they disappear from your list at once. Start again: they're back.
+5. Tap **Remove**: their page says the host stopped the sound.
+6. Guest switches between two headphones: sound stays in step after a moment.
+
+**Send:** a screenshot of your Audio sheet with a guest listed, and anything that took more than a couple of seconds.

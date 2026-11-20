@@ -28,6 +28,8 @@ button{font:inherit;font-weight:700;border-radius:999px;border:1px solid var(--b
 .row{display:flex;gap:10px}.row button{flex:1}
 .pill{display:inline-block;border-radius:999px;padding:6px 12px;font-size:14px;font-weight:700;border:1px solid var(--border);color:var(--gold)}
 .pill.ok{color:var(--ok);border-color:#1E5A40}
+input{font:inherit;width:100%;min-height:48px;border-radius:14px;border:1px solid var(--border);background:var(--bg);color:var(--text);padding:0 14px;margin:6px 0 12px}
+.big.stop{background:transparent;color:var(--gold2);border:1px solid var(--border)}
 </style></head><body>
 <div class="eyebrow">TheatreSync · TapIn</div>
 <h1>Listen along</h1>
@@ -36,7 +38,10 @@ button{font:inherit;font-weight:700;border-radius:999px;border:1px solid var(--b
 <div class="card">
   <div class="title" id="movie">Connecting…</div>
   <div class="muted">Connect your headphones to this phone first.</div>
+  <label class="muted" for="name">Your name (the host sees it)</label>
+  <input id="name" maxlength="40" autocomplete="nickname">
   <p><span class="pill" id="status">Waiting for the movie</span></p>
+  <div class="muted" id="sync">&nbsp;</div>
   <button class="big" id="start">▶&nbsp; Start listening</button>
 </div>
 
@@ -115,7 +120,7 @@ button{font:inherit;font-weight:700;border-radius:999px;border:1px solid var(--b
     pr.then(function(){ playPending=false; failed=0; }).catch(function(e){
       playPending=false;
       if(e&&e.name==='NotAllowedError'){ // the browser wants another tap before it plays sound
-        started=false; var b=document.getElementById('start'); b.disabled=false; b.textContent='▶\u00a0 Tap to start listening';
+        stop(); document.getElementById('start').textContent='▶\u00a0 Tap to start listening';
         setStatus('Tap the button to start the sound',false);
       }
     });
@@ -151,16 +156,56 @@ button{font:inherit;font-weight:700;border-radius:999px;border:1px solid var(--b
     } else if(Math.abs(drift)>NUDGE_AT){
       a.playbackRate=Math.min(1.05,Math.max(0.95,1-drift/1500));
     } else a.playbackRate=1;
-    setStatus(Math.abs(drift)<=60?'In step':'Getting in step…',Math.abs(drift)<=60);
+    if(hostMuted) setStatus('The host turned your sound off',false);
+    else setStatus(Math.abs(drift)<=60?'In step':'Getting in step…',Math.abs(drift)<=60);
+    syncEl.textContent='Sync: '+(drift>=0?'+':'')+Math.round(drift)+' ms on this phone';
   }
   a.addEventListener('error',function(){ if(started) step(); });
-  document.addEventListener('visibilitychange',function(){ if(!document.hidden){ ping(); poll(); setTimeout(step,300); } });
-  document.getElementById('start').onclick=function(){
-    started=true; this.textContent='Listening'; this.disabled=true;
-    try{ ctx=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ ctx=null; }
-    var pr=a.play(); if(pr) pr.then(function(){a.pause();}).catch(function(){}); // unlock sound with this tap
-    step();
-  };
+
+  // ---- This phone, as the host sees it: reports about once a second; the answer carries the host's controls.
+  var nameEl=document.getElementById('name'), btn=document.getElementById('start'), syncEl=document.getElementById('sync');
+  var hostMuted=false, removedByHost=false;
+  function guessName(){ var u=navigator.userAgent;
+    var dev=/iPhone/.test(u)?'iPhone':/iPad/.test(u)?'iPad':/Android/.test(u)?'Android phone':'Computer';
+    var br=/EdgA?\//.test(u)?'Edge':/SamsungBrowser/.test(u)?'Samsung Internet':/Firefox|FxiOS/.test(u)?'Firefox':/CriOS|Chrome/.test(u)?'Chrome':/Safari/.test(u)?'Safari':'Browser';
+    return dev+' · '+br; }
+  try{ nameEl.value=localStorage.getItem('tsName')||''; }catch(e){}
+  nameEl.placeholder=guessName();
+  nameEl.onchange=function(){ try{ localStorage.setItem('tsName',nameEl.value.trim()); }catch(e){} report(); };
+  function myName(){ return nameEl.value.trim()||guessName(); }
+  function report(){
+    if(!started) return;
+    var d=window.tsStats.drift;
+    fetch('/guest?id='+id+'&name='+encodeURIComponent(myName())+'&status='+window.tsStats.state+(d===null?'':'&drift='+d)+'&hidden='+(document.hidden?1:0),{cache:'no-store'})
+      .then(function(r){return r.json();}).then(function(c){
+        if(!started) return;
+        if(c.removed){ stop(false); removedByHost=true; setStatus('The host stopped the sound for this phone',false); btn.textContent='▶\u00a0 Listen again'; return; }
+        hostMuted=c.muted; a.muted=c.muted;
+        try{ a.volume=Math.max(0,Math.min(1,c.volume/100)); }catch(e){}
+      }).catch(function(){});
+  }
+  function leave(){ var u='/leave?id='+id; if(!(navigator.sendBeacon&&navigator.sendBeacon(u))) fetch(u,{method:'POST',keepalive:true}).catch(function(){}); }
+  function start(){
+    if(removedByHost){ id='web-'+Math.random().toString(36).slice(2,10); removedByHost=false; }
+    started=true; btn.textContent='■\u00a0 Stop listening'; btn.className='big stop';
+    if(!ctx){ try{ ctx=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ ctx=null; } }
+    var pr=a.play(); if(pr) pr.then(function(){ a.pause(); }).catch(function(){}); // unlock sound with this tap
+    window.tsStats.state='connecting'; report(); step();
+  }
+  function stop(tell){
+    if(tell!==false) leave();
+    started=false; a.pause(); a.playbackRate=1; calibrated=false; window.tsStats.state='stopped'; window.tsStats.drift=null;
+    btn.textContent='▶\u00a0 Start listening'; btn.className='big'; btn.disabled=false; syncEl.innerHTML='&nbsp;';
+    setStatus('Not listening',false);
+  }
+  btn.onclick=function(){ if(started) stop(); else start(); };
+  // Closing the page or leaving the site: the host's list drops this phone at once.
+  window.addEventListener('pagehide',function(){ if(started) leave(); });
+  document.addEventListener('visibilitychange',function(){ report(); if(!document.hidden){ ping(); poll(); setTimeout(step,300); } });
+  // Headphones switched on this phone: the delay changes, so measure again and allow a correcting jump now.
+  if(navigator.mediaDevices&&navigator.mediaDevices.addEventListener)
+    navigator.mediaDevices.addEventListener('devicechange',function(){ if(!started) return; calibrated=false; lastSeek=0; settleUntil=now()+SETTLE; window.tsStats.switches=(window.tsStats.switches||0)+1; });
+  setInterval(report,1000);
   document.getElementById('early').onclick=function(){delay+=20;localStorage.setItem('tsDelay',delay);showDelay();};
   document.getElementById('late').onclick=function(){delay-=20;localStorage.setItem('tsDelay',delay);showDelay();};
   for(var i=0;i<8;i++) setTimeout(ping,i*120);

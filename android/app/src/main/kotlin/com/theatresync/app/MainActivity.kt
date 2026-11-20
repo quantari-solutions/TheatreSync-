@@ -294,6 +294,9 @@ class MainActivity : ComponentActivity() {
                             onPickDevice = ::pickAudioDevice,
                             onShareNfc = { setNfcSharing(true, listenUrl) },
                             onShowQr = { qrDialog.value = true },
+                            onGuestSound = session::setGuestSound,
+                            onGuestVolume = session::setGuestVolume,
+                            onGuestRemove = session::removeGuest,
                             onMore = { audioSheet.value = false; openHeadphoneSettings(page) },
                             onDismiss = { audioSheet.value = false },
                         )
@@ -2437,7 +2440,7 @@ private fun AudioSummary(ui: MovieSession.Ui, onAudio: () -> Unit) {
                 val places = listOfNotNull(
                     if (ui.headphonesHere) (ui.headphoneName ?: stringResource(R.string.this_phone)) else null,
                     if (!ui.muteTv) stringResource(R.string.room_speakers) else null,
-                    if (ui.friends > 0) pluralStringResource(R.plurals.guests_listening, ui.friends, ui.friends) else null,
+                    (ui.friends + ui.guests.size).takeIf { it > 0 }?.let { n -> pluralStringResource(R.plurals.guests_listening, n, n) },
                 )
                 Hint(places.joinToString(" · ").ifBlank { stringResource(R.string.audio_nowhere) })
             }
@@ -2460,6 +2463,9 @@ internal fun AudioSheet(
     onPickDevice: () -> Unit,
     onShareNfc: () -> Unit,
     onShowQr: () -> Unit,
+    onGuestSound: (String, Boolean) -> Unit = { _, _ -> },
+    onGuestVolume: (String, Int) -> Unit = { _, _ -> },
+    onGuestRemove: (String) -> Unit = {},
     onMore: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -2490,7 +2496,8 @@ internal fun AudioSheet(
                             output == null -> R.string.headset_connected_idle
                             else -> R.string.headset_playing
                         },
-                    ) + (battery[name]?.let { " · 🔋 $it%" } ?: ""),
+                    ) + (battery[name]?.let { " · 🔋 $it%" } ?: "") +
+                        (if (isActive && output.kind != DiagnosticsReport.Kind.SPEAKER) ui.driftMs?.let { " · " + syncText(it) } ?: "" else ""),
                     tag = "check_out_$name",
                     onChange = { on ->
                         when {
@@ -2515,12 +2522,49 @@ internal fun AudioSheet(
             else {
                 Hint(stringResource(R.string.guests_hint))
                 if (ui.guestSoundUnsupported) Hint(stringResource(R.string.guests_sound_unsupported))
+                if (ui.guests.isNotEmpty()) {
+                    Text(stringResource(R.string.guests_now), style = MaterialTheme.typography.titleSmall, color = Q.Primary)
+                    ui.guests.forEach { g -> GuestRow(g, onGuestSound, onGuestVolume, onGuestRemove) }
+                }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     GoldButton(stringResource(R.string.share_nfc), onShareNfc, Modifier.weight(1f).testTag("share_nfc"), height = 52.dp)
                     GhostButton(stringResource(R.string.show_qr), onShowQr, Modifier.weight(1f).testTag("show_qr"), height = 52.dp)
                 }
             }
             GhostButton("⚙  " + stringResource(R.string.hp_settings), onMore, Modifier.fillMaxWidth(), height = 48.dp)
+        }
+    }
+}
+
+/** "In step · +12 ms": how far a device's sound is from the TV picture. */
+@Composable
+private fun syncText(driftMs: Long): String =
+    stringResource(if (kotlin.math.abs(driftMs) <= 60) R.string.sync_in_step else R.string.sync_catching_up, (if (driftMs >= 0) "+" else "") + driftMs)
+
+/** One TapIn guest: name, how well in step, and the host's controls (sound, volume, remove). */
+@Composable
+internal fun GuestRow(
+    g: com.theatresync.core.Guests.Guest,
+    onSound: (String, Boolean) -> Unit,
+    onVolume: (String, Int) -> Unit,
+    onRemove: (String) -> Unit,
+) {
+    QCard(Modifier.testTag("guest_${g.id}")) {
+        Text(g.name, style = MaterialTheme.typography.titleMedium, color = Q.Text, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+        val status = when {
+            g.status == "unsupported" -> stringResource(R.string.guest_unsupported)
+            g.hidden -> stringResource(R.string.guest_screen_off) + (g.driftMs?.let { " · " + syncText(it) } ?: "")
+            g.status == "playing" && g.driftMs != null -> syncText(g.driftMs!!)
+            g.status == "paused" -> stringResource(R.string.guest_paused)
+            else -> stringResource(R.string.guest_connecting)
+        }
+        Hint(status)
+        CheckRow(checked = !g.muted, title = stringResource(R.string.guest_sound), subtitle = null, tag = "guest_sound_${g.id}") { onSound(g.id, it) }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            GhostButton("−", { onVolume(g.id, g.volume - 10) }, Modifier.width(56.dp), height = 44.dp, description = stringResource(R.string.guest_quieter))
+            Text(stringResource(R.string.guest_volume, g.volume), Modifier.weight(1f), color = Q.Text, maxLines = 1, softWrap = false, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            GhostButton("+", { onVolume(g.id, g.volume + 10) }, Modifier.width(56.dp), height = 44.dp, description = stringResource(R.string.guest_louder))
+            GhostButton(stringResource(R.string.guest_remove), { onRemove(g.id) }, Modifier.testTag("guest_remove_${g.id}"), height = 44.dp)
         }
     }
 }
