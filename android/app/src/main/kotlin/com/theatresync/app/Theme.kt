@@ -34,6 +34,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -170,8 +173,9 @@ fun Eyebrow(text: String) {
 
 /** Dark glass card with a thin gold-brown border. */
 @Composable
-fun QCard(modifier: Modifier = Modifier, highlighted: Boolean = false, content: @Composable ColumnScope.() -> Unit) {
+fun QCard(modifier: Modifier = Modifier, highlighted: Boolean = false, orbit: Boolean = false, content: @Composable ColumnScope.() -> Unit) {
     val shape = RoundedCornerShape(18.dp)
+    val orbitModifier = if (orbit) Modifier.orbitGlow(18.dp) else Modifier
     Column(
         modifier
             .fillMaxWidth()
@@ -179,10 +183,45 @@ fun QCard(modifier: Modifier = Modifier, highlighted: Boolean = false, content: 
             .clip(shape)
             .background(Brush.verticalGradient(listOf(Q.Card, Q.BackgroundAlt)))
             .border(BorderStroke(1.dp, if (highlighted) Q.Secondary.copy(alpha = 0.6f) else Q.BorderAccent), shape)
+            .then(orbitModifier)
             .padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
         content = content,
     )
+}
+
+/**
+ * "Now playing" light: a soft gold glint that travels slowly around a card's edge while something
+ * is playing, matching the gold glows elsewhere. One lap every 5 s; drawn on the border only.
+ */
+@Composable
+fun Modifier.orbitGlow(corner: androidx.compose.ui.unit.Dp): Modifier {
+    val transition = androidx.compose.animation.core.rememberInfiniteTransition(label = "orbit")
+    val angle by transition.animateFloat(
+        0f, 360f,
+        androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(5_000, easing = androidx.compose.animation.core.LinearEasing)),
+        label = "orbit",
+    )
+    return this.drawWithContent {
+        drawContent()
+        val stroke = 2.dp.toPx()
+        val r = corner.toPx()
+        val outer = androidx.compose.ui.graphics.Path().apply {
+            addRoundRect(androidx.compose.ui.geometry.RoundRect(0f, 0f, size.width, size.height, androidx.compose.ui.geometry.CornerRadius(r)))
+        }
+        val inner = androidx.compose.ui.graphics.Path().apply {
+            addRoundRect(androidx.compose.ui.geometry.RoundRect(stroke, stroke, size.width - stroke, size.height - stroke, androidx.compose.ui.geometry.CornerRadius((r - stroke).coerceAtLeast(0f))))
+        }
+        val ring = androidx.compose.ui.graphics.Path().apply { op(outer, inner, androidx.compose.ui.graphics.PathOperation.Difference) }
+        val glint = Brush.sweepGradient(
+            0f to Color.Transparent, 0.70f to Color.Transparent,
+            0.86f to Q.Primary.copy(alpha = 0.55f), 0.95f to Color(0xFFFFF0C2), 1f to Color.Transparent,
+            center = center,
+        )
+        clipPath(ring) {
+            rotate(angle, pivot = center) { drawCircle(glint, radius = size.maxDimension, center = center) }
+        }
+    }
 }
 
 /** Gold gradient pill button with glow (".btn-gradient" on the site). */

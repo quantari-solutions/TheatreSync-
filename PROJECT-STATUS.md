@@ -1,6 +1,22 @@
 # Project status
 
-_Last updated: 2026-11-20. 0.5.0 (not released: owner releases when ready): TapIn guest listening (NFC + QR, no app), picture in picture, one crash-reports page_
+_Last updated: 2026-11-20. 0.5.1 (owner releases when ready): Audio sheet with checkboxes, room speakers fixed, pull to refresh, NFC share on request, remote from players, playing glow_
+
+## 0.5.1: owner feedback on 0.5.0
+
+| Report | Cause / answer | Done | Verified |
+|---|---|---|---|
+| Want checkboxes, one "Audio" place | — | 🎧 **Audio** (top right of the movie and Now casting pages, and the movie page's Audio row) opens **Audio sources**: checkboxes for Room speakers (TV), every connected headset, the phone speaker; Guests (TapIn) with **Share by NFC** / **Show QR code** buttons | Compiles; screenshots of pages |
+| Room speakers silent; mute toggle did nothing | Room sound was off by default, and surround movies sent the TV picture only | The toggles are gone. **Room speakers** checkbox: on = TV sound (surround movies restart at the same spot with converted sound); off = TV silent. Remembered | needs HW-15 |
+| Two headsets at once (Sony took over from MOMENTUM 4) | Android plays media on **one** Bluetooth headset per phone; connecting a second makes it the active one. No app can change this | Audio sources lists every connected headset (ticking an idle one switches to it) and explains; second pair → TapIn on another phone | — |
+| Signature animation didn't show | It was off by default (Settings → Experimental) | **On by default** now; not played on a mid-movie restart | needs HW-15 |
+| Next (remote) did nothing | YouTube ignores Next with nothing queued (single video). No error, so no crash report | After Next/Previous the app checks the TV changed video; if not it says why ("works inside a playlist or Mix") and logs it. Messages now show on the remote and Now casting pages | needs HW-15 |
+| NFC chooser ("TheatreSync or NFC Tools?") | Another installed NFC app registers the same NFC tag ID | NFC sharing is **only active while "Share by NFC" is open**, and TheatreSync is then the preferred NFC service (Android's official way to skip the chooser). QR only on request | needs HW-15 |
+| Remote while casting | — | 🎛 button top right of the movie and Now casting pages | Screenshot |
+| Pull down to refresh | — | Pull down on any page: re-scans Chromecasts (active scan 10 s), smart TVs (DIAL) and headphones | Compiles |
+| Glow around what's playing | — | A soft gold glint circles the Now casting / Movie playing card every 5 s while playing | Screenshot (still frame) |
+| Ad blocker | YouTube's ads are played by the TV's own YouTube app; a phone app can't remove them (YouTube Premium is the only way) | Not built | — |
+| Auto captions for any video | YouTube: Captions button already offers YouTube's own (incl. auto-generated) tracks. Own movies: needs on-device speech-to-text + translation; large feature | Not built yet; first step offered: load .srt subtitle files and show them on the TV | — |
 
 ## 0.5.0: TapIn, picture in picture, crash reports in one place
 

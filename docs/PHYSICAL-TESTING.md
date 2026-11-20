@@ -181,3 +181,12 @@ the YouTube volume changes. Send one screenshot of step 1 and one of step 3, and
 **Send:** which phones the tap worked on, how in-step it sounded, and a screenshot of anything that didn't work.
 4. Settings → Experimental → turn on **Signature Intro**, start a movie: the opening titles show on the TV, then the
    movie; headphone sound should start with the film, not during the titles.
+
+## HW-15 — Audio sources, room speakers, intro, NFC share (0.5.1)
+
+1. Start a movie: the Quantari titles play first (now on by default), then the movie.
+2. Tap 🎧 (top right) → **Audio sources**: tick **Room speakers (TV)**: the room speakers play too. Untick: silent.
+3. Connect the Sony as well: both appear; tick one to move the sound there.
+4. In Audio sources tap **Share by NFC**, hold a friend's phone to yours: no "which app" question should appear.
+5. Pull down on the home page: the TV list refreshes.
+6. YouTube single video → remote → Next: a message explains there's no next video; in a Mix, Next changes video.

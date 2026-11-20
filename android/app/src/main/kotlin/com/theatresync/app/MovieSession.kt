@@ -70,6 +70,8 @@ class MovieSession(private val app: Application) {
         val soundDelayMs: Int = 0,
         val headphonesHere: Boolean = true,
         val muteTv: Boolean = true,
+        /** The TV only got the picture (surround sound fixed instantly): the room speakers are silent. */
+        val tvSoundless: Boolean = false,
         val headphoneName: String? = null,
         val friends: Int = 0,
         val joinAddress: String? = null,
@@ -437,8 +439,24 @@ class MovieSession(private val app: Application) {
     private val youTubeRemotes = HashMap<String, Pair<YouTubeLounge, YouTubeLounge.Session>>()
 
     /** Next / previous video on the TV's YouTube app. */
-    fun youTubeNext(tvId: String) = youTubeRemote(tvId, "next")
-    fun youTubePrevious(tvId: String) = youTubeRemote(tvId, "previous")
+    fun youTubeNext(tvId: String) = youTubeSkipVideo(tvId, "next")
+    fun youTubePrevious(tvId: String) = youTubeSkipVideo(tvId, "previous")
+
+    /** Next/previous, then check the TV really changed video; YouTube ignores it with nothing queued. */
+    private fun youTubeSkipVideo(tvId: String, command: String) {
+        val before = activityFor(tvId)?.contentId
+        youTubeRemote(tvId, command)
+        if (isDial(tvId)) return // smart TVs report nothing back to compare with
+        main.postDelayed({
+            guard("check $command") {
+                val after = activityFor(tvId)?.contentId
+                if (before != null && after == before) {
+                    say(if (command == "next") R.string.yt_no_next else R.string.yt_no_previous)
+                    CrashReporter.handled(app, "YouTube $command had no effect", IllegalStateException("video stayed $before"))
+                }
+            }
+        }, 5_000)
+    }
 
     /** Captions on (in [language], e.g. "en") or off (null) for the video playing on the TV. */
     fun youTubeCaptions(tvId: String, videoId: String?, language: String?) =
@@ -628,6 +646,9 @@ class MovieSession(private val app: Application) {
         _ui.update { it.copy(movieTitle = null, movieInfo = null, movieVerdict = null, prepareProgress = null, prepareEtaSec = null, quality = Quality.ORIGINAL, moviePlan = null) }
     }
 
+    /** Where to start the next cast (restart with room sound keeps the spot). */
+    private var pendingResumeMs = 0L
+
     /** Address the TV plays the movie from, and the intro's (when the signature intro is on). */
     private var movieUrl: String? = null
     private var introUrl: String? = null
@@ -677,8 +698,11 @@ class MovieSession(private val app: Application) {
             .build()
         movieUrl = url
         movieOnScreen = false
+        val resumeAt = pendingResumeMs
+        pendingResumeMs = 0L
+        _ui.update { it.copy(tvSoundless = tvSource !== m) }
         introUrl = null
-        val request = if (_ui.value.signatureIntro) {
+        val request = if (_ui.value.signatureIntro && resumeAt == 0L) {
             // Signature intro: Quantari + TheatreSync titles play first, then the movie (one queue,
             // so the TV goes straight from the titles into the film).
             srv.intro = RawResourceSource(app, R.raw.signature_intro, "TheatreSync")
@@ -691,13 +715,13 @@ class MovieSession(private val app: Application) {
             val queue = com.google.android.gms.cast.MediaQueueData.Builder()
                 .setItems(listOf(
                     com.google.android.gms.cast.MediaQueueItem.Builder(introInfo).setAutoplay(true).setPreloadTime(4.0).build(),
-                    com.google.android.gms.cast.MediaQueueItem.Builder(info).setAutoplay(true).build(),
+                    com.google.android.gms.cast.MediaQueueItem.Builder(info).setAutoplay(true).setStartTime(resumeAt / 1000.0).build(),
                 ))
                 .setStartIndex(0)
                 .build()
             MediaLoadRequestData.Builder().setQueueData(queue).setAutoplay(true).build()
         } else {
-            MediaLoadRequestData.Builder().setMediaInfo(info).setAutoplay(true).build()
+            MediaLoadRequestData.Builder().setMediaInfo(info).setAutoplay(true).setCurrentTime(resumeAt).build()
         }
         client.load(request).setResultCallback { result ->
             if (!result.status.isSuccess) say(R.string.msg_tv_cant_play)
@@ -705,7 +729,7 @@ class MovieSession(private val app: Application) {
 
         applyTvMute()
         announcer.announce("TheatreSync · ${m.title}".take(60), ip, port)
-        TapInService.url = "http://$ip:$port/listen"
+        // TapIn NFC shares the address only while the owner has the "Share by NFC" screen open.
         wifiLock = (app.getSystemService(Context.WIFI_SERVICE) as WifiManager)
             .createWifiLock(WifiManager.WIFI_MODE_FULL_LOW_LATENCY, "theatresync").apply { acquire() }
         CastIndicator.hide(app) // the movie's own notification takes over (same cast icon)
@@ -1018,6 +1042,36 @@ class MovieSession(private val app: Application) {
     fun skip(deltaMs: Long) = guard("skip") { skipUnsafe(deltaMs) }
     fun setMuteTv(on: Boolean) = guard("setMuteTv") { setMuteTvUnsafe(on) }
 
+    /**
+     * Audio → Room speakers (TV) checkbox. On: the TV plays the sound too (for a movie whose sound the
+     * TV can't play, it restarts at the same spot with the sound converted). Off: the TV is silent.
+     */
+    fun setRoomSpeakers(on: Boolean) = guard("setRoomSpeakers") {
+        prefs.edit { putBoolean("roomSpeakers", on) }
+        _ui.update { it.copy(muteTv = !on, roomSoundToo = on) }
+        if (on && server != null && _ui.value.tvSoundless) restartWithRoomSound() else applyTvMute()
+    }
+
+    /** Restart the running movie at the same spot, this time giving the TV sound as well. */
+    private fun restartWithRoomSound() {
+        pendingResumeMs = _ui.value.positionMs
+        castSession?.remoteMediaClient?.stop()
+        teardown()
+        _ui.update { it.copy(phase = Phase.SETUP, joinAddress = null, tvSoundless = false, message = app.getString(R.string.msg_room_sound_restart)) }
+        startMovieUnsafe()
+    }
+
+    /** Pull to refresh: look for TVs and smart TVs again right now. */
+    fun refreshDevices() = guard("refreshDevices") {
+        lastDialScanMs = 0L
+        scanDial()
+        if (castContext != null) {
+            router.addCallback(selector, routerCallback, MediaRouter.CALLBACK_FLAG_PERFORM_ACTIVE_SCAN)
+            refreshTvs()
+            main.postDelayed({ guard("scan mode") { applyScanMode() } }, 10_000)
+        }
+    }
+
     fun castSkip(tvId: String, deltaSec: Double) = guard("castSkip") { castSkipUnsafe(tvId, deltaSec) }
     fun castSeekTo(tvId: String, seconds: Double) = guard("castSeekTo") { castSeekToUnsafe(tvId, seconds) }
     fun castVolume(tvId: String, level: Double) = guard("castVolume") {
@@ -1172,7 +1226,8 @@ class MovieSession(private val app: Application) {
     // restarted the app while the file picker was open).
     init {
         main.post { guard("restore movie") { restoreMovie() } }
-        _ui.update { it.copy(autoSwitch = prefs.getBoolean("autoSwitch", false), signatureIntro = prefs.getBoolean("signatureIntro", false)) }
+        _ui.update { it.copy(autoSwitch = prefs.getBoolean("autoSwitch", false), signatureIntro = prefs.getBoolean("signatureIntro", true)) }
+        prefs.getBoolean("roomSpeakers", false).let { on -> _ui.update { it.copy(muteTv = !on, roomSoundToo = on) } }
         deviceWatchStartedAt = SystemClock.elapsedRealtime()
         runCatching { audioManager?.registerAudioDeviceCallback(deviceCallback, main) }
         if (castContext == null) {
