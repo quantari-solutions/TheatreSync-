@@ -179,5 +179,5 @@ the YouTube volume changes. Send one screenshot of step 1 and one of step 3, and
 3. Tap ⧉ (top right of the movie page) or **Pop out** in the notification: a small window shows what's playing; its play/pause works.
 
 **Send:** which phones the tap worked on, how in-step it sounded, and a screenshot of anything that didn't work.
-4. Settings → Experimental → turn on **Signature Intro**, start a movie: the opening titles play on the TV, then the
-   movie; headphone sound should start with the film, not during the titles.
+4. Settings → Experimental → turn on **Signature Intro**, start a movie: the Quantari logo shows on the TV, then the
+   movie; headphone sound should start with the film, not during the logo.
