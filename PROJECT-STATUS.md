@@ -1,6 +1,6 @@
 # Project status
 
-_Last updated: 2026-11-21. 0.5.9 (owner releases when ready): intro as a title card (no player bar), reliable ad muting, The Frame search, instant YouTube card, Stop from the notification, refresh buzz. Repository is public: in-app updates come from its releases/ folder_
+_Last updated: 2026-11-21. 0.5.9 (released, also in releases/ for in-app updates): intro as a title card (no player bar), reliable ad muting, The Frame search, instant YouTube card, Stop from the notification, refresh buzz. Repository is public: in-app updates come from its releases/ folder_
 
 ## 0.5.9: owner feedback
 
@@ -13,6 +13,7 @@ _Last updated: 2026-11-21. 0.5.9 (owner releases when ready): intro as a title c
 | YouTube card takes ~10 s after coming back | The app kept watching TVs only while open. Now it keeps watching for 10 minutes after you leave, asks every TV for its status the moment you come back, and watches TVs seen in the last 45 s | Compiles; needs HW-23 |
 | Notification Stop didn't stop YouTube | Stop only went through the TV watcher, which wasn't running in the background. Now it also opens its own connection to the TV (address remembered across restarts) and stops the app there | `CastStopperTest` with a fake Chromecast |
 | Buzz when pull-to-refresh is released | Gentle confirm haptic on release | Compiles |
+| Audit fix | Ad mute falls back to YouTube's own mute when the TV connection isn't open (app in the background 10+ minutes), so adverts are still muted and unmuted | Compiles |
 
 
 ## 0.5.8: owner feedback

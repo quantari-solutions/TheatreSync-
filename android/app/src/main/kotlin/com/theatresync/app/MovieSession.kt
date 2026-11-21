@@ -1244,7 +1244,15 @@ class MovieSession(private val app: Application) {
         // Not while YouTube sound is in the headphones (the TV is meant to stay quiet then).
         setTvMuted = { tvId, muted ->
             if (isDial(tvId)) false
-            else { if (_ui.value.youTubeHeadphonesTv != tvId) main.post { tvWatchers.setMuted(tvId, muted) }; true }
+            else if (_ui.value.youTubeHeadphonesTv == tvId) true
+            else {
+                // Only if the TV is being watched right now (e.g. not after 10+ minutes in the background):
+                // otherwise false, and YouTube's own mute is used, so adverts are always muted and unmuted.
+                val done = java.util.concurrent.CountDownLatch(1)
+                var ok = false
+                main.post { try { ok = tvWatchers.setMuted(tvId, muted) != null } finally { done.countDown() } }
+                done.await(2, java.util.concurrent.TimeUnit.SECONDS) && ok
+            }
         },
         positionSec = { tvId -> rawNowCasting.firstOrNull { it.tvId == tvId }?.activity?.currentTimeSec },
         onAction = { _, what ->
