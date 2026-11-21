@@ -1,11 +1,21 @@
-# Signature Intro (Settings → Experimental)
+# Signature Intro and opening
 
-`android/app/src/main/res/raw/signature_intro.mp4` (1920×1080, H.264 + silent stereo AAC, 4.3 s, ~360 KB):
-the Quantari Solutions wordmark from quantari-solutions.vercel.app with the site's gold sheen, then
-"PRESENTED WITH / TheatreSync / a Quantari Solutions module", on the app's dark theme with a soft gold glow.
-It plays on the TV before each movie when the switch is on; the phone queues it ahead of the movie and keeps
-the headphones silent until the film itself is on screen.
+**Phone (opening when the app starts fresh):** drawn by the app itself in
+[`OpeningAnimation.kt`](../../android/app/src/main/kotlin/com/theatresync/app/OpeningAnimation.kt), not a video,
+so text is rendered at the phone's own resolution and laid out for a tall screen. The logo is
+`res/drawable-nodpi/quantari_wordmark.webp` (lossless copy of `card_wordmark.png`). Screenshot test: `opening1`.
 
-Re-make: `node reccard.js` (records `card.html` with Playwright; needs `card_wordmark.png` next to it), then
-`ffmpeg -ss 0.15 -t 4.3 -i <recording>.webm -f lavfi -t 4.3 -i anullsrc=channel_layout=stereo:sample_rate=48000
--vf fps=30,format=yuv420p,fade=t=in:st=0:d=0.3 -c:v libx264 -profile:v high -crf 20 -c:a aac -b:a 64k -movflags +faststart -shortest signature_intro.mp4`.
+**TV (Settings → Experimental → Signature intro):** `android/app/src/main/res/raw/signature_intro.mp4`
+(1920×1080 H.264 High@4.1, 30 fps, 4.3 s, silent stereo AAC, ~0.5 MB). It plays before each movie, YouTube
+and mirroring; the headphones stay silent until the film itself is on screen.
+
+Re-make the TV clip from `card.html` (needs `card_wordmark.png` next to it):
+
+```
+node render.js frames      # every frame as a lossless PNG at exact times (Playwright)
+ffmpeg -framerate 30 -i frames/%04d.png -f lavfi -t 4.3 -i anullsrc=channel_layout=stereo:sample_rate=48000 \
+  -vf "fade=t=in:st=0:d=0.3,format=yuv420p" -c:v libx264 -profile:v high -level 4.1 -preset slower -crf 12 \
+  -tune animation -x264-params aq-mode=3 -c:a aac -b:a 64k -movflags +faststart -shortest signature_intro.mp4
+```
+
+(Earlier versions recorded the page as a video first, which lost detail before encoding.)
