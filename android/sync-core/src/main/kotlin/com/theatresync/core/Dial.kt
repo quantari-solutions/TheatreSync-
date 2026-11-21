@@ -18,6 +18,8 @@ import java.net.URL
  */
 object Dial {
     const val SEARCH_TARGET = "urn:dial-multiscreen-org:service:dial:1"
+    /** Samsung TVs (e.g. The Frame) also answer this, even when they ignore the DIAL search. */
+    const val SAMSUNG_TARGET = "urn:samsung.com:device:RemoteControlReceiver:1"
     private const val SSDP_HOST = "239.255.255.250"
     private const val SSDP_PORT = 1900
 
@@ -40,15 +42,20 @@ object Dial {
 
     // ------------------------------------------------------------------ parsing (pure)
 
-    fun searchRequest(): String =
-        "M-SEARCH * HTTP/1.1\r\nHOST: $SSDP_HOST:$SSDP_PORT\r\nMAN: \"ssdp:discover\"\r\nMX: 2\r\nST: $SEARCH_TARGET\r\n\r\n"
+    fun searchRequest(target: String = SEARCH_TARGET): String =
+        "M-SEARCH * HTTP/1.1\r\nHOST: $SSDP_HOST:$SSDP_PORT\r\nMAN: \"ssdp:discover\"\r\nMX: 2\r\nST: $target\r\n" +
+            "USER-AGENT: Android/15 UPnP/1.1 TheatreSync/1.0\r\n\r\n"
 
-    /** The LOCATION header of an SSDP search response, or null if it isn't a DIAL answer. */
+    /** The LOCATION header of an SSDP search response, or null if it isn't a DIAL (or Samsung TV) answer. */
     fun locationFrom(response: String): String? {
         val lines = response.split("\r\n", "\n")
-        if (lines.none { it.trim().equals("ST: $SEARCH_TARGET", true) || it.contains(SEARCH_TARGET, true) }) return null
+        if (lines.none { it.contains(SEARCH_TARGET, true) || it.contains(SAMSUNG_TARGET, true) }) return null
         return lines.firstOrNull { it.startsWith("LOCATION:", true) }?.substringAfter(':')?.trim()?.takeIf { it.startsWith("http") }
     }
+
+    /** Samsung TVs serve DIAL apps here even when their description doesn't say so. */
+    fun samsungAppsUrl(location: String): String? =
+        Regex("^https?://([^/:]+)").find(location)?.groupValues?.get(1)?.let { "http://$it:8080/ws/apps/" }
 
     fun tag(xml: String, name: String): String? =
         Regex("<(?:\\w+:)?$name>\\s*([^<]*?)\\s*</(?:\\w+:)?$name>", RegexOption.IGNORE_CASE).find(xml)?.groupValues?.get(1)
@@ -56,7 +63,8 @@ object Dial {
 
     /** Device from its UPnP description XML plus the Application-URL response header. */
     fun deviceFrom(location: String, descriptionXml: String, applicationUrl: String?): Device? {
-        val apps = applicationUrl?.trim()?.takeIf { it.startsWith("http") } ?: return null
+        val samsung = tag(descriptionXml, "manufacturer")?.contains("Samsung", true) == true
+        val apps = applicationUrl?.trim()?.takeIf { it.startsWith("http") } ?: (if (samsung) samsungAppsUrl(location) else null) ?: return null
         val name = tag(descriptionXml, "friendlyName") ?: return null
         return Device(
             id = tag(descriptionXml, "UDN") ?: location,
@@ -82,13 +90,24 @@ object Dial {
      * Sends an SSDP search and collects DIAL TVs that answer within [timeoutMs].
      * Chromecasts are left out (they are found through the Cast SDK).
      */
-    fun discover(timeoutMs: Int = 2_500, http: (String) -> Pair<String, String?> = ::fetchDescription): List<Device> {
+    fun discover(
+        timeoutMs: Int = 4_000,
+        http: (String) -> Pair<String, String?> = ::fetchDescription,
+        /** The app binds this to the Wi-Fi network, so the search never goes out over mobile data. */
+        socketFactory: () -> DatagramSocket = { DatagramSocket() },
+    ): List<Device> {
         val locations = LinkedHashSet<String>()
-        DatagramSocket().use { socket ->
+        socketFactory().use { socket ->
             socket.soTimeout = 300
-            val request = searchRequest().toByteArray()
             val group = InetAddress.getByName(SSDP_HOST)
-            repeat(2) { socket.send(DatagramPacket(request, request.size, group, SSDP_PORT)) } // UDP may drop one
+            // Both searches, three times each, a little apart (UDP on Wi-Fi drops packets).
+            repeat(3) {
+                for (target in listOf(SEARCH_TARGET, SAMSUNG_TARGET)) {
+                    val request = searchRequest(target).toByteArray()
+                    socket.send(DatagramPacket(request, request.size, group, SSDP_PORT))
+                }
+                Thread.sleep(150)
+            }
             val deadline = System.currentTimeMillis() + timeoutMs
             val buf = ByteArray(4096)
             while (System.currentTimeMillis() < deadline) {
@@ -106,7 +125,7 @@ object Dial {
                 val (xml, appsUrl) = http(loc)
                 deviceFrom(loc, xml, appsUrl)
             }.getOrNull()
-        }.filterNot { it.isChromecast }.distinctBy { it.id }
+        }.filterNot { it.isChromecast }.distinctBy { it.id }.distinctBy { it.appsUrl }
     }
 
     /** Description XML and the Application-URL header. */

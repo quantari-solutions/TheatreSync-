@@ -1,0 +1,8 @@
+{
+  "versionCode": 24,
+  "versionName": "0.5.9",
+  "apkUrl": "https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases/TheatreSync-0.5.9.apk",
+  "sha256": "9275859b68bb6739e57fd4028cdc489544b4524b23a8741274df77251b8c56a0",
+  "sizeBytes": 29434875,
+  "notes": "Intro is now a title card (no progress bar); adverts muted at the start and unmuted as they end; The Frame and other Samsung TVs found; YouTube card appears at once; notification Stop works for YouTube; gentle buzz on refresh."
+}

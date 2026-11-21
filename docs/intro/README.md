@@ -5,18 +5,21 @@
 so text is rendered at the phone's own resolution and laid out for a tall screen. The logo is
 `res/drawable-nodpi/quantari_wordmark.webp` (lossless copy of `card_wordmark.png`). Screenshot test: `opening1`.
 
-**TV (Settings → Experimental → Signature intro):** `android/app/src/main/res/raw/signature_intro.mp4`
-(1920×1080 H.264 High@4.1, 30 fps, 6.6 s, silent stereo AAC, ~1.1 MB). It plays before each movie, YouTube
-and mirroring; the headphones stay silent until the film itself is on screen.
+**TV (Settings → Experimental → Signature intro):** `android/app/src/main/res/raw/signature_intro_pic.webp`, an
+**animated picture** (1600×900, 30 fps, 6.6 s, plays once and ends on black, ~3 MB). The Chromecast shows pictures
+full-screen with no player controls, progress bar or time, so the intro looks like a title card rather than a video
+(the owner saw "0:04" and a progress bar with the earlier video version). The phone waits 6.6 s, then starts the
+movie / YouTube / mirroring.
 
-Re-make the TV clip from `card.html` (needs `card_wordmark.png` next to it):
+Re-make from `card.html` (needs `card_wordmark_soft.png` next to it):
 
 ```
-node render.js frames      # every frame as a lossless PNG at exact times (Playwright)
-ffmpeg -framerate 30 -i frames/%04d.png -f lavfi -t 6.6 -i anullsrc=channel_layout=stereo:sample_rate=48000 \
-  -vf "format=yuv420p" -c:v libx264 -profile:v high -level 4.1 -preset slower -crf 12 \
-  -tune animation -x264-params aq-mode=3 -c:a aac -b:a 64k -movflags +faststart -shortest signature_intro.mp4
+node render.js frames card.html 6600      # every frame as a lossless PNG at exact times (Playwright)
+python3 -c "from PIL import Image;import glob;f=[Image.open(x).convert('RGB').resize((1600,900),Image.LANCZOS) for x in sorted(glob.glob('frames/*.png'))];f[0].save('signature_intro_pic.webp',save_all=True,append_images=f[1:],duration=33,loop=1,quality=88,method=4,kmin=1,kmax=1,minimize_size=False,allow_mixed=False)"
 ```
+
+Every frame is stored whole (kmin=kmax=1): ffmpeg's animated WebP encoder stores only changed rectangles,
+which left visible blocks around the glow.
 
 Timeline (same on phone and TV, slow on purpose so the glow leads): glow rises 0–1.8 s; logo 0.3–1.8 s;
 gold sheen across the logo 1.4–3.3 s; "PRESENTED WITH" 2.3 s; title 2.7–3.9 s with its glow blooming

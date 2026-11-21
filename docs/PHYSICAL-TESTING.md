@@ -258,3 +258,14 @@ the YouTube volume changes. Send one screenshot of step 1 and one of step 3, and
 3. Android asks "Do you want to update this app?" → **Update**. TheatreSync restarts on the new version; your settings stay.
 
 **Send:** a screenshot of About before and after, and anything that went wrong.
+
+## HW-23 — Intro, ads, The Frame, quick YouTube card, notification Stop (0.5.9)
+
+1. Start a movie or YouTube with the Signature Intro on: the TV shows the logo and titles with **no progress bar or time**.
+2. YouTube video with an unskippable ad: sound goes off when the ad starts and comes back by itself as it ends. Try a few ads; the sound must never stay off.
+3. Turn The Frame on, open Choose your TV (pull down to refresh): it's listed as "Smart TV · YouTube only".
+4. Cast YouTube, leave TheatreSync for a few minutes, come back: the YouTube card is there straight away.
+5. While YouTube plays, pull down the notification shade → **Stop casting**: YouTube stops on the TV.
+6. Pull down to refresh anywhere: a gentle buzz when you let go.
+
+**Send:** whether any ad left the sound off, whether The Frame appeared, and a photo of the intro on the TV.

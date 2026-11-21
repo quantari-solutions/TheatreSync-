@@ -14,6 +14,14 @@ class CastIntroTest {
         assertTrue(json.contains("\"autoplay\":true"))
     }
 
+    @Test fun introAsAPictureHasNoPlayerOrTitle() {
+        val r = CastIntro.loadRequest("http://192.168.1.82:40000/intro", image = true)
+        val json = kotlinx.serialization.json.Json.parseToJsonElement(r).toString()
+        assertTrue(json.contains("\"contentType\":\"image/webp\""))
+        assertTrue(json.contains("\"metadataType\":4"))
+        assertTrue(!json.contains("title"))
+    }
+
     @Test fun readsPlayerState() {
         assertEquals("PLAYING", CastIntro.playerState("""{"type":"MEDIA_STATUS","status":[{"playerState":"PLAYING","currentTime":1.2}]}"""))
         assertEquals("IDLE", CastIntro.playerState("""{"type":"MEDIA_STATUS","status":[{"playerState":"IDLE","idleReason":"FINISHED"}]}"""))

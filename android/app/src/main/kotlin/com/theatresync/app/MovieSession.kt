@@ -267,6 +267,12 @@ class MovieSession(private val app: Application) {
 
     /** Call while the setup screen is visible. */
     private fun startTvSearchUnsafe() {
+        main.removeCallbacks(stopWatchers)
+        samsungFinder.start()
+        main.removeCallbacks(dialRepeat)
+        main.postDelayed(dialRepeat, 60_000)
+        // Back in the app: ask every TV for its status now (the card appears with no wait).
+        tvWatchers.pollAll()
         scanDial()
         if (castContext == null) return
         applyScanMode()
@@ -279,6 +285,26 @@ class MovieSession(private val app: Application) {
     private data class SeenTv(val tv: Tv, val known: TvWatchers.Tv?, val seenAtMs: Long)
     private val seenTvs = LinkedHashMap<String, SeenTv>()
     private val dialTvs = java.util.concurrent.ConcurrentHashMap<String, Dial.Device>()
+    /** When each smart TV last answered: one missed search doesn't drop it (kept 3 minutes). */
+    private val dialSeen = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private val samsungFinder by lazy {
+        SamsungTvFinder(app) { d -> main.post { addSmartTv(d) } }
+    }
+    /** While the app is open: look for smart TVs again every minute. */
+    private val dialRepeat = object : Runnable {
+        override fun run() { guard("dial repeat") { lastDialScanMs = 0L; scanDial() }; main.postDelayed(this, 60_000) }
+    }
+
+    private fun addSmartTv(d: Dial.Device) {
+        // The same TV found two ways (DIAL search and Samsung announcement): keep one.
+        if (dialTvs.values.any { it.appsUrl == d.appsUrl && "dial:${it.id}" != "dial:${d.id}" }) {
+            dialTvs.entries.firstOrNull { it.value.appsUrl == d.appsUrl }?.let { dialSeen[it.key] = SystemClock.elapsedRealtime() }
+            return
+        }
+        dialTvs["dial:${d.id}"] = d
+        dialSeen["dial:${d.id}"] = SystemClock.elapsedRealtime()
+        publishTvs()
+    }
     @Volatile private var dialScanning = false
     private var lastDialScanMs = 0L
 
@@ -300,10 +326,11 @@ class MovieSession(private val app: Application) {
             val wifi = app.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
             val lock = runCatching { wifi.createMulticastLock("theatresync-dial").apply { setReferenceCounted(false); acquire() } }.getOrNull()
             try {
-                val found = Dial.discover()
+                val found = Dial.discover(socketFactory = ::wifiSocket)
                 main.post {
-                    dialTvs.clear()
-                    found.forEach { dialTvs["dial:${it.id}"] = it }
+                    found.forEach { addSmartTv(it) }
+                    val now2 = SystemClock.elapsedRealtime()
+                    dialTvs.keys.filter { now2 - (dialSeen[it] ?: 0L) > 180_000 }.forEach { dialTvs.remove(it); dialSeen.remove(it) }
                     publishTvs()
                 }
             } catch (e: Exception) {
@@ -313,6 +340,18 @@ class MovieSession(private val app: Application) {
                 dialScanning = false
             }
         }, "dial-scan").apply { isDaemon = true }.start()
+    }
+
+    /** A UDP socket on the Wi-Fi network (not mobile data), for the smart-TV search. */
+    @Suppress("DEPRECATION")
+    private fun wifiSocket(): java.net.DatagramSocket {
+        val socket = java.net.DatagramSocket()
+        runCatching {
+            val cm = app.getSystemService(android.net.ConnectivityManager::class.java)
+            cm.allNetworks.firstOrNull { cm.getNetworkCapabilities(it)?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) == true }
+                ?.bindSocket(socket)
+        }
+        return socket
     }
 
     private fun isDial(tvId: String) = tvId.startsWith("dial:")
@@ -339,10 +378,19 @@ class MovieSession(private val app: Application) {
         )
     }
 
+    /**
+     * Leaving the app: stop the Wi-Fi scan at once (battery), but keep watching the TVs for 10 minutes,
+     * so coming back shows what's playing straight away (and the notification's controls keep working).
+     */
     private fun stopTvSearchUnsafe() {
         router.removeCallback(routerCallback)
-        tvWatchers.stopAll()
+        samsungFinder.stop()
+        main.removeCallbacks(dialRepeat)
+        main.removeCallbacks(stopWatchers)
+        main.postDelayed(stopWatchers, 10 * 60_000L)
     }
+
+    private val stopWatchers = Runnable { guard("stop watchers") { tvWatchers.stopAll() } }
 
     private fun refreshTvs() {
         val routes = router.routes.filter { !it.isDefault && it.isEnabled && it.matchesSelector(selector) }
@@ -362,13 +410,9 @@ class MovieSession(private val app: Application) {
         castTvs = seenTvs.values.map { it.tv }.sortedBy { it.name.lowercase() }
         publishTvs()
         knownTvs = seenTvs.values.mapNotNull { it.known }
-        tvWatchers.update(
-            routes.mapNotNull { r ->
-                val device = CastDevice.getFromBundle(r.extras) ?: return@mapNotNull null
-                val address = device.inetAddress ?: return@mapNotNull null
-                TvWatchers.Tv(r.id, r.name, address, device.servicePort.takeIf { it > 0 } ?: 8009)
-            },
-        )
+        prefs.edit { knownTvs.forEach { t -> putString("tvAddr_${t.id}", "${t.name}|${t.address.hostAddress}|${t.port}") } }
+        // Watch every TV seen in the last 45 s, so a brief gap in discovery doesn't drop its card.
+        tvWatchers.update(knownTvs)
     }
 
     private fun publishNowCasting(list: List<TvWatchers.NowCasting>) {
@@ -482,9 +526,20 @@ class MovieSession(private val app: Application) {
             return
         }
         tvWatchers.stopCasting(tvId)
+        // Also over a connection of its own, so Stop works even when the TV isn't being watched right now
+        // (app in the background or just restarted: the notification's Stop button).
+        tvAddress(tvId)?.let { tv ->
+            Thread({ runCatching { com.theatresync.core.CastStopper.stop({ TvWatchers.openTls(tv.address, tv.port) }) } }, "cast-stop").apply { isDaemon = true }.start()
+        }
         if (a?.appId == CastStatus.APP_YOUTUBE) resetYouTube()
         if (castSession == null) CastIndicator.hide(app)
     }
+
+    /** A TV's network address: from discovery, or remembered from before (works right after a restart too). */
+    private fun tvAddress(tvId: String): TvWatchers.Tv? = knownTvs.firstOrNull { it.id == tvId }
+        ?: prefs.getString("tvAddr_$tvId", null)?.split('|')?.takeIf { it.size == 3 }?.let { (name, ip, port) ->
+            runCatching { TvWatchers.Tv(tvId, name, java.net.InetAddress.getByName(ip), port.toInt()) }.getOrNull()
+        }
 
     /**
      * Signature Intro before YouTube or mirroring: plays the clip on a Chromecast and returns when it
@@ -501,10 +556,10 @@ class MovieSession(private val app: Application) {
             stateProvider = { null },
             helloProvider = { Payload.Hello(Build.MODEL.take(64).ifBlank { "Android" }, Platform.ANDROID, Role.HOST, BuildConfig.VERSION_NAME, listOf(1)) },
         )
-        srv.intro = RawResourceSource(app, R.raw.signature_intro, "TheatreSync")
+        srv.intro = RawResourceSource(app, R.raw.signature_intro_pic, "TheatreSync", "image/webp")
         try {
             val port = srv.start()
-            CastIntro({ TvWatchers.openTls(tv.address, tv.port) }).play("http://$ip:$port/intro")
+            CastIntro({ TvWatchers.openTls(tv.address, tv.port) }).play("http://$ip:$port/intro", imageMs = INTRO_MS)
         } catch (e: Exception) {
             CrashReporter.handled(app, "signature intro before cast", e) // never block the cast itself
         } finally {
@@ -1036,31 +1091,27 @@ class MovieSession(private val app: Application) {
         pendingResumeMs = 0L
         _ui.update { it.copy(tvSoundless = tvSource !== m) }
         introUrl = null
-        val request = if (_ui.value.signatureIntro && resumeAt == 0L) {
-            // Signature intro: Quantari + TheatreSync titles play first, then the movie (one queue,
-            // so the TV goes straight from the titles into the film).
-            srv.intro = RawResourceSource(app, R.raw.signature_intro, "TheatreSync")
+        val movieRequest = MediaLoadRequestData.Builder().setMediaInfo(info).setAutoplay(false).setCurrentTime(resumeAt)
+            .apply { activeTracks?.let { setActiveTrackIds(it) } }.build()
+        fun loadMovie() {
+            if (server !== srv) return // stopped meanwhile
+            client.load(movieRequest).setResultCallback { result -> if (!result.status.isSuccess) say(R.string.msg_tv_cant_play) }
+        }
+        if (_ui.value.signatureIntro && resumeAt == 0L) {
+            // Signature intro first, as an animated picture: the TV shows pictures full-screen with no player
+            // controls, progress bar or time, so it looks like a title card, not a video. Then the movie.
+            srv.intro = RawResourceSource(app, R.raw.signature_intro_pic, "TheatreSync", "image/webp")
             val introAt = "http://$ip:$port/intro"
             introUrl = introAt
             val introInfo = MediaInfo.Builder(introAt).setContentUrl(introAt)
-                .setStreamType(MediaInfo.STREAM_TYPE_BUFFERED).setContentType("video/mp4")
-                .setMetadata(MediaMetadata(MediaMetadata.MEDIA_TYPE_MOVIE).apply { putString(MediaMetadata.KEY_TITLE, "TheatreSync") })
+                .setStreamType(MediaInfo.STREAM_TYPE_NONE).setContentType("image/webp")
+                .setMetadata(MediaMetadata(MediaMetadata.MEDIA_TYPE_PHOTO))
                 .build()
-            val queue = com.google.android.gms.cast.MediaQueueData.Builder()
-                .setItems(listOf(
-                    com.google.android.gms.cast.MediaQueueItem.Builder(introInfo).setAutoplay(true).setPreloadTime(4.0).build(),
-                    com.google.android.gms.cast.MediaQueueItem.Builder(info).setAutoplay(false).setStartTime(resumeAt / 1000.0)
-                        .apply { activeTracks?.let { setActiveTrackIds(it) } }.build(),
-                ))
-                .setStartIndex(0)
-                .build()
-            MediaLoadRequestData.Builder().setQueueData(queue).setAutoplay(true).build()
+            client.load(MediaLoadRequestData.Builder().setMediaInfo(introInfo).setAutoplay(true).build()).setResultCallback { r ->
+                if (r.status.isSuccess) main.postDelayed({ guard("movie after intro") { loadMovie() } }, INTRO_MS) else loadMovie()
+            }
         } else {
-            MediaLoadRequestData.Builder().setMediaInfo(info).setAutoplay(false).setCurrentTime(resumeAt)
-                .apply { activeTracks?.let { setActiveTrackIds(it) } }.build()
-        }
-        client.load(request).setResultCallback { result ->
-            if (!result.status.isSuccess) say(R.string.msg_tv_cant_play)
+            loadMovie()
         }
 
         applyTvMute()
@@ -1174,9 +1225,35 @@ class MovieSession(private val app: Application) {
     // ------------------------------------------------------------- YouTube ad skipper
 
     private val adSkipper = AdSkipper(
-        connect = { tvId -> YouTubeLounge().let { l -> l to l.bind(l.loungeToken(prefs.getString("ytScreen_$tvId", null) ?: youTubeScreenId(tvId))) } },
+        connect = { tvId ->
+            val l = YouTubeLounge()
+            val remembered = prefs.getString("ytScreen_$tvId", null)
+            try {
+                l to l.bind(l.loungeToken(remembered ?: youTubeScreenId(tvId)))
+            } catch (e: Exception) {
+                // YouTube revokes old TV codes from time to time: get a fresh one and remember it.
+                if (remembered == null) throw e
+                val fresh = youTubeScreenId(tvId)
+                prefs.edit { putString("ytScreen_$tvId", fresh) }
+                l to l.bind(l.loungeToken(fresh))
+            }
+        },
         // Pause / seek / next on the TV: fetch its exact position now, so headphones follow at once.
         onPlayerChange = { tvId -> main.post { tvWatchers.pollNow(tvId) } },
+        // Mute adverts with the Chromecast's own volume: instant, and the volume level is left untouched.
+        // Not while YouTube sound is in the headphones (the TV is meant to stay quiet then).
+        setTvMuted = { tvId, muted ->
+            if (isDial(tvId)) false
+            else if (_ui.value.youTubeHeadphonesTv == tvId) true
+            else {
+                // Only if the TV is being watched right now (e.g. not after 10+ minutes in the background):
+                // otherwise false, and YouTube's own mute is used, so adverts are always muted and unmuted.
+                val done = java.util.concurrent.CountDownLatch(1)
+                var ok = false
+                main.post { try { ok = tvWatchers.setMuted(tvId, muted) != null } finally { done.countDown() } }
+                done.await(2, java.util.concurrent.TimeUnit.SECONDS) && ok
+            }
+        },
         positionSec = { tvId -> rawNowCasting.firstOrNull { it.tvId == tvId }?.activity?.currentTimeSec },
         onAction = { _, what ->
             main.post {
@@ -1545,6 +1622,8 @@ class MovieSession(private val app: Application) {
         private const val TICK_MS = 200L
         private const val KEY_MOVIE_URI = "movieUri"
         private const val TV_START_TIMEOUT_MS = 20_000L
+        /** Length of the Signature Intro picture animation (docs/intro/card.html). */
+        private const val INTRO_MS = 6_600L
         private const val SUBTITLE_TRACK = 1L
         private const val KEY_WE_MUTED = "weMutedTv"
     }

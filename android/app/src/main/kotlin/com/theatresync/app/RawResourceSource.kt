@@ -6,9 +6,8 @@ import java.io.FileInputStream
 import java.io.InputStream
 
 /** A video bundled in res/raw (stored uncompressed), served to the TV like a movie file. */
-class RawResourceSource(context: Context, private val resId: Int, override val title: String) : MediaSource {
+class RawResourceSource(context: Context, private val resId: Int, override val title: String, override val mimeType: String = "video/mp4") : MediaSource {
     private val app = context.applicationContext
-    override val mimeType = "video/mp4"
     override val sizeBytes: Long = app.resources.openRawResourceFd(resId).use { it.length }
 
     override fun open(offset: Long): InputStream {

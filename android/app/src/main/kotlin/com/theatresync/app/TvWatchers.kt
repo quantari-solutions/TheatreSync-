@@ -52,6 +52,9 @@ class TvWatchers(private val onChange: (List<NowCasting>) -> Unit) {
 
     fun pollNow(tvId: String) = watchers[tvId]?.second?.pollNow()
 
+    /** Ask every watched TV for its status right away. */
+    fun pollAll() = watchers.values.forEach { it.second.pollNow() }
+
     fun setVolume(tvId: String, level: Double) = watchers[tvId]?.second?.setVolume(level)
 
     fun setMuted(tvId: String, muted: Boolean) = watchers[tvId]?.second?.setMuted(muted)

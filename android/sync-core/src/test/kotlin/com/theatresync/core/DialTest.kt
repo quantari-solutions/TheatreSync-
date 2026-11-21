@@ -33,7 +33,9 @@ class DialTest {
     }
 
     @Test fun needsApplicationUrl() {
-        assertNull(Dial.deviceFrom("http://x/", description, null))
+        // Other makers must say where their DIAL apps are; Samsung TVs are known to use :8080/ws/apps/.
+        assertNull(Dial.deviceFrom("http://x/", description.replace("Samsung Electronics", "LG Electronics"), null))
+        assertEquals("http://x:8080/ws/apps/", Dial.deviceFrom("http://x/", description, null)!!.appsUrl)
     }
 
     @Test fun recognisesChromecastsAnsweringDial() {
@@ -54,5 +56,16 @@ class DialTest {
         assertTrue(r.startsWith("M-SEARCH * HTTP/1.1\r\n"))
         assertTrue(r.contains("ST: urn:dial-multiscreen-org:service:dial:1"))
         assertTrue(r.endsWith("\r\n\r\n"))
+    }
+
+    @Test fun samsungTvFoundEvenWithoutTheDialAnswer() {
+        val ssdp = "HTTP/1.1 200 OK\r\nST: urn:samsung.com:device:RemoteControlReceiver:1\r\nLOCATION: http://192.168.1.50:7676/smp_15_\r\n\r\n"
+        val loc = Dial.locationFrom(ssdp)
+        assertEquals("http://192.168.1.50:7676/smp_15_", loc)
+        val xml = "<root><device><friendlyName>[TV] Samsung The Frame</friendlyName><manufacturer>Samsung Electronics</manufacturer><UDN>uuid:frame</UDN></device></root>"
+        val d = Dial.deviceFrom(loc!!, xml, null)!!
+        assertEquals("http://192.168.1.50:8080/ws/apps/", d.appsUrl)
+        assertEquals("[TV] Samsung The Frame", d.name)
+        assertTrue(Dial.searchRequest(Dial.SAMSUNG_TARGET).contains("ST: urn:samsung.com:device:RemoteControlReceiver:1"))
     }
 }
