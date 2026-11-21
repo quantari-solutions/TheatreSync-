@@ -29,6 +29,8 @@ class ScreenshotTest {
     private fun playing(ui: Ui) = shot { PlayingScreen(ui, {}, {}, {}, {}, {}, {}, {}, {}) }
 
     @Test fun setup1_empty() = setup(Ui())
+    /** Opening on a phone: drawn by the app (sharp, portrait), frozen once everything is on screen. */
+    @Test fun opening1() = paparazzi.snapshot { QuantariTheme { OpeningAnimation(frameMs = 5000) {} } }
     /** TapIn guests on the host: sync for each, sound/volume/remove; long names stay on one line. */
     @Test fun guests1() = shot {
         androidx.compose.foundation.layout.Column(

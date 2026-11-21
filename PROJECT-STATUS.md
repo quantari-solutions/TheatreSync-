@@ -1,6 +1,14 @@
 # Project status
 
-_Last updated: 2026-11-20. 0.5.5 (owner releases when ready): host controls TapIn guests; live join/leave; sync for every device_
+_Last updated: 2026-11-21. 0.5.6 (owner releases when ready): sharp, phone-shaped opening; high-quality TV intro. 0.5.5 released 2026-11-21_
+
+## 0.5.6: opening looks professional
+
+| Request | Done | Verified |
+|---|---|---|
+| Opening looked compressed and not legit (owner screenshot) | Cause: the 16:9 TV clip was stretched to fill a tall phone screen, and the clip came from a lossy screen recording. Phone opening is now drawn by the app (Inter text at the phone's resolution, lossless logo, gold sheen, same timing), laid out for portrait; tap to skip | Screenshot test `opening1` |
+| Smoother, let the glow lead (owner) | Slower 6.6 s timeline with gentle easing: the glow rises first, the sheen crosses the logo slowly, the title's glow blooms in, then the whole glow swells once before the fade. Phone animation runs at the screen's own refresh rate; TV clip 30 fps (safe for older Chromecasts) | Screenshot at peak glow; TV key frames checked |
+| TV intro quality | Re-rendered frame by frame from `card.html` (lossless PNGs) and encoded at High@4.1 CRF 12: 43 dB PSNR vs the source frames. Logo letters no longer fade at the edges (phone and TV) | ffprobe; frame comparison |
 
 ## 0.5.5: host controls TapIn guests
 
