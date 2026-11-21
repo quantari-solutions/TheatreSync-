@@ -1,8 +1,8 @@
 {
-  "versionCode": 24,
-  "versionName": "0.5.9",
-  "apkUrl": "https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases/TheatreSync-0.5.9.apk",
-  "sha256": "9275859b68bb6739e57fd4028cdc489544b4524b23a8741274df77251b8c56a0",
-  "sizeBytes": 29434875,
-  "notes": "Intro is now a title card (no progress bar); adverts muted at the start and unmuted as they end; The Frame and other Samsung TVs found; YouTube card appears at once; notification Stop works for YouTube; gentle buzz on refresh."
+  "versionCode": 25,
+  "versionName": "0.6.0",
+  "apkUrl": "https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases/TheatreSync-0.6.0.apk",
+  "sha256": "ac46fb073e1ed589d9e401a88d411079a04b9fabac18d8d3f4068bfcde1b6297",
+  "sizeBytes": 26890880,
+  "notes": "The TV intro plays again: logo and titles with no progress bar or time. The refresh arrow now spins two full turns."
 }
