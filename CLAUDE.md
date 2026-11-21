@@ -9,6 +9,9 @@
   publish with `scripts/publish-release.sh releases "notes" https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases`,
   merge that PR, and the phone offers it in Settings → About → Update. Don't send APK files in chat
   unless the owner asks. Keep only the newest APK in `releases/`. See docs/RELEASING.md.
+- **Scheduled tasks / check-ins must be cheap** (owner, 2026-11-21): don't schedule check-ins into this
+  (expensive) session. GitHub PR events already wake the session for CI results. If a scheduled task is
+  really needed, make it start a fresh session and set its model to Haiku (`claude-haiku-5-5`).
 - The owner is not technical: explain results in plain language, and keep
   physical tests to simple steps + a screenshot (see docs/PHYSICAL-TESTING.md).
 
