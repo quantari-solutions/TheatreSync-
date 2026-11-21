@@ -224,6 +224,7 @@ class MainActivity : ComponentActivity() {
             QuantariTheme {
                 GridBackground {
                     val ui by session.ui.collectAsState()
+                    val updateState = AppUpdates.state.collectAsState()
                     var page by rememberSaveable { mutableStateOf(Page.HOME) }
                     var castTvId by rememberSaveable { mutableStateOf<String?>(null) }
                     val casting = ui.nowCasting.firstOrNull { it.tvId == castTvId }
@@ -419,6 +420,9 @@ class MainActivity : ComponentActivity() {
                                     onShareApp = ::shareApp,
                                     multiAudioOn = ui.multiAudio,
                                     onMultiAudio = { page = Page.MULTI_AUDIO },
+                                    updates = updateState.value,
+                                    onCheckUpdate = { AppUpdates.check(this@MainActivity, force = true) },
+                                    onUpdate = { AppUpdates.update(this@MainActivity) },
                                 )
                                 "experimental" -> ExperimentalScreen(
                                     ui = ui,
@@ -595,6 +599,8 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         refreshCrashes()
+        AppUpdates.check(this)        // quietly, at most every 10 minutes
+        AppUpdates.onResume(this)     // back from allowing updates: carry on
         session.startTvSearch()
         audioManager.registerAudioDeviceCallback(deviceCallback, null)
         refreshAudio()
@@ -1073,6 +1079,9 @@ internal fun SettingsScreen(
     onShareApp: () -> Unit = {},
     multiAudioOn: Boolean = false,
     onMultiAudio: () -> Unit = {},
+    updates: AppUpdates.State = AppUpdates.State(),
+    onCheckUpdate: () -> Unit = {},
+    onUpdate: () -> Unit = {},
 ) = Screen {
     TopBar(stringResource(R.string.settings), onBack)
     SettingsRow("🎛", stringResource(R.string.remote), null, onRemote, "settings_remote", status = stringResource(R.string.remote_status))
@@ -1087,11 +1096,35 @@ internal fun SettingsScreen(
     if (multiAudioOn) SettingsRow("🎶", stringResource(R.string.multi_audio), null, onMultiAudio, "settings_multi_audio", status = stringResource(R.string.multi_audio_status))
     SettingsRow("📤", stringResource(R.string.share_app), null, onShareApp, "settings_share", status = stringResource(R.string.share_app_status))
     SettingsRow("🧪", stringResource(R.string.experimental), null, onExperimental, "settings_experimental", status = stringResource(R.string.experimental_status))
-    QCard {
+    AboutCard(updates, onCheckUpdate, onUpdate)
+    Footer()
+}
+
+/** About: this version, and an update right under it when there is one (download + install in the app). */
+@Composable
+internal fun AboutCard(updates: AppUpdates.State, onCheck: () -> Unit, onUpdate: () -> Unit) {
+    val u = updates.available
+    QCard(highlighted = u != null) {
         Text(stringResource(R.string.about), style = MaterialTheme.typography.titleMedium, color = Q.Text)
+        Text(stringResource(R.string.version_line, BuildConfig.VERSION_NAME), color = Q.Text, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.testTag("version"))
+        when {
+            updates.downloadPercent != null -> StatusPill(stringResource(R.string.update_downloading, updates.downloadPercent), Q.Primary, pulsing = true)
+            updates.installing -> StatusPill(stringResource(R.string.update_installing), Q.Primary, pulsing = true)
+            u != null -> {
+                StatusPill(stringResource(R.string.update_available, u.versionName), Q.Success)
+                if (u.notes.isNotBlank()) Hint(u.notes)
+                GoldButton(stringResource(R.string.update_now), onUpdate, Modifier.fillMaxWidth().testTag("update_now"), height = 52.dp)
+                if (updates.needsPermission) Hint(stringResource(R.string.update_permission))
+            }
+            updates.checking -> StatusPill(stringResource(R.string.update_checking), Q.TextMuted, pulsing = true)
+            updates.upToDate -> Hint(stringResource(R.string.update_none))
+        }
+        updates.error?.let { Text(it, color = Q.Error, style = MaterialTheme.typography.bodyMedium) }
+        if (u == null && updates.downloadPercent == null && !updates.installing) {
+            GhostButton(stringResource(R.string.update_check), onCheck, Modifier.fillMaxWidth().testTag("update_check"), height = 44.dp)
+        }
         Hint(stringResource(R.string.about_text, BuildConfig.VERSION_NAME))
     }
-    Footer()
 }
 
 @Composable

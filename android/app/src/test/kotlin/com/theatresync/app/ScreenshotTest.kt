@@ -29,6 +29,14 @@ class ScreenshotTest {
     private fun playing(ui: Ui) = shot { PlayingScreen(ui, {}, {}, {}, {}, {}, {}) }
 
     @Test fun setup1_empty() = setup(Ui())
+    /** Settings → About with an update waiting, and while it downloads. */
+    @Test fun about1_updateAvailable() = shot {
+        androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.padding(20.dp), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)) {
+            AboutCard(AppUpdates.State(available = com.theatresync.core.UpdateInfo(99, "0.6.0", "https://e.org/a.apk", "a".repeat(64), notes = "Faster YouTube start · new screensaver")), {}, {})
+            AboutCard(AppUpdates.State(available = com.theatresync.core.UpdateInfo(99, "0.6.0", "https://e.org/a.apk", "a".repeat(64)), downloadPercent = 42), {}, {})
+            AboutCard(AppUpdates.State(upToDate = true), {}, {})
+        }
+    }
     /** Opening on a phone: drawn by the app (sharp, portrait), frozen once everything is on screen. */
     @Test fun opening1() = paparazzi.snapshot { QuantariTheme { OpeningAnimation(frameMs = 5000) {} } }
     /** TapIn guests on the host: sync for each, sound/volume/remove; long names stay on one line. */

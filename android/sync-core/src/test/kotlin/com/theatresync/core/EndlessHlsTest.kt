@@ -82,9 +82,9 @@ class EndlessHlsTest {
         val dir = System.getenv("TS_HLS_DIR") ?: return
         val files = java.io.File(dir).listFiles { f -> f.name.endsWith(".ts") }!!.sortedBy { it.name }
         val server = MediaServer("h", { System.currentTimeMillis() }, { null }, { Payload.Hello("T", Platform.ANDROID, Role.HOST, "1", listOf(1)) })
-        server.live = EndlessHls(files.size, { files[it].readBytes() }, clockMs = { System.currentTimeMillis() })
+        server.live = EndlessHls(files.size, { files[it].readBytes() }, segmentSec = (System.getenv("TS_HLS_SEC") ?: "15").toInt(), clockMs = { System.currentTimeMillis() })
         server.start(8790)
-        Thread.sleep(90_000)
+        Thread.sleep(110_000)
         server.stop()
     }
 }

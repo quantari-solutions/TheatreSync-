@@ -25,13 +25,21 @@ Gentle sine-like easing throughout, no sudden starts or stops.
 
 (Earlier versions recorded the page as a video first, which lost detail before encoding.)
 
+## No borders, anywhere
+
+The logo artwork's gold flames ran solid right up to the picture's edges, which showed as straight lines on a
+dark screen. `card_wordmark_soft.png` (and the app's `quantari_wordmark.webp`) is the same artwork with the
+flame tips dissolving to fully transparent over their last ~160 px (letters untouched; every edge pixel has
+alpha 0). It sits on pure black (#000) on the phone and the TV, and every glow is a soft round gradient, so
+the logo appears to float in the dark with nothing around it. No straight-line masks are used.
+
 ## TV screensaver (connected, nothing playing)
 
-`screensaver.html?seed=N` is one 10 s scene: random glow swells, title bloom, an optional light sweep across the
-logo and light ray, a slight drift and 8–17 sparks, all starting and ending in the same calm frame. The app ships 12
-scenes (`res/raw/ss01.ts` … `ss12.ts`, 1080p25 H.264 in MPEG-TS, ~0.7 MB each) and streams them endlessly
-(`EndlessHls` in sync-core): a fresh shuffle every round, never the same scene twice in a row, timestamps re-stamped
-so the TV sees one continuous live programme.
+`screensaver.html?seed=N` is the Signature Intro as one 15 s scene with its own random timing, glow swells,
+one or two light sweeps across the logo, a slight drift and 8–17 sparks. It rises out of pure black and
+dissolves back into pure black, so scenes join invisibly. The app ships 12 scenes (`res/raw/ss01.ts` …
+`ss12.ts`, 1080p25 H.264 in MPEG-TS) and streams them endlessly (`EndlessHls` in sync-core): a fresh shuffle
+every round, never the same scene twice in a row, timestamps re-stamped so the TV sees one continuous programme.
 
-Re-make: `node render-scenes.js frames 1 12`, then for each scene
-`ffmpeg -framerate 25 -i frames/sceneNN/%04d.png -vf format=yuv420p -c:v libx264 -profile:v high -level 4.1 -preset slower -crf 20 -tune animation -x264-params aq-mode=3:keyint=250:min-keyint=250:scenecut=0 -bf 2 -an -f mpegts ssNN.ts`.
+Re-make: `node render-scenes.js frames 1 12 25 15`, then for each scene
+`ffmpeg -framerate 25 -i frames/sceneNN/%04d.png -vf format=yuv420p -c:v libx264 -profile:v high -level 4.1 -preset slower -crf 20 -tune animation -x264-params aq-mode=3:keyint=375:min-keyint=375:scenecut=0 -bf 2 -an -f mpegts ssNN.ts`.

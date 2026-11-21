@@ -724,8 +724,9 @@ class MovieSession(private val app: Application) {
 
     /**
      * Connected to a Chromecast with nothing on it: play the Quantari / TheatreSync screensaver so the projector
-     * shows that instead of Google's grey cast screen. It's an endless live stream from the phone: 12 different
-     * 10 s scenes in an ever-changing random order ([EndlessHls]), so it never looks like a loop.
+     * shows that instead of Google's grey cast screen. It's an endless live stream from the phone: the Signature
+     * Intro as 12 different 15 s scenes (each rising from and dissolving into pure black, with its own timing,
+     * glow swells, light sweeps and sparks), in an ever-changing random order ([EndlessHls]), never a short loop.
      * Leaves the TV alone if a movie, YouTube or anything else is playing.
      */
     private fun maybeStartScreensaver(force: Boolean = false) {
@@ -743,6 +744,7 @@ class MovieSession(private val app: Application) {
         srv.live = com.theatresync.core.EndlessHls(
             SCREENSAVER_SCENES.size,
             scene = { i -> app.resources.openRawResource(SCREENSAVER_SCENES[i]).use { it.readBytes() } },
+            segmentSec = 15,
             clockMs = { SystemClock.elapsedRealtime() },
         )
         val port = try { srv.start() } catch (_: Exception) { return }

@@ -246,7 +246,15 @@ the YouTube volume changes. Send one screenshot of step 1 and one of step 3, and
 
 1. Play a movie with headphones. Headphone settings → Equalizer: tap **Bass boost**, then **Voices**, then drag a slider: each change is heard immediately. Try **Night mode** in a loud scene.
 2. Player page → **Sync** card shows the live sync; tap **Sync now**: sound re-locks within a second.
-3. Leave the TV connected with nothing playing for 3–4 minutes: the screensaver keeps changing (different glows, sweeps, sparks), with no visible jumps.
+3. Leave the TV connected with nothing playing for 3–4 minutes: the screensaver plays the Signature Intro again and again, each time a little different (glows, sweeps, sparks), fading through black with no jumps. Look closely at the logo on the big screen: no edges or box around it, the flames fade into the black.
 4. Cast a YouTube video from TheatreSync: the status shows Step 1, 2, 3 of 3, and it starts faster than before. Switch on **Sound in headphones**: a small player appears bottom-right and stays while you move around the app. Pause on the TV: the phone pauses straight away.
 
 **Send:** which equalizer presets you liked, a photo of the screensaver after a few minutes, and how long YouTube took to start.
+
+## HW-22 — Update from inside the app (once a newer version is published)
+
+1. Settings → About: it shows your version and "Update available · …".
+2. Tap **Update**. The first time, Android opens "Install unknown apps": switch on **Allow from this source**, then go back. The download carries on (percent shown).
+3. Android asks "Do you want to update this app?" → **Update**. TheatreSync restarts on the new version; your settings stay.
+
+**Send:** a screenshot of About before and after, and anything that went wrong.

@@ -1,15 +1,15 @@
 <!doctype html><html><head><meta charset="utf-8"><style>
 /* TV Signature Intro, 1920×1080, 6.6 s. Same timeline as the phone opening (OpeningAnimation.kt):
    the glow builds slowly, the gold sheen crosses the logo, the title's glow blooms, the whole glow swells once, fade out. */
-html,body{margin:0;width:1920px;height:1080px;background:#050507;overflow:hidden;font-family:"Inter","Helvetica Neue",Arial,sans-serif}
+html,body{margin:0;width:1920px;height:1080px;background:#000;overflow:hidden;font-family:"Inter","Helvetica Neue",Arial,sans-serif}
 :root{--gentle:cubic-bezier(.37,0,.63,1);--soft:cubic-bezier(.2,.7,.2,1)}
 .glow{position:absolute;inset:0;background:radial-gradient(ellipse 60% 50% at 50% 46%,rgba(232,184,74,.26),rgba(232,184,74,.11) 45%,transparent 75%);opacity:0;animation:glow 6.6s var(--gentle) forwards}
 .halo{position:absolute;left:50%;top:672px;width:1500px;height:560px;transform:translate(-50%,-50%);background:radial-gradient(ellipse closest-side,rgba(232,184,74,.16),rgba(232,184,74,.09) 35%,rgba(232,184,74,.025) 70%,transparent);opacity:0;animation:halo 3.7s 2.9s linear forwards}
 .stack{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;animation:out .9s 5.7s var(--gentle) forwards}
-.mark{position:relative;width:600px;height:254px;-webkit-mask-image:linear-gradient(to right,transparent,#000 9%,#000 91%,transparent),linear-gradient(to bottom,transparent,#000 14%,#000 86%,transparent);-webkit-mask-composite:source-in;opacity:0;transform:scale(.96);animation:in 1.5s .3s var(--soft) forwards}
+.mark{position:relative;width:600px;height:254px;opacity:0;transform:scale(.96);animation:in 1.5s .3s var(--soft) forwards}
 .inner{position:absolute;left:40px;top:0;width:520px;height:254px}
 .inner img{position:absolute;inset:0;width:100%;height:100%}
-.sheen{position:absolute;inset:0;overflow:hidden;-webkit-mask-image:url(card_wordmark.png);-webkit-mask-size:100% 100%}
+.sheen{position:absolute;inset:0;overflow:hidden;-webkit-mask-image:url(card_wordmark_soft.png);-webkit-mask-size:100% 100%}
 .sheen span{position:absolute;top:-50%;left:0;width:55%;height:200%;background:linear-gradient(100deg,transparent 30%,rgba(255,248,214,.9) 50%,transparent 70%);filter:blur(2px);transform:skewX(-14deg) translateX(-220%);animation:shine 1.9s 1.4s var(--gentle) forwards}
 .eyebrow{margin-top:26px;color:#E8B84A;letter-spacing:.42em;font-size:26px;font-weight:700;opacity:0;animation:rise .9s 2.3s var(--soft) forwards}
 .title{position:relative;font-size:132px;font-weight:800;letter-spacing:-.02em;background:linear-gradient(90deg,#E8B84A,#FFE7A3 55%,#E8B84A);-webkit-background-clip:text;color:transparent;opacity:0;transform:translateY(24px);filter:drop-shadow(0 0 6px rgba(232,184,74,.25));animation:rise 1.2s 2.7s var(--soft) forwards,bloom 2.9s 2.9s linear forwards}
@@ -28,7 +28,7 @@ html,body{margin:0;width:1920px;height:1080px;background:#050507;overflow:hidden
 <div class="glow"></div>
 <div class="halo"></div>
 <div class="stack">
-  <div class="mark"><div class="inner"><img src="card_wordmark.png"><div class="sheen"><span></span></div></div></div>
+  <div class="mark"><div class="inner"><img src="card_wordmark_soft.png"><div class="sheen"><span></span></div></div></div>
   <div class="eyebrow">PRESENTED WITH</div>
   <div class="title">TheatreSync</div>
   <div class="line"></div>
