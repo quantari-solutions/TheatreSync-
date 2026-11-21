@@ -33,6 +33,7 @@ interface MediaSource {
  *  GET /hello                     → hello message
  *  GET /guest?id=&name=&dev=&drift=&status=&hidden= → TapIn guest report; answers the host's controls
  *  GET|POST /leave?id=            → TapIn guest stopped or closed the page
+ *  GET /live.m3u8, /seg/N.ts      → endless screensaver stream (when [live] is set)
  *
  * See contracts/HTTP-API.md. One instance per movie session.
  */
@@ -66,6 +67,9 @@ class MediaServer(
 
     /** Optional intro clip played on the TV before the movie (Settings → Experimental). */
     @Volatile var intro: MediaSource? = null
+
+    /** Endless screensaver stream for the TV, or null. */
+    @Volatile var live: EndlessHls? = null
 
     private var serverSocket: ServerSocket? = null
     private val pool: ExecutorService = Executors.newCachedThreadPool { r ->
@@ -208,6 +212,14 @@ class MediaServer(
                             .let { stateProvider() ?: it },
                     )
                 path == "/hello" -> serveJson(out, helloProvider())
+                path == "/live.m3u8" -> live?.let { sendBytes(out, "application/vnd.apple.mpegurl", it.playlist().toByteArray()) }
+                    ?: respond(out, 404, "Not Found", "text/plain", "no stream")
+                path.startsWith("/seg/") && path.endsWith(".ts") -> {
+                    val n = path.removePrefix("/seg/").removeSuffix(".ts").toLongOrNull()
+                    val l = live
+                    if (l == null || n == null || n < 0) respond(out, 404, "Not Found", "text/plain", "no segment")
+                    else sendBytes(out, "video/mp2t", l.segment(n))
+                }
                 path == "/guest" -> {
                     val id = query["id"].orEmpty()
                     if (id.isBlank()) respond(out, 400, "Bad Request", "text/plain", "need id")
@@ -265,6 +277,12 @@ class MediaServer(
                 if (!head) m.open(range.start).use { copy(it, out, len, toTv) }
             }
         }
+    }
+
+    /** 200 with a body, readable by the Chromecast's web player (CORS). */
+    private fun sendBytes(out: OutputStream, type: String, body: ByteArray) {
+        writeHead(out, 200, "OK", type, body.size.toLong(), mapOf("Cache-Control" to "no-store")) // CORS header is on every response (writeHead)
+        out.write(body)
     }
 
     private fun respond(out: OutputStream, code: Int, reason: String, type: String, body: String) {

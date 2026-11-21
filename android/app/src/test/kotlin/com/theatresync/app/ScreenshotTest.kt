@@ -29,6 +29,22 @@ class ScreenshotTest {
     private fun playing(ui: Ui) = shot { PlayingScreen(ui, {}, {}, {}, {}, {}, {}) }
 
     @Test fun setup1_empty() = setup(Ui())
+    /** YouTube page while it connects: the link and chosen TV stay put, progress card on top. */
+    @Test fun youtube1_connecting() = shot {
+        YouTubeScreen(
+            Ui(tvs = listOf(Tv("1", "Media Room TV"), Tv("2", "Bedroom TV")), youTube = MovieSession.YouTubeState.STARTING, youTubeStep = R.string.yt_step_opening, youTubeTvId = "1"),
+            initialLink = null, onCast = { _, _ -> }, onOpenApp = {}, onBack = {},
+            link = "https://youtu.be/zSWdZVtXT7E", tvName = "Media Room TV",
+        )
+    }
+    /** Settings → About with an update waiting, and while it downloads. */
+    @Test fun about1_updateAvailable() = shot {
+        androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.padding(20.dp), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)) {
+            AboutCard(AppUpdates.State(available = com.theatresync.core.UpdateInfo(99, "0.6.0", "https://e.org/a.apk", "a".repeat(64), notes = "Faster YouTube start · new screensaver")), {}, {})
+            AboutCard(AppUpdates.State(available = com.theatresync.core.UpdateInfo(99, "0.6.0", "https://e.org/a.apk", "a".repeat(64)), downloadPercent = 42), {}, {})
+            AboutCard(AppUpdates.State(upToDate = true), {}, {})
+        }
+    }
     /** Opening on a phone: drawn by the app (sharp, portrait), frozen once everything is on screen. */
     @Test fun opening1() = paparazzi.snapshot { QuantariTheme { OpeningAnimation(frameMs = 5000) {} } }
     /** TapIn guests on the host: sync for each, sound/volume/remove; long names stay on one line. */

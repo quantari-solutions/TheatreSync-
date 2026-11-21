@@ -32,6 +32,11 @@ class CrashUploadTest {
     /** How the fake GitHub answers issue creation: null = normal, else a fixed status. */
     @Volatile private var issueStatus: Int? = null
     @Volatile private var refuseLabelsOnce = false
+    /** Answer like a GitHub App: 8-hour sign-in plus a refresh token. */
+    @Volatile private var appStyleTokens = false
+    @Volatile private var expiresInSec = 28_800
+    /** The fake GitHub refuses this token with 401 (it "ran out"). */
+    @Volatile private var rejectToken: String? = null
 
     @Before fun setUp() {
         context.getSharedPreferences("github", Context.MODE_PRIVATE).edit().clear().commit()
@@ -75,10 +80,15 @@ class CrashUploadTest {
             val (status, json) = when {
                 path == "/login/device/code" ->
                     200 to """{"device_code":"dev123","user_code":"WDJB-MJHT","verification_uri":"https://github.com/login/device","interval":5}"""
+                path == "/login/oauth/access_token" && body.contains("grant_type=refresh_token") ->
+                    if (body.contains("refresh_token=ghr_")) 200 to """{"access_token":"ghu_renewed","refresh_token":"ghr_2","expires_in":28800,"refresh_token_expires_in":15897600,"token_type":"bearer"}"""
+                    else 200 to """{"error":"bad_refresh_token"}"""
                 path == "/login/oauth/access_token" ->
                     if (polls.incrementAndGet() == 1) 200 to """{"error":"authorization_pending"}"""
+                    else if (appStyleTokens) 200 to """{"access_token":"ghu_testtoken","refresh_token":"ghr_1","expires_in":$expiresInSec,"refresh_token_expires_in":15897600,"token_type":"bearer"}"""
                     else 200 to """{"access_token":"ghu_testtoken","token_type":"bearer"}"""
                 path.endsWith("/issues") -> when {
+                    rejectToken != null && headers.any { it.contains("Bearer $rejectToken") } -> 401 to """{"message":"Bad credentials"}"""
                     issueStatus != null -> issueStatus!! to """{"message":"Resource not accessible by integration"}"""
                     refuseLabelsOnce && body.contains("\"labels\"") -> { refuseLabelsOnce = false; 422 to """{"message":"Validation Failed"}""" }
                     else -> 201 to """{"number":${issueNumber.incrementAndGet()}}"""
@@ -99,8 +109,8 @@ class CrashUploadTest {
         assertTrue(GitHubLink.isConfigured(context))
         val code = GitHubLink.requestCode(context)
         assertEquals("WDJB-MJHT", code.userCode)
-        assertFalse("still waiting for approval", GitHubLink.poll(context, code))
-        assertTrue("approved", GitHubLink.poll(context, code))
+        assertEquals("still waiting for approval", GitHubLink.Poll.PENDING, GitHubLink.poll(context, code))
+        assertEquals("approved", GitHubLink.Poll.APPROVED, GitHubLink.poll(context, code))
         assertTrue(GitHubLink.isConnected(context))
         assertTrue(requests.any { it.second.contains("client_id=Iv23liTestClient01") })
     }
@@ -152,5 +162,39 @@ class CrashUploadTest {
         assertTrue(done.await(20, java.util.concurrent.TimeUnit.SECONDS))
         assertTrue("got: $result", result!!.startsWith("Uploaded #"))
         assertEquals(CrashReporter.Status.SENT_GITHUB, entry(GitHubLink.TEST_TITLE).status)
+    }
+
+    @Test fun signInRenewsItselfBeforeItRunsOut() {
+        appStyleTokens = true
+        expiresInSec = 600 // runs out within the 30-minute margin: renewed before uploading
+        connect()
+        val marker = "RenewTest-${System.nanoTime()}"
+        CrashReporter.handled(context, "test", IllegalStateException(marker))
+        GitHubLink.uploadPendingNow(context)
+        assertEquals(CrashReporter.Status.SENT_GITHUB, entry(marker).status)
+        assertTrue("renewed without the owner", requests.any { it.second.contains("grant_type=refresh_token") && it.second.contains("refresh_token=ghr_1") })
+        assertTrue("used the new sign-in", requests.last { it.first.contains("/issues") }.first.contains("Bearer ghu_renewed"))
+        assertTrue(GitHubLink.isConnected(context))
+    }
+
+    @Test fun signInThatEndedEarlyIsRenewedAndRetried() {
+        appStyleTokens = true
+        connect()
+        rejectToken = "ghu_testtoken" // GitHub says the 8-hour sign-in is over
+        val marker = "Expired401-${System.nanoTime()}"
+        CrashReporter.handled(context, "test", IllegalStateException(marker))
+        GitHubLink.uploadPendingNow(context)
+        assertEquals(CrashReporter.Status.SENT_GITHUB, entry(marker).status)
+        assertTrue(GitHubLink.isConnected(context))
+    }
+
+    @Test fun oldReportsAreDeletedAfter69Days() {
+        val marker = "OldReport-${System.nanoTime()}"
+        CrashReporter.handled(context, "test", IllegalStateException(marker))
+        val now = System.currentTimeMillis()
+        assertEquals(0, CrashReporter.prune(context, now + 68L * 86_400_000))
+        assertTrue(CrashReporter.entries(context).any { it.title.contains(marker) })
+        assertEquals(1, CrashReporter.prune(context, now + 70L * 86_400_000))
+        assertTrue(CrashReporter.entries(context).none { it.title.contains(marker) })
     }
 }

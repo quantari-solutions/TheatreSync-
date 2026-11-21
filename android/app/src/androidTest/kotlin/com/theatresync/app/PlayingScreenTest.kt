@@ -35,16 +35,18 @@ class PlayingScreenTest {
                         onMuteTv = { calls += "mute$it" },
                         onStop = { calls += "stop" },
                         onDismiss = {},
+                        onResync = { calls += "resync" },
                     )
                 }
             }
         }
         rule.onNodeWithText("Test Movie").assertIsDisplayed()
-        rule.onNodeWithText("In sync", substring = true).assertIsDisplayed()
+        rule.onNodeWithText("In sync", substring = true).performScrollTo().assertIsDisplayed()
         rule.onNodeWithTag("playpause").performClick()
         rule.onNodeWithTag("back10").performClick()
         rule.onNodeWithTag("fwd10").performClick()
+        rule.onNodeWithTag("sync_now").performScrollTo().performClick()
         rule.onNodeWithText("Stop movie", substring = true).performScrollTo().performClick()
-        assertEquals(listOf("playpause", "skip-10000", "skip10000", "stop"), calls)
+        assertEquals(listOf("playpause", "skip-10000", "skip10000", "resync", "stop"), calls)
     }
 }

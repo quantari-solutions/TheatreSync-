@@ -64,6 +64,17 @@ object CrashReporter {
 
     fun entries(context: Context): List<Entry> = synchronized(lock) { load(context) }.sortedByDescending { it.timeMs }
 
+    /** Reports are kept on the phone for this long, then deleted automatically. */
+    const val KEEP_DAYS = 69
+
+    /** Deletes reports older than [KEEP_DAYS] days (called when the app opens). Returns how many went. */
+    fun prune(context: Context, nowMs: Long = System.currentTimeMillis()): Int = synchronized(lock) {
+        val all = load(context)
+        val keep = all.filter { nowMs - it.timeMs <= KEEP_DAYS * 86_400_000L }
+        if (keep.size != all.size) save(context, keep)
+        all.size - keep.size
+    }
+
     /** The newest crash the owner hasn't acted on yet (shown as a card on the home screen). */
     fun pendingCrash(context: Context): Entry? =
         entries(context).firstOrNull { it.kind == Kind.CRASH && it.status == Status.SAVED && !isDismissed(context, it.id) }

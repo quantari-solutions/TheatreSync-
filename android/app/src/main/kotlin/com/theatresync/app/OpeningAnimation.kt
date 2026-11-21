@@ -126,10 +126,7 @@ fun OpeningAnimation(frameMs: Int? = null, onDone: () -> Unit) {
                                 blendMode = BlendMode.SrcAtop,
                             )
                         }
-                        // Soft edges, so the gold swooshes fade out instead of being cut off.
-                        val clear = Color.Transparent; val keep = Color.Black
-                        drawRect(Brush.horizontalGradient(0f to clear, 0.09f to keep, 0.91f to keep, 1f to clear), blendMode = BlendMode.DstIn)
-                        drawRect(Brush.verticalGradient(0f to clear, 0.14f to keep, 0.86f to keep, 1f to clear), blendMode = BlendMode.DstIn)
+                        // No masks here: the logo itself dissolves into black at its edges (soft-edged artwork).
                     },
             ) {
                 Image(painterResource(R.drawable.quantari_wordmark), null, Modifier.fillMaxHeight().fillMaxWidth(1f / LOGO_ROOM).align(Alignment.Center), contentScale = ContentScale.Fit)
@@ -192,7 +189,8 @@ fun OpeningAnimation(frameMs: Int? = null, onDone: () -> Unit) {
 private const val TOTAL_MS = 6600
 /** Extra width around the logo so only the swooshes fade at the sides, never the letters. */
 private const val LOGO_ROOM = 1.14f
-private val BG = Color(0xFF050507)
+/** Pure black, so the logo looks like it's floating in the dark with nothing around it. */
+private val BG = Color.Black
 private val GOLD = Color(0xFFE8B84A)
 private val SOFT: Easing = CubicBezierEasing(0.2f, 0.7f, 0.2f, 1f)
 /** Ease in and out like a sine wave: no sudden starts or stops. */

@@ -48,10 +48,9 @@ input{font:inherit;width:100%;min-height:48px;border-radius:14px;border:1px soli
 </div>
 
 <div class="card">
-  <div class="title">Do voices match lips?</div>
-  <div class="muted">If not, tap a button a few times until they do.</div>
-  <p class="row"><button id="early">Sound is early</button><button id="late">Sound is late</button></p>
-  <div class="muted" id="delay">Sound delay: 0 ms</div>
+  <div class="title">Sync</div>
+  <div class="muted" id="syncState">Automatic: checked four times a second.</div>
+  <p><button id="resync" style="width:100%">Sync now</button></p>
 </div>
 <div class="muted" style="text-align:center">Keep this page open while you watch.</div>
 
@@ -65,10 +64,9 @@ input{font:inherit;width:100%;min-height:48px;border-radius:14px;border:1px soli
   var samples=[], offset=null, seq=0, state=null, started=false;
   var lead=200, justStarted=false, calibrated=false, settleUntil=0, lastSeek=0;
   var lastTime=-1, lastAdvance=0, ctx=null;
-  var delay=parseInt(localStorage.getItem('tsDelay')||'0',10);
+  var delay=0; // sync is automatic: no manual offset
+  try{ localStorage.removeItem('tsDelay'); }catch(e){}
   window.tsStats={seeks:0, reloads:0, drift:null, state:'idle', lead:lead};
-  function showDelay(){document.getElementById('delay').textContent='Sound delay: '+delay+' ms';}
-  showDelay();
   function now(){return performance.now();}
   function setStatus(t,ok){st.textContent=t; st.className=ok?'pill ok':'pill';}
   // Clock: NTP-style; keep the best (lowest round trip) of the last 12 samples.
@@ -161,6 +159,7 @@ input{font:inherit;width:100%;min-height:48px;border-radius:14px;border:1px soli
     if(hostMuted) setStatus('The host turned your sound off',false);
     else setStatus(Math.abs(drift)<=60?'In step':'Getting in step…',Math.abs(drift)<=60);
     syncEl.textContent='Sync: '+(drift>=0?'+':'')+Math.round(drift)+' ms on '+(myDevice()||'this phone');
+    document.getElementById('syncState').textContent=(Math.abs(drift)<=60?'In step':'Getting in step')+' · '+(drift>=0?'+':'')+Math.round(drift)+' ms · automatic';
   }
   a.addEventListener('error',function(){ if(started) step(); });
 
@@ -227,8 +226,12 @@ input{font:inherit;width:100%;min-height:48px;border-radius:14px;border:1px soli
   if(navigator.mediaDevices&&navigator.mediaDevices.addEventListener)
     navigator.mediaDevices.addEventListener('devicechange',function(){ detectDevice(); if(!started) return; calibrated=false; lastSeek=0; settleUntil=now()+SETTLE; window.tsStats.switches=(window.tsStats.switches||0)+1; });
   setInterval(report,1000);
-  document.getElementById('early').onclick=function(){delay+=20;localStorage.setItem('tsDelay',delay);showDelay();};
-  document.getElementById('late').onclick=function(){delay-=20;localStorage.setItem('tsDelay',delay);showDelay();};
+  // Sync now: re-lock straight away (one correcting jump allowed immediately).
+  document.getElementById('resync').onclick=function(){
+    if(!started){ start(); return; }
+    calibrated=false; lastSeek=0; var t=target(); if(t!==null&&!a.paused) seekTo(t);
+    document.getElementById('syncState').textContent='Re-syncing…';
+  };
   for(var i=0;i<8;i++) setTimeout(ping,i*120);
   setInterval(ping,3000); setInterval(poll,1000); setInterval(step,250); poll();
 })();

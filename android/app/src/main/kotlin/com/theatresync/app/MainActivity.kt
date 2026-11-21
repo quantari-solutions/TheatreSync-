@@ -122,6 +122,10 @@ class MainActivity : ComponentActivity() {
     private val outputs = mutableStateOf<List<DiagnosticsReport.Output>>(emptyList())
     private val details = mutableStateOf("")
     private val sharedLink = mutableStateOf<String?>(null)
+    /** The YouTube page's link and chosen TV live here, so nothing on the way (TV list refreshes, the
+     *  Chromecast switching apps, a trip to another page) can blank them while casting. */
+    private val ytLink = mutableStateOf("")
+    private val ytTvName = mutableStateOf<String?>(null)
     private val pendingCrash = mutableStateOf<CrashReporter.Entry?>(null)
     private val crashEntries = mutableStateOf<List<CrashReporter.Entry>>(emptyList())
     private val gitHubCode = mutableStateOf<GitHubLink.DeviceCode?>(null)
@@ -224,6 +228,7 @@ class MainActivity : ComponentActivity() {
             QuantariTheme {
                 GridBackground {
                     val ui by session.ui.collectAsState()
+                    val updateState = AppUpdates.state.collectAsState()
                     var page by rememberSaveable { mutableStateOf(Page.HOME) }
                     var castTvId by rememberSaveable { mutableStateOf<String?>(null) }
                     val casting = ui.nowCasting.firstOrNull { it.tvId == castTvId }
@@ -283,6 +288,8 @@ class MainActivity : ComponentActivity() {
                             onGuestSound = session::setGuestSound,
                             onGuestVolume = session::setGuestVolume,
                             onGuestRemove = session::removeGuest,
+                            onYouTubeHeadphones = session::setYouTubeHeadphones,
+                            onYouTubeRoomSpeakers = { tv, on -> session.castMute(tv, !on) },
                             onMore = { audioSheet.value = false; openHeadphoneSettings(page) },
                             onDismiss = { audioSheet.value = false },
                         )
@@ -333,8 +340,15 @@ class MainActivity : ComponentActivity() {
                         OpeningAnimation { app.openingShown = true; opening = false }
                         return@GridBackground
                     }
+                    // YouTube sound in the headphones: its (visible) phone player, wherever you are in the app.
+                    val ytTv = ui.youTubeHeadphonesTv
+                    val ytVideo = ytTv?.let { id -> ui.nowCasting.firstOrNull { it.tvId == id }?.activity?.contentId }
                     if (inPip.value) {
-                        PipContent(ui, ui.nowCasting.firstOrNull { it.tvId == castTvId } ?: ui.nowCasting.firstOrNull())
+                        if (ytTv != null && ytVideo != null) {
+                            Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
+                                YouTubeHeadphonesPlayer(ytVideo, { session.youTubeTarget(ytTv) }, session::onYouTubeHeadphonesReport)
+                            }
+                        } else PipContent(ui, ui.nowCasting.firstOrNull { it.tvId == castTvId } ?: ui.nowCasting.firstOrNull())
                         return@GridBackground
                     }
                     // Pull down anywhere to look for TVs, smart TVs and headphones again.
@@ -346,7 +360,7 @@ class MainActivity : ComponentActivity() {
                             refreshing = true
                             session.refreshDevices()
                             refreshAudio()
-                            scope.launch { kotlinx.coroutines.delay(1_500); refreshing = false }
+                            scope.launch { kotlinx.coroutines.delay(REFRESH_SPIN_MS); refreshing = false }
                         },
                         modifier = Modifier.fillMaxSize(),
                     ) {
@@ -390,6 +404,7 @@ class MainActivity : ComponentActivity() {
                                     state = gitHubState.value,
                                     onStart = ::startGitHubConnect,
                                     onOpenGitHub = { c -> runCatching { startActivity(Intent(Intent.ACTION_VIEW, c.verificationUri.toUri())) } },
+                                    onCopyCode = ::copyGitHubCode,
                                     onDisconnect = { GitHubLink.disconnect(this@MainActivity); gitHubConnected.value = false; gitHubLastUpload.value = null },
                                     onBack = { page = Page.SETTINGS },
                                     onCreateApp = { runCatching { startActivity(Intent(Intent.ACTION_VIEW, GitHubLink.createAppUrl.toUri())) } },
@@ -412,6 +427,9 @@ class MainActivity : ComponentActivity() {
                                     onShareApp = ::shareApp,
                                     multiAudioOn = ui.multiAudio,
                                     onMultiAudio = { page = Page.MULTI_AUDIO },
+                                    updates = updateState.value,
+                                    onCheckUpdate = { AppUpdates.check(this@MainActivity, force = true) },
+                                    onUpdate = { AppUpdates.update(this@MainActivity) },
                                 )
                                 "experimental" -> ExperimentalScreen(
                                     ui = ui,
@@ -459,6 +477,7 @@ class MainActivity : ComponentActivity() {
                                             state = gitHubState.value,
                                             onStart = ::startGitHubConnect,
                                             onOpenGitHub = { c -> runCatching { startActivity(Intent(Intent.ACTION_VIEW, c.verificationUri.toUri())) } },
+                                    onCopyCode = ::copyGitHubCode,
                                             onDisconnect = { GitHubLink.disconnect(this@MainActivity); gitHubConnected.value = false; gitHubLastUpload.value = null },
                                             onCreateApp = { runCatching { startActivity(Intent(Intent.ACTION_VIEW, GitHubLink.createAppUrl.toUri())) } },
                                             onSaveClientId = { id -> GitHubLink.saveClientId(this@MainActivity, id).also { if (it) gitHubConfigured.value = true } },
@@ -471,6 +490,10 @@ class MainActivity : ComponentActivity() {
                                 "youtube" -> YouTubeScreen(
                                     ui = ui,
                                     initialLink = sharedLink.value,
+                                    link = ytLink.value,
+                                    onLink = { ytLink.value = it },
+                                    tvName = ytTvName.value,
+                                    onTv = { ytTvName.value = it },
                                     onCast = { id, tv -> session.castYouTube(id, tv) },
                                     onOpenApp = { link -> openYouTubeApp(link) },
                                     onBack = { session.resetYouTube(); sharedLink.value = null; page = Page.HOME },
@@ -507,6 +530,7 @@ class MainActivity : ComponentActivity() {
                                         onYtHeadphones = { on -> session.setYouTubeHeadphones(c.tvId, on) },
                                         ytTarget = { session.youTubeTarget(c.tvId) },
                                         onYtReport = session::onYouTubeHeadphonesReport,
+                                        onListenAlong = { url -> runCatching { startActivity(Intent(Intent.ACTION_VIEW, url.toUri())) } },
                                     )
                                 }
                                 "setup" -> SetupScreen(
@@ -564,9 +588,19 @@ class MainActivity : ComponentActivity() {
                                     onHeadphoneOptions = { openHeadphoneSettings(Page.MOVIE) },
                                     onPip = ::enterPip,
                                     onSubtitlesOn = session::setSubtitlesOn,
+                                    onResync = session::resetHeadphoneSync,
                                     onAudio = { refreshAudio(); audioSheet.value = true },
                                     onRemote = { page = Page.REMOTE },
                                 )
+                            }
+                        }
+                        if (ytTv != null && ytVideo != null) {
+                            Box(
+                                Modifier.align(Alignment.BottomEnd).padding(16.dp).width(240.dp)
+                                    .shadow(22.dp, RoundedCornerShape(14.dp), ambientColor = Q.Glow, spotColor = Q.Glow)
+                                    .testTag("yt_mini_player"),
+                            ) {
+                                YouTubeHeadphonesPlayer(ytVideo, { session.youTubeTarget(ytTv) }, session::onYouTubeHeadphonesReport)
                             }
                         }
                     }
@@ -578,6 +612,10 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         refreshCrashes()
+        AppUpdates.check(this)        // quietly, at most every 10 minutes
+        GitHubLink.keepAlive(this)    // renew the crash-report sign-in before it runs out
+        CrashReporter.prune(this)     // reports older than 69 days are deleted from the phone
+        AppUpdates.onResume(this)     // back from allowing updates: carry on
         session.startTvSearch()
         audioManager.registerAudioDeviceCallback(deviceCallback, null)
         refreshAudio()
@@ -647,7 +685,7 @@ class MainActivity : ComponentActivity() {
     private fun handleShare(intent: Intent?) {
         if (intent?.action != Intent.ACTION_SEND) return
         val text = intent.getStringExtra(Intent.EXTRA_TEXT) ?: return
-        if (YouTubeLinks.videoId(text) != null) sharedLink.value = text
+        if (YouTubeLinks.videoId(text) != null) { sharedLink.value = text; ytLink.value = text }
     }
 
     private fun openYouTubeApp(link: String?) {
@@ -720,11 +758,14 @@ class MainActivity : ComponentActivity() {
         Thread({
             try {
                 val code = GitHubLink.requestCode(this)
-                runOnUiThread { gitHubCode.value = code }
+                runOnUiThread { gitHubCode.value = code; copyGitHubCode(code.userCode) } // ready to paste on GitHub's page
                 val deadline = System.currentTimeMillis() + 15 * 60_000
+                var interval = code.intervalSec * 1000L + 500
                 while (System.currentTimeMillis() < deadline) {
-                    Thread.sleep(code.intervalSec * 1000L + 500)
-                    if (GitHubLink.poll(this, code)) {
+                    Thread.sleep(interval)
+                    val result = GitHubLink.poll(this, code)
+                    if (result == GitHubLink.Poll.SLOW_DOWN) interval += 5_000 // GitHub's rule: wait 5 s longer each time it asks
+                    if (result == GitHubLink.Poll.APPROVED) {
                         runOnUiThread {
                             gitHubConnected.value = true
                             gitHubState.value = GitHubState.DONE
@@ -740,6 +781,14 @@ class MainActivity : ComponentActivity() {
                 runOnUiThread { gitHubState.value = GitHubState.FAILED; gitHubCode.value = null }
             }
         }, "github-connect").apply { isDaemon = true }.start()
+    }
+
+    /** Copies the GitHub sign-in code, so it can just be pasted on GitHub's page. */
+    private fun copyGitHubCode(code: String) {
+        val cm = getSystemService(android.content.ClipboardManager::class.java) ?: return
+        cm.setPrimaryClip(android.content.ClipData.newPlainText("GitHub code", code))
+        // Android 13+ shows its own "Copied" bubble; older versions get ours.
+        if (Build.VERSION.SDK_INT < 33) android.widget.Toast.makeText(this, getString(R.string.github_code_copied), android.widget.Toast.LENGTH_SHORT).show()
     }
 
     /** Proves the whole path: adds a test report, uploads it, shows "Uploaded #N" or the reason it failed. */
@@ -818,6 +867,9 @@ class MainActivity : ComponentActivity() {
     }.toTypedArray()
 
     companion object {
+        /** Pull to refresh: the spinner stays long enough for at least one full turn (Material's takes ~2.7 s). */
+        const val REFRESH_SPIN_MS = 3_000L
+
         const val EXTRA_OPEN = "open"
         const val OPEN_REMOTE = "remote"
         const val OPEN_PIP = "pip"
@@ -1056,6 +1108,9 @@ internal fun SettingsScreen(
     onShareApp: () -> Unit = {},
     multiAudioOn: Boolean = false,
     onMultiAudio: () -> Unit = {},
+    updates: AppUpdates.State = AppUpdates.State(),
+    onCheckUpdate: () -> Unit = {},
+    onUpdate: () -> Unit = {},
 ) = Screen {
     TopBar(stringResource(R.string.settings), onBack)
     SettingsRow("🎛", stringResource(R.string.remote), null, onRemote, "settings_remote", status = stringResource(R.string.remote_status))
@@ -1070,11 +1125,35 @@ internal fun SettingsScreen(
     if (multiAudioOn) SettingsRow("🎶", stringResource(R.string.multi_audio), null, onMultiAudio, "settings_multi_audio", status = stringResource(R.string.multi_audio_status))
     SettingsRow("📤", stringResource(R.string.share_app), null, onShareApp, "settings_share", status = stringResource(R.string.share_app_status))
     SettingsRow("🧪", stringResource(R.string.experimental), null, onExperimental, "settings_experimental", status = stringResource(R.string.experimental_status))
-    QCard {
+    AboutCard(updates, onCheckUpdate, onUpdate)
+    Footer()
+}
+
+/** About: this version, and an update right under it when there is one (download + install in the app). */
+@Composable
+internal fun AboutCard(updates: AppUpdates.State, onCheck: () -> Unit, onUpdate: () -> Unit) {
+    val u = updates.available
+    QCard(highlighted = u != null) {
         Text(stringResource(R.string.about), style = MaterialTheme.typography.titleMedium, color = Q.Text)
+        Text(stringResource(R.string.version_line, BuildConfig.VERSION_NAME), color = Q.Text, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.testTag("version"))
+        when {
+            updates.downloadPercent != null -> StatusPill(stringResource(R.string.update_downloading, updates.downloadPercent), Q.Primary, pulsing = true)
+            updates.installing -> StatusPill(stringResource(R.string.update_installing), Q.Primary, pulsing = true)
+            u != null -> {
+                StatusPill(stringResource(R.string.update_available, u.versionName), Q.Success)
+                if (u.notes.isNotBlank()) Hint(u.notes)
+                GoldButton(stringResource(R.string.update_now), onUpdate, Modifier.fillMaxWidth().testTag("update_now"), height = 52.dp)
+                if (updates.needsPermission) Hint(stringResource(R.string.update_permission))
+            }
+            updates.checking -> StatusPill(stringResource(R.string.update_checking), Q.TextMuted, pulsing = true)
+            updates.upToDate -> Hint(stringResource(R.string.update_none))
+        }
+        updates.error?.let { Text(it, color = Q.Error, style = MaterialTheme.typography.bodyMedium) }
+        if (u == null && updates.downloadPercent == null && !updates.installing) {
+            GhostButton(stringResource(R.string.update_check), onCheck, Modifier.fillMaxWidth().testTag("update_check"), height = 44.dp)
+        }
         Hint(stringResource(R.string.about_text, BuildConfig.VERSION_NAME))
     }
-    Footer()
 }
 
 @Composable
@@ -1118,6 +1197,7 @@ internal fun CrashReportsScreen(
             Eyebrow(stringResource(R.string.crash_timeline))
         }
         Hint(stringResource(if (autoReports) R.string.crash_reports_hint_auto else R.string.crash_reports_hint))
+        Hint(pluralStringResource(R.plurals.crash_reports_kept, CrashReporter.KEEP_DAYS, CrashReporter.KEEP_DAYS))
         if (entries.isEmpty()) {
             QCard {
                 StatusPill(stringResource(R.string.no_crashes), Q.Success)
@@ -1185,12 +1265,16 @@ internal fun YouTubeScreen(
     onCast: (videoId: String, tvId: String) -> Unit,
     onOpenApp: (String?) -> Unit,
     onBack: () -> Unit,
+    link: String = initialLink.orEmpty(),
+    onLink: (String) -> Unit = {},
+    tvName: String? = null,
+    onTv: (String) -> Unit = {},
 ) = Screen {
-    var link by rememberSaveable(initialLink) { mutableStateOf(initialLink.orEmpty()) }
-    var tvId by rememberSaveable { mutableStateOf<String?>(null) }
     val clipboard = LocalClipboardManager.current
     val videoId = YouTubeLinks.videoId(link)
-    val chosenTv = ui.tvs.firstOrNull { it.id == tvId } ?: ui.tvs.firstOrNull { it.name == ui.connectedTv } ?: ui.tvs.singleOrNull()
+    // Chosen by name, so it stays chosen even if Android gives the TV a new id mid-cast.
+    val chosenTv = ui.tvs.firstOrNull { it.name == tvName } ?: ui.tvs.firstOrNull { it.name == ui.connectedTv } ?: ui.tvs.singleOrNull()
+    val busy = ui.youTube == MovieSession.YouTubeState.STARTING
 
     // Shared straight from the YouTube app: cast at once if there's exactly one TV.
     LaunchedEffect(initialLink, chosenTv?.id) {
@@ -1199,12 +1283,28 @@ internal fun YouTubeScreen(
     }
 
     TopBar(stringResource(R.string.youtube), onBack)
-    QCard(highlighted = true) {
+    // While it connects: one clear card with progress, instead of the page changing under you.
+    if (busy) QCard(highlighted = true, modifier = Modifier.testTag("yt_connecting")) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            androidx.compose.material3.CircularProgressIndicator(Modifier.size(28.dp), color = Q.Primary, strokeWidth = 3.dp)
+            Column(Modifier.weight(1f)) {
+                Text(stringResource(R.string.yt_connecting_to, ui.tvs.firstOrNull { it.id == ui.youTubeTvId }?.name ?: chosenTv?.name ?: "TV"), color = Q.Text, style = MaterialTheme.typography.titleMedium)
+                Hint(stringResource(ui.youTubeStep ?: R.string.yt_starting))
+            }
+        }
+        val step = when (ui.youTubeStep) { R.string.yt_step_intro -> 1; R.string.yt_step_opening -> 2; R.string.yt_step_video -> 3; else -> 0 }
+        androidx.compose.material3.LinearProgressIndicator(
+            progress = { step / 3f }, modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
+            color = Q.Primary, trackColor = Q.Border,
+        )
+    }
+    QCard(highlighted = !busy) {
         Text(stringResource(R.string.yt_cast_title), style = MaterialTheme.typography.titleLarge, color = Q.Text)
         Hint(stringResource(R.string.yt_cast_hint))
         OutlinedTextField(
             value = link,
-            onValueChange = { link = it },
+            onValueChange = onLink,
+            enabled = !busy,
             modifier = Modifier.fillMaxWidth().testTag("yt_link"),
             singleLine = true,
             placeholder = { Text("https://youtu.be/…", color = Q.TextFaint) },
@@ -1217,7 +1317,7 @@ internal fun YouTubeScreen(
             ),
         )
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            GhostButton(stringResource(R.string.paste), { clipboard.getText()?.text?.let { link = it } })
+            GhostButton(stringResource(R.string.paste), { if (!busy) clipboard.getText()?.text?.let(onLink) })
             if (link.isNotBlank() && videoId == null) Hint(stringResource(R.string.yt_not_a_link))
         }
         when {
@@ -1227,7 +1327,7 @@ internal fun YouTubeScreen(
                 Row(
                     Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
                         .border(BorderStroke(1.dp, if (selected) Q.Primary else Q.BorderAccent), RoundedCornerShape(14.dp))
-                        .clickable(role = Role.RadioButton) { tvId = tv.id }
+                        .clickable(role = Role.RadioButton, enabled = !busy) { onTv(tv.name) }
                         .padding(14.dp)
                         .semantics { stateDescription = if (selected) "Selected" else "Not selected" },
                     verticalAlignment = Alignment.CenterVertically,
@@ -1249,7 +1349,7 @@ internal fun YouTubeScreen(
             height = 56.dp, leading = "▶",
         )
         when (ui.youTube) {
-            MovieSession.YouTubeState.STARTING -> StatusPill(stringResource(R.string.yt_starting), Q.Primary, pulsing = true)
+            MovieSession.YouTubeState.STARTING -> Unit // shown in the Connecting card at the top
             MovieSession.YouTubeState.PLAYING -> StatusPill(stringResource(R.string.yt_playing), Q.Success)
             MovieSession.YouTubeState.FAILED -> {
                 Body(stringResource(R.string.yt_failed))
@@ -1379,6 +1479,7 @@ internal fun PlayingScreen(
     onAudio: () -> Unit = {},
     onRemote: () -> Unit = {},
     onSubtitlesOn: (Boolean) -> Unit = {},
+    onResync: () -> Unit = {},
 ) = Screen {
     TopBar(stringResource(R.string.movie_player), onBack) { PlayerActions(onAudio, onRemote, onPip) }
     Eyebrow(
@@ -1404,7 +1505,18 @@ internal fun PlayingScreen(
             PlayButton(playing = ui.phase == Phase.PLAYING, onClick = onPlayPause)
             GhostButton(stringResource(R.string.skip_fwd_short), { onSkip(10_000) }, Modifier.testTag("fwd10"), height = 52.dp, description = stringResource(R.string.skip_forward))
         }
-        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { SyncPill(ui) }
+    }
+
+    // Sync: always automatic; shows how well in step the headphones are right now, and re-locks on a tap.
+    if (ui.headphonesHere) QCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                Text(stringResource(R.string.hp_sync), style = MaterialTheme.typography.titleMedium, color = Q.Text)
+                SyncPill(ui)
+            }
+            GhostButton(stringResource(R.string.sync_now), onResync, Modifier.testTag("sync_now"), height = 48.dp)
+        }
+        Hint(stringResource(R.string.sync_auto_hint))
     }
 
     AudioSummary(ui, onAudio)
@@ -1583,6 +1695,7 @@ internal fun NowCastingScreen(
     onYtHeadphones: (Boolean) -> Unit = {},
     ytTarget: () -> YouTubeHeadphones.Target? = { null },
     onYtReport: (YouTubeHeadphones.Report) -> Unit = {},
+    onListenAlong: (String) -> Unit = {},
 ) = Screen {
     val a = item.activity
     // Keep "Up next" fresh while this page is open (and right after the video changes).
@@ -1626,10 +1739,15 @@ internal fun NowCastingScreen(
                 colors = SwitchDefaults.colors(checkedThumbColor = Color.Black, checkedTrackColor = Q.Primary),
             )
         }
-        if (ytHeadphonesOn) {
-            YouTubeHeadphonesPlayer(a.contentId!!, ytTarget, onYtReport)
-            Hint(stringResource(R.string.yt_headphones_note))
-        }
+        if (ytHeadphonesOn) Hint(stringResource(R.string.yt_headphones_note))
+    }
+
+    // A movie another phone is casting with TheatreSync: listen along in this phone's headphones (TapIn page).
+    val listenUrl = a.contentId?.takeIf { it.startsWith("http://") && "/media" in it }?.let { it.substringBefore("/media") + "/listen" }
+    if (listenUrl != null && a.kind != CastActivity.Kind.YOUTUBE) QCard(highlighted = true) {
+        Text(stringResource(R.string.listen_along_title), style = MaterialTheme.typography.titleLarge, color = Q.Text)
+        Hint(stringResource(R.string.listen_along_hint))
+        GoldButton(stringResource(R.string.listen_along), { onListenAlong(listenUrl) }, Modifier.fillMaxWidth().testTag("listen_along"), height = 52.dp)
     }
 
     if (a.canControl) {
@@ -1826,9 +1944,10 @@ internal fun ConnectGitHubScreen(
     lastUpload: String? = null,
     testing: Boolean = false,
     onSendTest: () -> Unit = {},
+    onCopyCode: (String) -> Unit = {},
 ) = Screen {
     TopBar(stringResource(R.string.auto_reports), onBack)
-    GitHubSection(configured = configured, connected = connected, code = code, state = state, onStart = onStart, onOpenGitHub = onOpenGitHub, onDisconnect = onDisconnect, onCreateApp = onCreateApp, onSaveClientId = onSaveClientId, lastUpload = lastUpload, testing = testing, onSendTest = onSendTest)
+    GitHubSection(configured = configured, connected = connected, code = code, state = state, onStart = onStart, onOpenGitHub = onOpenGitHub, onDisconnect = onDisconnect, onCreateApp = onCreateApp, onSaveClientId = onSaveClientId, lastUpload = lastUpload, testing = testing, onSendTest = onSendTest, onCopyCode = onCopyCode)
     Footer()
 }
 
@@ -1847,6 +1966,7 @@ internal fun GitHubSection(
     lastUpload: String? = null,
     testing: Boolean = false,
     onSendTest: () -> Unit = {},
+    onCopyCode: (String) -> Unit = {},
 ) {
     when {
         connected -> QCard(highlighted = true) {
@@ -1887,7 +2007,11 @@ internal fun GitHubSection(
         code != null -> QCard(highlighted = true) {
             Text(stringResource(R.string.github_enter_code), style = MaterialTheme.typography.titleMedium, color = Q.Text)
             GradientText(code.userCode, MaterialTheme.typography.displaySmall.copy(fontFamily = FontFamily.Monospace))
-            GoldButton(stringResource(R.string.github_open), { onOpenGitHub(code) }, Modifier.fillMaxWidth(), height = 56.dp)
+            Hint(stringResource(R.string.github_code_ready))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                GhostButton(stringResource(R.string.github_copy_code), { onCopyCode(code.userCode) }, Modifier.weight(1f).testTag("github_copy"), height = 56.dp)
+                GoldButton(stringResource(R.string.github_open), { onCopyCode(code.userCode); onOpenGitHub(code) }, Modifier.weight(1f), height = 56.dp)
+            }
             StatusPill(stringResource(R.string.github_waiting), Q.Primary, pulsing = true)
         }
         else -> QCard(highlighted = true) {
@@ -2272,27 +2396,42 @@ internal fun HeadphoneSettingsScreen(
                 colors = SwitchDefaults.colors(checkedThumbColor = Color.Black, checkedTrackColor = Q.Primary),
             )
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf(
-                HeadphoneFx.Preset.FLAT to R.string.eq_flat, HeadphoneFx.Preset.BASS_BOOST to R.string.eq_bass,
-                HeadphoneFx.Preset.DIALOGUE to R.string.eq_dialogue, HeadphoneFx.Preset.CINEMA to R.string.eq_cinema,
-            ).forEach { (preset, label) ->
-                val selected = fx.enabled && fx.preset == preset
-                val shape = RoundedCornerShape(50)
-                Box(
-                    Modifier.weight(1f).height(44.dp).clip(shape)
-                        .background(if (selected) Q.Gold else SolidColor(Q.Card))
-                        .border(BorderStroke(1.dp, if (selected) Q.Secondary else Q.BorderAccent), shape)
-                        .clickable(role = Role.RadioButton) { onFx(HeadphoneFx.withPreset(fx, preset)) }
-                        .semantics { stateDescription = if (selected) "Selected" else "Not selected" },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        stringResource(label), color = if (selected) Color.Black else Q.PrimaryLight, style = MaterialTheme.typography.labelMedium,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 6.dp),
-                    )
+        // Presets, by kind of sound. Tapping one switches the equalizer on and is heard at once.
+        HeadphoneFx.Group.entries.forEach { group ->
+            Text(stringResource(group.label), color = Q.TextFaint, style = MaterialTheme.typography.labelLarge)
+            @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+            androidx.compose.foundation.layout.FlowRow(
+                Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                HeadphoneFx.Preset.entries.filter { it.group == group && it != HeadphoneFx.Preset.CUSTOM }.forEach { preset ->
+                    val selected = fx.enabled && fx.preset == preset
+                    val shape = RoundedCornerShape(50)
+                    Box(
+                        Modifier.height(40.dp).clip(shape)
+                            .background(if (selected) Q.Gold else SolidColor(Q.Card))
+                            .border(BorderStroke(1.dp, if (selected) Q.Secondary else Q.BorderAccent), shape)
+                            .clickable(role = Role.RadioButton) { onFx(HeadphoneFx.withPreset(fx, preset)) }
+                            .semantics { stateDescription = if (selected) "Selected" else "Not selected" }
+                            .testTag("eq_${preset.name}")
+                            .padding(horizontal = 14.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(stringResource(preset.label), color = if (selected) Color.Black else Q.PrimaryLight, style = MaterialTheme.typography.labelMedium, maxLines = 1, softWrap = false)
+                    }
                 }
             }
+        }
+        if (fx.enabled && fx.preset == HeadphoneFx.Preset.CUSTOM) Hint(stringResource(R.string.eq_custom_hint))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                Text(stringResource(R.string.eq_night_mode), color = Q.Text, style = MaterialTheme.typography.titleMedium)
+                Hint(stringResource(R.string.eq_night_mode_hint))
+            }
+            Switch(
+                checked = fx.night, onCheckedChange = { onFx(fx.copy(night = it, enabled = true, preset = HeadphoneFx.Preset.CUSTOM)) },
+                modifier = Modifier.testTag("eq_night"),
+                colors = SwitchDefaults.colors(checkedThumbColor = Color.Black, checkedTrackColor = Q.Primary),
+            )
         }
         EqSlider(stringResource(R.string.eq_bass_boost), fx.bass / 1000f, enabled = fx.enabled) {
             onFx(fx.copy(bass = (it * 1000).toInt(), preset = HeadphoneFx.Preset.CUSTOM))
@@ -2300,7 +2439,7 @@ internal fun HeadphoneSettingsScreen(
         HeadphoneFx.BAND_LABELS.forEachIndexed { i, hz ->
             EqSlider("$hz Hz", (fx.bandsDb[i] + HeadphoneFx.MAX_DB) / (2f * HeadphoneFx.MAX_DB), enabled = fx.enabled, valueText = "%+d dB".format(fx.bandsDb[i])) { v ->
                 val db = Math.round(v * 2 * HeadphoneFx.MAX_DB) - HeadphoneFx.MAX_DB
-                onFx(fx.copy(bandsDb = fx.bandsDb.toMutableList().also { it[i] = db }, preset = HeadphoneFx.Preset.CUSTOM))
+                if (db != fx.bandsDb[i]) onFx(fx.copy(bandsDb = fx.bandsDb.toMutableList().also { it[i] = db }, preset = HeadphoneFx.Preset.CUSTOM))
             }
         }
         Hint(stringResource(R.string.hp_eq_hint))
@@ -2314,7 +2453,7 @@ private fun EqSlider(label: String, value: Float, enabled: Boolean, valueText: S
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(label, Modifier.width(92.dp), color = if (enabled) Q.Text else Q.TextFaint, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Slider(
-            value = local, onValueChange = { local = it }, onValueChangeFinished = { onChange(local) },
+            value = local, onValueChange = { local = it; onChange(it) },
             enabled = enabled, modifier = Modifier.weight(1f),
             colors = SliderDefaults.colors(thumbColor = Q.Primary, activeTrackColor = Q.Primary, inactiveTrackColor = Q.Border),
         )
@@ -2485,6 +2624,8 @@ internal fun AudioSheet(
     onGuestSound: (String, Boolean) -> Unit = { _, _ -> },
     onGuestVolume: (String, Int) -> Unit = { _, _ -> },
     onGuestRemove: (String) -> Unit = {},
+    onYouTubeHeadphones: (String, Boolean) -> Unit = { _, _ -> },
+    onYouTubeRoomSpeakers: (String, Boolean) -> Unit = { _, _ -> },
     onMore: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -2492,6 +2633,21 @@ internal fun AudioSheet(
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(stringResource(R.string.audio_sources), style = MaterialTheme.typography.titleLarge, color = Q.Text)
             Hint(stringResource(R.string.audio_sources_hint))
+
+            // YouTube on a TV (no movie from the phone): where its sound plays, with the same checkboxes.
+            val yt = if (ui.phase == Phase.SETUP) ui.nowCasting.firstOrNull { it.activity.kind == CastActivity.Kind.YOUTUBE && it.activity.contentId != null } else null
+            if (yt != null) {
+                Text(stringResource(R.string.audio_youtube_on, yt.tvName), style = MaterialTheme.typography.titleMedium, color = Q.Primary)
+                CheckRow(
+                    checked = ui.youTubeHeadphonesTv == yt.tvId, title = stringResource(R.string.audio_youtube_headphones),
+                    subtitle = ui.headphoneName ?: stringResource(R.string.this_phone), tag = "check_yt_headphones",
+                ) { onYouTubeHeadphones(yt.tvId, it) }
+                CheckRow(
+                    checked = yt.activity.muted != true, title = stringResource(R.string.room_speakers),
+                    subtitle = stringResource(R.string.audio_youtube_room), tag = "check_yt_room",
+                ) { onYouTubeRoomSpeakers(yt.tvId, it) }
+                Text(stringResource(R.string.audio_movies), style = MaterialTheme.typography.titleMedium, color = Q.Primary, modifier = Modifier.padding(top = 6.dp))
+            }
 
             // Room speakers
             CheckRow(

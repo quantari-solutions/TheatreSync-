@@ -83,7 +83,8 @@ window.tsTarget=function(t,playing,v){
 fun YouTubeHeadphonesPlayer(videoId: String, target: () -> YouTubeHeadphones.Target?, onReport: (YouTubeHeadphones.Report) -> Unit, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val report = rememberUpdatedState(onReport)
-    val web = remember(videoId) {
+    // One player for the whole time; a new video on the TV is loaded into it (no reload, no gap).
+    val web = remember {
         WebView(context).apply {
             settings.javaScriptEnabled = true
             settings.mediaPlaybackRequiresUserGesture = false // the owner switched this on: sound may start by itself

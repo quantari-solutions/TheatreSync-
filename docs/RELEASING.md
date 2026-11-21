@@ -1,0 +1,19 @@
+# Releasing (in-app updates)
+
+The app checks `https://raw.githubusercontent.com/quantari-solutions/theatresync-releases/main/latest.json`
+(on start, at most every 10 minutes, and when the owner taps "Check for updates"). If its `versionCode` is
+higher than the installed one, Settings → About offers **Update**: the app downloads `apkUrl`, checks the
+SHA-256, and installs with Android's PackageInstaller (Android shows "Update this app?").
+
+`theatresync-releases` is a **public** repository holding only finished APKs and `latest.json`, because this
+code repository is private (a private repo can't serve downloads without putting a token in the app).
+
+Only when the owner says "release":
+1. Merge to `main`, then `scripts/build-android.sh`.
+2. `scripts/publish-release.sh <checkout of theatresync-releases> "What's new"` — refuses any APK whose
+   signing certificate isn't the one in `scripts/release-signing-cert.sha256` (otherwise Android would refuse
+   the update and the owner would have to uninstall).
+3. Commit and push the releases checkout.
+
+Signing: releases are signed with the key the owner's installed app already has (SHA-256 in
+`scripts/release-signing-cert.sha256`). The key itself never goes in a repository; it's kept as a secret.
