@@ -1,6 +1,14 @@
 # Project status
 
-_Last updated: 2026-11-21. 0.5.9 (released, also in releases/ for in-app updates): intro as a title card (no player bar), reliable ad muting, The Frame search, instant YouTube card, Stop from the notification, refresh buzz. Repository is public: in-app updates come from its releases/ folder_
+_Last updated: 2026-11-21. 0.6.0 (ready; owner releases when ready): the TV intro plays again (as a live stream, no progress bar), refresh spinner always does whole turns_
+
+## 0.6.0: owner feedback on 0.5.9
+
+| Report | Cause | Fix | Verified |
+|---|---|---|---|
+| "There is no intro being played" | 0.5.9 sent the intro as an animated picture; the Chromecast's media player doesn't animate those (a black still frame, the intro starts on black) | The intro is a short **live** stream (`IntroHls`): the original 1080p intro, then black until the film loads. Live video gets no progress bar or time on the TV (same as the screensaver). The list shows only the intro until the TV fetches it, so it always starts at the first frame | `IntroHlsTest`; played in Chromium with hls.js: starts at frame 1, no stalls, intro on screen; needs HW-23 on the TV |
+| Refresh vibrates but the spinner doesn't complete a revolution | Material's spinner keeps growing and shrinking its arc, so it never reads as a full turn | Own spinner: a gold refresh arrow that turns with the pull, then spins exactly 2 whole turns at an even speed (1.8 s) and disappears | Compiles; needs a look on the phone |
+
 
 ## 0.5.9: owner feedback
 

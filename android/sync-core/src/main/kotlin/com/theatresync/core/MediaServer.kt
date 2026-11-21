@@ -69,7 +69,7 @@ class MediaServer(
     @Volatile var intro: MediaSource? = null
 
     /** Endless screensaver stream for the TV, or null. */
-    @Volatile var live: EndlessHls? = null
+    @Volatile var live: LiveStream? = null
 
     private var serverSocket: ServerSocket? = null
     private val pool: ExecutorService = Executors.newCachedThreadPool { r ->

@@ -353,10 +353,13 @@ class MainActivity : ComponentActivity() {
                     }
                     // Pull down anywhere to look for TVs, smart TVs and headphones again.
                     var refreshing by remember { mutableStateOf(false) }
-                    val scope = androidx.compose.runtime.rememberCoroutineScope()
                     val hostView = androidx.compose.ui.platform.LocalView.current
+                    val pullState = androidx.compose.material3.pulltorefresh.rememberPullToRefreshState()
                     androidx.compose.material3.pulltorefresh.PullToRefreshBox(
                         isRefreshing = refreshing,
+                        state = pullState,
+                        // Our own spinner: always whole turns, then it goes (it calls back when done).
+                        indicator = { RefreshSpinner(pullState, refreshing) { refreshing = false } },
                         onRefresh = {
                             // A gentle buzz on release, so you can feel it refreshed.
                             hostView.performHapticFeedback(
@@ -365,7 +368,6 @@ class MainActivity : ComponentActivity() {
                             refreshing = true
                             session.refreshDevices()
                             refreshAudio()
-                            scope.launch { kotlinx.coroutines.delay(REFRESH_SPIN_MS); refreshing = false }
                         },
                         modifier = Modifier.fillMaxSize(),
                     ) {
@@ -872,9 +874,6 @@ class MainActivity : ComponentActivity() {
     }.toTypedArray()
 
     companion object {
-        /** Pull to refresh: the spinner stays long enough for at least one full turn (Material's takes ~2.7 s). */
-        const val REFRESH_SPIN_MS = 3_000L
-
         const val EXTRA_OPEN = "open"
         const val OPEN_REMOTE = "remote"
         const val OPEN_PIP = "pip"
