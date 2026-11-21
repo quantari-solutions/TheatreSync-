@@ -16,7 +16,7 @@ class EndlessHls(
     private val segmentSec: Int = 10,
     private val clockMs: () -> Long,
     seed: Long = System.nanoTime(),
-) {
+) : LiveStream {
     private val startMs = clockMs()
     private val rng = java.util.Random(seed)
     private val order = ArrayList<Int>()
@@ -34,7 +34,7 @@ class EndlessHls(
     }
 
     /** The live playlist: the latest few segments, moving on every [segmentSec] seconds. */
-    fun playlist(): String {
+    override fun playlist(): String {
         val live = (clockMs() - startMs) / (segmentSec * 1000L) + WINDOW
         val first = live - WINDOW
         return buildString {
@@ -45,7 +45,7 @@ class EndlessHls(
     }
 
     /** Segment [n]: its scene, with timestamps moved to follow segment n−1 exactly. */
-    fun segment(n: Long): ByteArray {
+    override fun segment(n: Long): ByteArray {
         if (n < 0) throw IllegalArgumentException("segment $n")
         return TsRetimer.shift(scene(sceneAt(n)), n * segmentSec * 90_000L)
     }

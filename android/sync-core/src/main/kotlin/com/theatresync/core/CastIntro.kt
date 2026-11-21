@@ -15,7 +15,7 @@ class CastIntro(private val connect: () -> Socket) {
      * @param maxMs give up waiting after this long (the clip is ~4 s)
      * @return true if the TV played it to the end (or at least started it before [maxMs])
      */
-    fun play(url: String, maxMs: Long = 15_000, imageMs: Long? = null): Boolean {
+    fun play(url: String, maxMs: Long = 15_000, liveMs: Long? = null): Boolean {
         connect().use { s ->
             s.soTimeout = 500
             val out = s.getOutputStream()
@@ -38,17 +38,17 @@ class CastIntro(private val connect: () -> Socket) {
                         if (app?.appId == CastStatus.APP_DEFAULT_MEDIA_RECEIVER && app.transportId != null) {
                             transport = app.transportId
                             send(app.transportId, CastMessage.NS_CONNECTION, """{"type":"CONNECT"}""")
-                            send(app.transportId, CastMessage.NS_MEDIA, loadRequest(url, image = imageMs != null))
+                            send(app.transportId, CastMessage.NS_MEDIA, loadRequest(url, live = liveMs != null))
                             loaded = true
-                            if (imageMs != null) {
-                                // An animated picture has no "finished" event: show it for its length.
-                                Thread.sleep(imageMs + 400)
-                                return true
-                            }
                         }
                     }
                     m.namespace == CastMessage.NS_MEDIA && loaded -> when (playerState(payload)) {
-                        "PLAYING", "BUFFERING" -> started = true
+                        "PLAYING" -> {
+                            started = true
+                            // A live intro never "finishes": let it play for its length, then hand over.
+                            if (liveMs != null) { Thread.sleep(liveMs); return true }
+                        }
+                        "BUFFERING" -> started = true
                         "IDLE" -> if (started || payload.contains("\"FINISHED\"")) return true
                         "ERROR" -> throw IOException("TV couldn't play the intro")
                     }
@@ -64,12 +64,13 @@ class CastIntro(private val connect: () -> Socket) {
         private const val SENDER = "sender-ts-intro"
 
         /**
-         * [image]: the intro as an animated picture, which the TV shows full-screen with no player controls,
-         * progress bar or time (a video would get those, and look like an advert).
+         * [live]: the intro as a live stream ([IntroHls]), which the TV shows with no progress bar or time
+         * (a normal video gets those and looks like an advert; animated pictures don't play at all).
          */
-        fun loadRequest(url: String, image: Boolean = false): String =
-            if (image) """{"type":"LOAD","requestId":2,"autoplay":true,""" +
-                """"media":{"contentId":"$url","contentType":"image/webp","streamType":"NONE","metadata":{"metadataType":4}}}"""
+        fun loadRequest(url: String, live: Boolean = false): String =
+            if (live) """{"type":"LOAD","requestId":2,"autoplay":true,""" +
+                """"media":{"contentId":"$url","contentType":"application/x-mpegURL","streamType":"LIVE",""" +
+                """"hlsSegmentFormat":"ts","hlsVideoSegmentFormat":"mpeg2_ts","metadata":{"metadataType":0}}}"""
             else """{"type":"LOAD","requestId":2,"autoplay":true,"currentTime":0,""" +
                 """"media":{"contentId":"$url","contentType":"video/mp4","streamType":"BUFFERED",""" +
                 """"metadata":{"metadataType":0,"title":"TheatreSync"}}}"""
