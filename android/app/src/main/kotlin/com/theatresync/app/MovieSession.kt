@@ -548,18 +548,18 @@ class MovieSession(private val app: Application) {
      */
     private fun playIntroBlocking(tvId: String) {
         if (!_ui.value.signatureIntro || isDial(tvId) || server != null) return
-        val tv = knownTvs.firstOrNull { it.id == tvId } ?: return
-        val ip = NetworkInfo.localIpv4For(app, tv.address) ?: return
+        val tv = tvAddress(tvId) ?: return CrashReporter.handled(app, "signature intro before cast", IllegalStateException("TV address unknown"))
+        val ip = NetworkInfo.localIpv4For(app, tv.address) ?: return CrashReporter.handled(app, "signature intro before cast", IllegalStateException("no Wi-Fi address towards the TV"))
         val srv = MediaServer(
             senderId = deviceId,
             clockMs = { SystemClock.elapsedRealtime() },
             stateProvider = { null },
             helloProvider = { Payload.Hello(Build.MODEL.take(64).ifBlank { "Android" }, Platform.ANDROID, Role.HOST, BuildConfig.VERSION_NAME, listOf(1)) },
         )
-        srv.live = introStream()
+        srv.intro = RawResourceSource(app, R.raw.signature_intro, "TheatreSync")
         try {
             val port = srv.start()
-            CastIntro({ TvWatchers.openTls(tv.address, tv.port) }).play("http://$ip:$port/live.m3u8", liveMs = INTRO_MS)
+            CastIntro({ TvWatchers.openTls(tv.address, tv.port) }).play("http://$ip:$port/intro", liveMs = INTRO_MS)
         } catch (e: Exception) {
             CrashReporter.handled(app, "signature intro before cast", e) // never block the cast itself
         } finally {
@@ -833,14 +833,6 @@ class MovieSession(private val app: Application) {
             .setResultCallback { r -> if (!r.status.isSuccess) stopScreensaver() }
     }
 
-    /** The Signature Intro as a live stream (no progress bar on the TV): the intro, then black until what's next. */
-    private fun introStream() = com.theatresync.core.IntroHls(
-        intro = { app.resources.openRawResource(R.raw.signature_intro).use { it.readBytes() } },
-        introMs = INTRO_MS,
-        tail = { app.resources.openRawResource(R.raw.intro_tail).use { it.readBytes() } },
-        clockMs = { SystemClock.elapsedRealtime() },
-    )
-
     private val SCREENSAVER_SCENES = listOf(
         R.raw.ss01, R.raw.ss02, R.raw.ss03, R.raw.ss04, R.raw.ss05, R.raw.ss06,
         R.raw.ss07, R.raw.ss08, R.raw.ss09, R.raw.ss10, R.raw.ss11, R.raw.ss12,
@@ -1106,19 +1098,23 @@ class MovieSession(private val app: Application) {
             client.load(movieRequest).setResultCallback { result -> if (!result.status.isSuccess) say(R.string.msg_tv_cant_play) }
         }
         if (_ui.value.signatureIntro && resumeAt == 0L) {
-            // Signature intro first, as a short live stream: the TV shows no progress bar or time for live
-            // video (a normal clip gets them and looks like an advert). Then the movie.
-            srv.live = introStream()
-            val introAt = "http://$ip:$port/live.m3u8"
+            // Signature intro first: the intro video (the same file the TV has always played), marked as live
+            // so the TV shows no progress bar or time over it (a normal clip gets them and looks like an
+            // advert), with 2 s of black at the end so the film follows with no flash. Then the movie.
+            srv.intro = RawResourceSource(app, R.raw.signature_intro, "TheatreSync")
+            val introAt = "http://$ip:$port/intro"
             introUrl = introAt
             val introInfo = MediaInfo.Builder(introAt).setContentUrl(introAt)
-                .setStreamType(MediaInfo.STREAM_TYPE_LIVE).setContentType("application/x-mpegURL")
-                .setHlsSegmentFormat(com.google.android.gms.cast.HlsSegmentFormat.TS)
-                .setHlsVideoSegmentFormat(com.google.android.gms.cast.HlsVideoSegmentFormat.MPEG2_TS)
+                .setStreamType(MediaInfo.STREAM_TYPE_LIVE).setContentType("video/mp4")
                 .setMetadata(MediaMetadata(MediaMetadata.MEDIA_TYPE_GENERIC))
                 .build()
             client.load(MediaLoadRequestData.Builder().setMediaInfo(introInfo).setAutoplay(true).build()).setResultCallback { r ->
-                if (r.status.isSuccess) main.postDelayed({ guard("movie after intro") { loadMovie() } }, INTRO_MS + 400) else loadMovie()
+                if (r.status.isSuccess) main.postDelayed({ guard("movie after intro") { loadMovie() } }, INTRO_MS + 400)
+                else {
+                    // Tell us why (uploaded with the problem reports), and never hold up the film.
+                    CrashReporter.handled(app, "signature intro (movie)", IllegalStateException("TV refused the intro: status ${r.status.statusCode} ${r.status.statusMessage.orEmpty()}"))
+                    loadMovie()
+                }
             }
         } else {
             loadMovie()
@@ -1632,7 +1628,7 @@ class MovieSession(private val app: Application) {
         private const val TICK_MS = 200L
         private const val KEY_MOVIE_URI = "movieUri"
         private const val TV_START_TIMEOUT_MS = 20_000L
-        /** Length of the Signature Intro (res/raw/signature_intro.ts, docs/intro/card.html). */
+        /** Length of the Signature Intro itself (res/raw/signature_intro.mp4 adds 2 s of black after it). */
         private const val INTRO_MS = 6_600L
         private const val SUBTITLE_TRACK = 1L
         private const val KEY_WE_MUTED = "weMutedTv"

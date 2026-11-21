@@ -5,8 +5,8 @@
   (granted by the owner on 2026-11-18). Before merging: CI green on the PR's
   current head, no merge conflicts, `./scripts/run-tests.sh` passing.
 - Never merge with failing or pending checks. Never force-push `main`.
-- **Releases go out through the app's own updater** (owner, 2026-11-21): when the owner says "release",
-  publish with `scripts/publish-release.sh releases "notes" https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases`,
+- **Releases go out through the app's own updater** (owner, 2026-11-21: "from now on all updates happen
+  from the app unless I ask otherwise"): once a version's PR is green and merged, publish it with `scripts/publish-release.sh releases "notes" https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases`,
   merge that PR, and the phone offers it in Settings → About → Update. Don't send APK files in chat
   unless the owner asks. Keep only the newest APK in `releases/`. See docs/RELEASING.md.
 - **Scheduled tasks / check-ins must be cheap** (owner, 2026-11-21): don't schedule check-ins into this

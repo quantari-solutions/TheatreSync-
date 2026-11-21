@@ -1,5 +1,11 @@
 package com.theatresync.core
 
+/** A live HLS stream the media server can serve at /live.m3u8 and /seg/N.ts. */
+interface LiveStream {
+    fun playlist(): String
+    fun segment(n: Long): ByteArray
+}
+
 /**
  * An endless live video for the TV screensaver, made from a handful of short scenes played in a
  * random order that never ends and never repeats a pattern: each round plays every scene once in a

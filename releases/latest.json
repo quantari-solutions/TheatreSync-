@@ -1,8 +1,8 @@
 {
-  "versionCode": 25,
-  "versionName": "0.6.0",
-  "apkUrl": "https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases/TheatreSync-0.6.0.apk",
-  "sha256": "ac46fb073e1ed589d9e401a88d411079a04b9fabac18d8d3f4068bfcde1b6297",
-  "sizeBytes": 26890880,
-  "notes": "The TV intro plays again: logo and titles with no progress bar or time. The refresh arrow now spins two full turns."
+  "versionCode": 26,
+  "versionName": "0.6.1",
+  "apkUrl": "https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases/TheatreSync-0.6.1.apk",
+  "sha256": "d583788c20acba275baf6d3c7d0c707e19c054372044613e47d9487d32141ebe",
+  "sizeBytes": 26810478,
+  "notes": "The TV intro is back: now using the same video your TV played before, without the progress bar or time. If the TV refuses it, the app reports why."
 }
