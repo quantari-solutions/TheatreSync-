@@ -15,7 +15,7 @@ class CastIntro(private val connect: () -> Socket) {
      * @param maxMs give up waiting after this long (the clip is ~4 s)
      * @return true if the TV played it to the end (or at least started it before [maxMs])
      */
-    fun play(url: String, maxMs: Long = 15_000): Boolean {
+    fun play(url: String, maxMs: Long = 15_000, imageMs: Long? = null): Boolean {
         connect().use { s ->
             s.soTimeout = 500
             val out = s.getOutputStream()
@@ -38,8 +38,13 @@ class CastIntro(private val connect: () -> Socket) {
                         if (app?.appId == CastStatus.APP_DEFAULT_MEDIA_RECEIVER && app.transportId != null) {
                             transport = app.transportId
                             send(app.transportId, CastMessage.NS_CONNECTION, """{"type":"CONNECT"}""")
-                            send(app.transportId, CastMessage.NS_MEDIA, loadRequest(url))
+                            send(app.transportId, CastMessage.NS_MEDIA, loadRequest(url, image = imageMs != null))
                             loaded = true
+                            if (imageMs != null) {
+                                // An animated picture has no "finished" event: show it for its length.
+                                Thread.sleep(imageMs + 400)
+                                return true
+                            }
                         }
                     }
                     m.namespace == CastMessage.NS_MEDIA && loaded -> when (playerState(payload)) {
@@ -58,8 +63,14 @@ class CastIntro(private val connect: () -> Socket) {
     companion object {
         private const val SENDER = "sender-ts-intro"
 
-        fun loadRequest(url: String): String =
-            """{"type":"LOAD","requestId":2,"autoplay":true,"currentTime":0,""" +
+        /**
+         * [image]: the intro as an animated picture, which the TV shows full-screen with no player controls,
+         * progress bar or time (a video would get those, and look like an advert).
+         */
+        fun loadRequest(url: String, image: Boolean = false): String =
+            if (image) """{"type":"LOAD","requestId":2,"autoplay":true,""" +
+                """"media":{"contentId":"$url","contentType":"image/webp","streamType":"NONE","metadata":{"metadataType":4}}}"""
+            else """{"type":"LOAD","requestId":2,"autoplay":true,"currentTime":0,""" +
                 """"media":{"contentId":"$url","contentType":"video/mp4","streamType":"BUFFERED",""" +
                 """"metadata":{"metadataType":0,"title":"TheatreSync"}}}"""
 

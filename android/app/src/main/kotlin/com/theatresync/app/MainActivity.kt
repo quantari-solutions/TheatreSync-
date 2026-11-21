@@ -354,9 +354,14 @@ class MainActivity : ComponentActivity() {
                     // Pull down anywhere to look for TVs, smart TVs and headphones again.
                     var refreshing by remember { mutableStateOf(false) }
                     val scope = androidx.compose.runtime.rememberCoroutineScope()
+                    val hostView = androidx.compose.ui.platform.LocalView.current
                     androidx.compose.material3.pulltorefresh.PullToRefreshBox(
                         isRefreshing = refreshing,
                         onRefresh = {
+                            // A gentle buzz on release, so you can feel it refreshed.
+                            hostView.performHapticFeedback(
+                                if (Build.VERSION.SDK_INT >= 30) android.view.HapticFeedbackConstants.CONFIRM else android.view.HapticFeedbackConstants.VIRTUAL_KEY,
+                            )
                             refreshing = true
                             session.refreshDevices()
                             refreshAudio()

@@ -1,6 +1,19 @@
 # Project status
 
-_Last updated: 2026-11-21. 0.5.8 (owner releases when ready): instant 10-band equalizer with 23 presets, Sync button, endless randomized screensaver, YouTube start and headphones improved_
+_Last updated: 2026-11-21. 0.5.9 (owner releases when ready): intro as a title card (no player bar), reliable ad muting, The Frame search, instant YouTube card, Stop from the notification, refresh buzz. Repository is public: in-app updates come from its releases/ folder_
+
+## 0.5.9: owner feedback
+
+| Request | Done | Verified |
+|---|---|---|
+| Intro looked like a video (time "0:04" and a progress bar on the TV) | The Chromecast's media player adds its controls to any video. The intro is now an **animated picture** (WebP, every frame stored whole so the glow has no blocks): pictures are shown full-screen with no controls, progress or time. Then the movie / YouTube / mirroring starts | Played in Chromium: smooth, right timing, ends on black; needs HW-23 on the TV |
+| Ads: mute at the start, unmute as soon as they end, never forget | Mutes with the **Chromecast's own volume** (instant, volume level untouched) instead of YouTube's. Unmutes on whichever comes first: the advert's own end time (0.8 s early), YouTube saying it ended, the film playing again, a 75 s safety limit, losing contact (after 4 s), or the ad skipper stopping. Checks every 0.7 s while muted. Not touched while YouTube sound is in the headphones | `AdMute` unit tests (5) |
+| Use GitHub ad blockers | Checked iSponsorBlockTV, castblock, sponsorblockcast, CastSponsorSkip: all skip skippable ads, mute unskippable ones and skip SponsorBlock segments — what TheatreSync does. None can remove unskippable ads on a Chromecast; a Chromecast with Google TV could run an ad-free YouTube app (e.g. SmartTube). Also from them: YouTube is revoking old TV pairing codes, so the app now fetches a fresh one automatically | — |
+| The Frame not showing | Search now: both the DIAL and Samsung TV searches, 3× each, over the Wi-Fi network (never mobile data), Samsung TVs accepted without a DIAL address (they use :8080/ws/apps/), plus Samsung's own "Multiscreen" announcement (mDNS `_samsungmsf._tcp`); repeated every minute while the app is open; a TV that misses one search stays listed 3 minutes | `DialTest` (Samsung path); needs HW-23 |
+| YouTube card takes ~10 s after coming back | The app kept watching TVs only while open. Now it keeps watching for 10 minutes after you leave, asks every TV for its status the moment you come back, and watches TVs seen in the last 45 s | Compiles; needs HW-23 |
+| Notification Stop didn't stop YouTube | Stop only went through the TV watcher, which wasn't running in the background. Now it also opens its own connection to the TV (address remembered across restarts) and stops the app there | `CastStopperTest` with a fake Chromecast |
+| Buzz when pull-to-refresh is released | Gentle confirm haptic on release | Compiles |
+
 
 ## 0.5.8: owner feedback
 

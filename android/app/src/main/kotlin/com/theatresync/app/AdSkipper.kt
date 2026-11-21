@@ -1,5 +1,6 @@
 package com.theatresync.app
 
+import com.theatresync.core.AdMute
 import com.theatresync.core.LoungeEvents
 import com.theatresync.core.SponsorBlock
 import com.theatresync.core.YouTubeLounge
@@ -23,6 +24,11 @@ class AdSkipper(
     private val onAction: (tvId: String, what: Action) -> Unit,
     /** YouTube on the TV played, paused, sought or changed video (instant, from its remote-control events). */
     private val onPlayerChange: (tvId: String) -> Unit = {},
+    /**
+     * Mutes / unmutes the TV directly (Chromecast volume: instant, and the volume level is left alone).
+     * Returns false if it can't (e.g. a smart TV found by DIAL): YouTube's own volume is used instead.
+     */
+    private val setTvMuted: (tvId: String, muted: Boolean) -> Boolean = { _, _ -> false },
 ) {
     enum class Action { SKIPPED_AD, MUTED_AD, SKIPPED_SPONSOR }
 
@@ -48,7 +54,7 @@ class AdSkipper(
         val me = Thread.currentThread()
         var link: Pair<YouTubeLounge, YouTubeLounge.Session>? = null
         var afterId = 0L
-        var mutedForAd = false
+        val ad = AdMute()
         var volume = "100"
         var videoId: String? = null
         var segments = emptyList<SponsorBlock.Segment>()
@@ -61,29 +67,33 @@ class AdSkipper(
             try {
                 val (lounge, session) = link ?: connect(tvId).also { link = it; afterId = 0 }
                 fun command(name: String, params: Map<String, String> = emptyMap()) = runCatching { lounge.command(session, name, params) }
-                for (e in LoungeEvents.parse(lounge.events(session, waitMs = 1_500, afterId = afterId))) {
+                fun mute(on: Boolean) {
+                    if (!setTvMuted(tvId, on)) command("setVolume", mapOf("volume" to volume, "muted" to on.toString()))
+                }
+                // While an advert is muted, check more often so the sound comes back right on time.
+                for (e in LoungeEvents.parse(lounge.events(session, waitMs = if (ad.muted) 700 else 1_500, afterId = afterId))) {
                     afterId = maxOf(afterId, e.id)
                     val f = e.fields
+                    val now = System.currentTimeMillis()
                     when (e.name) {
                         "onAdStateChange", "adPlaying" -> {
                             val ended = e.name == "onAdStateChange" && f["adState"] in setOf("0", "1082") && f["currentTime"] != "0"
+                            val length = (f["duration"] ?: f["adDuration"] ?: f["videoDuration"])?.toDoubleOrNull()
+                            val at = f["currentTime"]?.toDoubleOrNull()
                             when {
-                                ended -> if (mutedForAd) { command("setVolume", mapOf("volume" to volume, "muted" to "false")); mutedForAd = false }
+                                ended -> if (ad.adOver()) mute(false)
                                 f["isSkipEnabled"] == "true" -> {
                                     command("skipAd")
                                     onAction(tvId, Action.SKIPPED_AD)
-                                    if (mutedForAd) { command("setVolume", mapOf("volume" to volume, "muted" to "false")); mutedForAd = false }
+                                    if (ad.adOver()) mute(false)
                                 }
-                                !mutedForAd -> {
-                                    command("setVolume", mapOf("volume" to volume, "muted" to "true"))
-                                    mutedForAd = true
-                                    onAction(tvId, Action.MUTED_AD)
-                                }
+                                else -> if (ad.adPlaying(now, length, at)) { mute(true); onAction(tvId, Action.MUTED_AD) }
                             }
                         }
                         "onStateChange", "nowPlaying" -> {
                             onPlayerChange(tvId)
-                            if (f["state"] == "1" && mutedForAd) { command("setVolume", mapOf("volume" to volume, "muted" to "false")); mutedForAd = false }
+                            // The film is playing again: the advert is over.
+                            if (f["state"] == "1" && ad.adOver()) mute(false)
                             playing = f["state"] == "1"
                             f["currentTime"]?.toDoubleOrNull()?.let { lastPos = it; lastPosAt = System.currentTimeMillis() }
                             f["videoId"]?.takeIf { it.isNotBlank() && it != videoId }?.let { id ->
@@ -92,9 +102,11 @@ class AdSkipper(
                                 skipped.clear()
                             }
                         }
-                        "onVolumeChanged" -> f["volume"]?.let { if (!mutedForAd) volume = it }
+                        "onVolumeChanged" -> f["volume"]?.let { if (!ad.muted) volume = it }
                     }
                 }
+                // The advert's time is up (or the safety limit passed): sound back, never forgotten.
+                if (ad.tick(System.currentTimeMillis())) mute(false)
                 // Sponsor segments: jump to the end of the one we're in.
                 val pos = positionSec(tvId) ?: (lastPos + if (playing) (System.currentTimeMillis() - lastPosAt) / 1000.0 else 0.0)
                 SponsorBlock.current(segments, pos)?.takeIf { it !in skipped }?.let { seg ->
@@ -104,13 +116,17 @@ class AdSkipper(
                 }
                 failures = 0
             } catch (_: InterruptedException) {
+                if (ad.adOver()) setTvMuted(tvId, false) // stopped (ad skipper off / YouTube closed): never leave it muted
                 return
             } catch (_: Exception) {
+                // Lost YouTube mid-advert: unmute rather than leave the TV silent.
+                if (ad.connectionLost(System.currentTimeMillis())) setTvMuted(tvId, false)
                 link = null // the link expired or the TV went away: reconnect after a pause
                 failures++
-                try { Thread.sleep(minOf(30_000L, 2_000L * failures)) } catch (_: InterruptedException) { return }
+                try { Thread.sleep(minOf(30_000L, 2_000L * failures)) } catch (_: InterruptedException) { if (ad.adOver()) setTvMuted(tvId, false); return }
             }
         }
+        if (ad.adOver()) setTvMuted(tvId, false) // finished for this TV: never leave it muted
     }
 
     private fun fetchSegments(videoId: String): List<SponsorBlock.Segment> = runCatching {
