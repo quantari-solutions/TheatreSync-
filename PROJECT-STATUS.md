@@ -1,6 +1,15 @@
 # Project status
 
-_Last updated: 2026-11-21. 0.5.6 (owner releases when ready): sharp, phone-shaped opening; high-quality TV intro. 0.5.5 released 2026-11-21_
+_Last updated: 2026-11-21. 0.5.7 (owner releases when ready): subtitles that work on any phone, smart start, auto sync only_
+
+## 0.5.7: owner feedback on 0.5.5
+
+| Request | Done | Verified |
+|---|---|---|
+| Auto-generated subtitles not working | Cause (most likely): the generator relied on Google's built-in offline speech recognizer, which many phones (including Motorola) don't have, and it hid the recognizer's errors. Now uses **Vosk** (open-source offline recognizer, in the app): any phone, word-level timing so lines appear exactly when spoken, dialogue taken mainly from the centre channel of surround sound. Each language's speech pack (40–100 MB) downloads once from the Vosk project's site, with progress; nothing is uploaded. No microphone permission any more. APK 18.7 MB (native code now stored compressed) | Vosk + English pack on a synthetic clip: words and timings right; `SpeechCues` unit tests; on-emulator test that the native engine loads; needs HW-20 on a real movie |
+| Lag at the start until pause → wait → play | **Smart start**: the movie loads on the TV paused; the app counts how much of it the TV has fetched (converted to seconds of film by the file's bitrate) and presses play once the TV holds 20 s, or 6 s when Wi-Fi is clearly faster than the film, or after 45 s at most. "Getting the TV ready… 60% · about 8 s" on the player. Headphones wait at the same spot and start with the picture | `StartGate` unit tests; needs HW-20 |
+| Scrap the ±ms sync tool, auto sync only | Manual "Sound is early/late" and ±10/50 ms buttons removed (an old saved adjustment is dropped). Headphone settings → **Auto sync**: live "in step within X ms" (checked 4×/s, corrected automatically) and a one-tap **Re-sync now** | Screenshots |
+
 
 ## 0.5.6: opening looks professional
 

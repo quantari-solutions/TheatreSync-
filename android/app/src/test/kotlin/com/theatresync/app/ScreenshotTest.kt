@@ -26,7 +26,7 @@ class ScreenshotTest {
     }
 
     private fun setup(ui: Ui) = shot { SetupScreen(ui, {}, {}, {}, {}, {}, {}) }
-    private fun playing(ui: Ui) = shot { PlayingScreen(ui, {}, {}, {}, {}, {}, {}, {}, {}) }
+    private fun playing(ui: Ui) = shot { PlayingScreen(ui, {}, {}, {}, {}, {}, {}) }
 
     @Test fun setup1_empty() = setup(Ui())
     /** Opening on a phone: drawn by the app (sharp, portrait), frozen once everything is on screen. */
@@ -85,9 +85,9 @@ class ScreenshotTest {
     )
     @Test fun headphones3_settings() = shot {
         HeadphoneSettingsScreen(
-            Ui(preferredOutputId = 12, soundDelayMs = 20, driftMs = 8, fx = HeadphoneFx.withPreset(HeadphoneFx.Settings(), HeadphoneFx.Preset.CINEMA)),
+            Ui(preferredOutputId = 12, driftMs = 8, fx = HeadphoneFx.withPreset(HeadphoneFx.Settings(), HeadphoneFx.Preset.CINEMA)),
             listOf(DiagnosticsReport.Output("MOMENTUM 4", DiagnosticsReport.Kind.BLUETOOTH, 12), DiagnosticsReport.Output("Phone speaker", DiagnosticsReport.Kind.SPEAKER, 2)),
-            {}, {}, {}, {}, {}, {}, {},
+            {}, {}, {}, {}, {}, {},
         )
     }
     @Test fun setup13_surroundInstant() = setup(
@@ -219,7 +219,7 @@ class LargeFontScreenshotTest {
             GridBackground {
                 PlayingScreen(
                     Ui(movieTitle = "Interstellar", connectedTv = "Theatre Room TV", phase = Phase.PLAYING, positionMs = 2_712_000, durationMs = 10_140_000, driftMs = 6, friends = 1, joinAddress = "192.168.1.23:41234"),
-                    {}, {}, {}, {}, {}, {}, {}, {},
+                    {}, {}, {}, {}, {}, {},
                 )
             }
         }

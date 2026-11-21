@@ -1,88 +1,134 @@
 package com.theatresync.app
 
 import android.content.Context
-import android.content.Intent
-import android.media.AudioFormat
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.net.Uri
-import android.os.Build
-import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.os.ParcelFileDescriptor
-import android.speech.RecognitionListener
-import android.speech.RecognizerIntent
-import android.speech.SpeechRecognizer
+import com.theatresync.core.SpeechCues
 import com.theatresync.core.Subtitles
 import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
 import java.security.MessageDigest
-import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
-import kotlin.math.sqrt
+import java.util.zip.ZipInputStream
 
 /**
- * Makes subtitles for a movie on the phone: decodes its sound, cuts it at pauses in speech, and
- * runs Android's on-device speech recognition on each piece (Android 13+ can read audio from a
- * file instead of the microphone). Nothing is uploaded. Optional translation uses ML Kit's
- * on-device translator (one-time language download).
+ * Makes subtitles for a movie on the phone: decodes its sound, keeps mostly the dialogue (the
+ * centre channel of surround sound), and runs the open-source Vosk offline speech recognizer over
+ * it. Vosk gives each word's time, so every line appears exactly when it is spoken. Works on any
+ * phone; each language's speech pack (~40–100 MB) is downloaded once from alphacephei.com, the
+ * Vosk project's own site. Nothing is uploaded. Optional translation uses ML Kit on the phone.
  */
 class SubtitleGenerator(private val context: Context) {
     interface Listener {
+        /** Downloading this language's speech pack (first time only). */
+        fun onDownloading(percent: Int) {}
         fun onProgress(percent: Int, etaSec: Long?)
         fun onDone(srtFile: File)
         fun onFailed(reason: String)
     }
 
-    @Volatile private var cancelled = false
     private val main = Handler(Looper.getMainLooper())
+    @Volatile private var cancelled = false
     private val dir = File(context.filesDir, "subtitles").apply { mkdirs() }
+    private val packs = File(context.filesDir, "speech").apply { mkdirs() }
 
     fun cachedFile(uri: Uri, spoken: String, shownIn: String): File? = target(uri, spoken, shownIn).takeIf { it.exists() && it.length() > 0 }
 
     fun cancel() { cancelled = true }
 
-    /** Android 13+ with an on-device recognizer (e.g. the Google app's offline speech models). */
-    fun isSupported(): Boolean =
-        Build.VERSION.SDK_INT >= 33 && runCatching { SpeechRecognizer.isOnDeviceRecognitionAvailable(context) }.getOrDefault(false)
+    /** Any phone: the recognizer ships with the app; only the language pack is downloaded. */
+    fun isSupported(): Boolean = true
 
     /** @param spoken language spoken in the movie (e.g. "en-US"); @param shownIn language to show ("en", "hi"…) */
     fun start(uri: Uri, spoken: String, shownIn: String, listener: Listener) {
         cancelled = false
         Thread({
             try {
-                val cues = recognise(uri, spoken, listener) ?: return@Thread
+                val model = speechPack(spoken, listener) ?: return@Thread
+                val cues = recognise(uri, spoken, model, listener) ?: return@Thread
                 val final = if (shownIn.substringBefore('-') == spoken.substringBefore('-')) cues else translate(cues, spoken, shownIn)
                 val out = target(uri, spoken, shownIn)
                 out.writeText(Subtitles.toSrt(final))
                 main.post { listener.onDone(out) }
             } catch (e: Exception) {
-                CrashReporter.handled(context, "generate subtitles", e)
+                CrashReporter.handled(context, "generate subtitles ($spoken)", e)
                 main.post { listener.onFailed(e.message ?: e.javaClass.simpleName) }
             }
         }, "subtitles").apply { isDaemon = true }.start()
     }
 
-    // ---------------------------------------------------------------- speech → text
+    // ---------------------------------------------------------------- language packs
 
-    private fun recognise(uri: Uri, spoken: String, listener: Listener): List<Subtitles.Cue>? {
+    /** The unpacked Vosk model for [spoken], downloading it the first time. Null if cancelled. */
+    private fun speechPack(spoken: String, listener: Listener): File? {
+        val name = PACKS[spoken.substringBefore('-')] ?: throw IllegalStateException("no offline speech pack for $spoken")
+        val home = File(packs, name)
+        if (File(home, "ready").exists()) return home
+        home.deleteRecursively()
+        val zip = File(context.cacheDir, "$name.zip")
+        main.post { listener.onDownloading(0) }
+        val c = URL("https://alphacephei.com/vosk/models/$name.zip").openConnection() as HttpURLConnection
+        c.connectTimeout = 15_000; c.readTimeout = 30_000
+        try {
+            if (c.responseCode != 200) throw IllegalStateException("speech pack download failed (HTTP ${c.responseCode})")
+            val total = c.contentLengthLong
+            var got = 0L; var shown = -1
+            c.inputStream.use { input -> zip.outputStream().use { out ->
+                val buf = ByteArray(64 * 1024)
+                while (true) {
+                    if (cancelled) return null
+                    val n = input.read(buf); if (n < 0) break
+                    out.write(buf, 0, n); got += n
+                    val pct = if (total > 0) (got * 100 / total).toInt() else 0
+                    if (pct != shown) { shown = pct; main.post { listener.onDownloading(pct) } }
+                }
+            } }
+        } catch (e: java.io.IOException) {
+            throw IllegalStateException("couldn't download the speech pack — check the internet connection", e)
+        } finally { c.disconnect(); }
+        // Unpack: the zip holds one folder named like the model; strip it.
+        val tmp = File(packs, "$name.tmp").apply { deleteRecursively(); mkdirs() }
+        ZipInputStream(zip.inputStream().buffered()).use { z ->
+            while (true) {
+                val e = z.nextEntry ?: break
+                val rel = e.name.substringAfter('/', "")
+                if (rel.isEmpty() || rel.contains("..")) continue
+                val f = File(tmp, rel)
+                if (e.isDirectory) f.mkdirs() else { f.parentFile?.mkdirs(); f.outputStream().use { z.copyTo(it) } }
+            }
+        }
+        zip.delete()
+        if (!tmp.renameTo(home)) throw IllegalStateException("couldn't unpack the speech pack")
+        File(home, "ready").writeText("ok")
+        return home
+    }
+
+    // ---------------------------------------------------------------- speech → timed words
+
+    private fun recognise(uri: Uri, spoken: String, modelDir: File, listener: Listener): List<Subtitles.Cue>? {
         val ex = MediaExtractor()
         ex.setDataSource(context, uri, null)
         val track = (0 until ex.trackCount).firstOrNull { ex.getTrackFormat(it).getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true }
-            ?: throw IllegalStateException("this movie has no sound track")
+            ?: run { ex.release(); throw IllegalStateException("this movie has no sound track") }
         ex.selectTrack(track)
         val format = ex.getTrackFormat(track)
         val durationUs = if (format.containsKey(MediaFormat.KEY_DURATION)) format.getLong(MediaFormat.KEY_DURATION) else 0L
         val codec = MediaCodec.createDecoderByType(format.getString(MediaFormat.KEY_MIME)!!)
         codec.configure(format, null, null, 0)
         codec.start()
-        val cues = mutableListOf<Subtitles.Cue>()
-        val chunker = SpeechChunker(TARGET_RATE)
+        val model = org.vosk.Model(modelDir.absolutePath)
+        val rec = org.vosk.Recognizer(model, TARGET_RATE.toFloat()).apply { setWords(true) }
+        val words = mutableListOf<SpeechCues.Word>()
         var inRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
         var channels = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
         val resampler = Resampler()
         val started = System.currentTimeMillis()
+        var lastReport = 0L
         var inputDone = false
         val info = MediaCodec.BufferInfo()
         try {
@@ -103,20 +149,21 @@ class SubtitleGenerator(private val context: Context) {
                     val shorts = ShortArray(info.size / 2)
                     buf.order(java.nio.ByteOrder.LITTLE_ENDIAN).asShortBuffer().get(shorts)
                     codec.releaseOutputBuffer(o, false)
-                    val mono = downmix(shorts, channels)
-                    chunker.add(resampler.process(mono, inRate, TARGET_RATE)).forEach { chunk ->
-                        recogniseChunk(chunk.pcm, spoken)?.let { text -> cues += Subtitles.split(chunk.startMs, chunk.endMs, text) }
-                        report(chunk.endMs, durationUs, started, listener)
-                    }
+                    val pcm = resampler.process(downmix(shorts, channels), inRate, TARGET_RATE)
+                    if (pcm.isNotEmpty() && rec.acceptWaveForm(pcm, pcm.size)) words += SpeechCues.words(rec.result)
+                    val now = System.currentTimeMillis()
+                    if (now - lastReport > 500) { lastReport = now; report(info.presentationTimeUs / 1000, durationUs, started, listener) }
                     if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) break
                 }
             }
             if (cancelled) return null
-            chunker.flush()?.let { chunk -> recogniseChunk(chunk.pcm, spoken)?.let { cues += Subtitles.split(chunk.startMs, chunk.endMs, it) } }
+            words += SpeechCues.words(rec.finalResult)
         } finally {
             runCatching { codec.stop() }; codec.release(); ex.release()
+            rec.close(); model.close()
         }
-        if (cues.isEmpty()) throw IllegalStateException("no speech was recognised")
+        val cues = SpeechCues.cues(words, joiner = if (spoken.startsWith("ja")) "" else " ")
+        if (cues.isEmpty()) throw IllegalStateException("no speech was recognised — is the spoken language right?")
         return cues
     }
 
@@ -126,57 +173,6 @@ class SubtitleGenerator(private val context: Context) {
         val elapsed = (System.currentTimeMillis() - started) / 1000
         val eta = if (percent in 2..99 && elapsed > 10) elapsed * (100 - percent) / percent else null
         main.post { listener.onProgress(percent, eta) }
-    }
-
-    /** One piece of speech → text, via the on-device recognizer reading from a pipe. Null if nothing heard. */
-    private fun recogniseChunk(pcm: ShortArray, spoken: String): String? {
-        if (Build.VERSION.SDK_INT < 33) return null
-        val pipe = ParcelFileDescriptor.createPipe()
-        val done = CountDownLatch(1)
-        var text: String? = null
-        var recognizer: SpeechRecognizer? = null
-        main.post {
-            runCatching {
-                val r = SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
-                recognizer = r
-                r.setRecognitionListener(object : RecognitionListener {
-                    override fun onResults(results: Bundle?) {
-                        text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.takeIf { it.isNotBlank() }
-                        done.countDown()
-                    }
-                    override fun onError(error: Int) { done.countDown() }
-                    override fun onReadyForSpeech(params: Bundle?) = Unit
-                    override fun onBeginningOfSpeech() = Unit
-                    override fun onRmsChanged(rmsdB: Float) = Unit
-                    override fun onBufferReceived(buffer: ByteArray?) = Unit
-                    override fun onEndOfSpeech() = Unit
-                    override fun onPartialResults(partialResults: Bundle?) = Unit
-                    override fun onEvent(eventType: Int, params: Bundle?) = Unit
-                })
-                r.startListening(
-                    Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
-                        .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                        .putExtra(RecognizerIntent.EXTRA_LANGUAGE, spoken)
-                        .putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
-                        .putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE, pipe[0])
-                        .putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_CHANNEL_COUNT, 1)
-                        .putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_ENCODING, AudioFormat.ENCODING_PCM_16BIT)
-                        .putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_SAMPLING_RATE, TARGET_RATE),
-                )
-            }.onFailure { done.countDown() }
-        }
-        // Feed the piece (plus a little silence so the recognizer knows it ended), then close.
-        runCatching {
-            ParcelFileDescriptor.AutoCloseOutputStream(pipe[1]).use { out ->
-                val bytes = java.nio.ByteBuffer.allocate((pcm.size + TARGET_RATE / 2) * 2).order(java.nio.ByteOrder.LITTLE_ENDIAN)
-                pcm.forEach { bytes.putShort(it) }
-                out.write(bytes.array())
-            }
-        }
-        done.await(60, TimeUnit.SECONDS)
-        main.post { runCatching { recognizer?.destroy() } }
-        runCatching { pipe[0].close() }
-        return text
     }
 
     // ---------------------------------------------------------------- translation (on-device)
@@ -204,14 +200,25 @@ class SubtitleGenerator(private val context: Context) {
     companion object {
         const val TARGET_RATE = 16_000
 
-        /** Average all channels into one (5.1 → mono keeps the dialogue from the centre channel). */
+        /** Vosk's small offline models, one per language the app offers (names on alphacephei.com/vosk/models). */
+        val PACKS = mapOf(
+            "en" to "vosk-model-small-en-us-0.15", "hi" to "vosk-model-small-hi-0.22", "gu" to "vosk-model-small-gu-0.42",
+            "es" to "vosk-model-small-es-0.42", "fr" to "vosk-model-small-fr-0.22", "de" to "vosk-model-small-de-0.15",
+            "ja" to "vosk-model-small-ja-0.22", "ko" to "vosk-model-small-ko-0.22",
+        )
+
+        /**
+         * To mono for speech. Surround sound (Android's decoder order: FL, FR, FC, LFE, BL, BR) keeps mostly
+         * the centre channel, where films put the dialogue, so music and effects don't drown it out.
+         */
         internal fun downmix(samples: ShortArray, channels: Int): ShortArray {
             if (channels <= 1) return samples
             val frames = samples.size / channels
             return ShortArray(frames) { f ->
-                var sum = 0
-                for (c in 0 until channels) sum += samples[f * channels + c]
-                (sum / channels).toShort()
+                val b = f * channels
+                val v = if (channels >= 3) 0.7 * samples[b + 2] + 0.15 * (samples[b] + samples[b + 1])
+                    else (0 until channels).sumOf { samples[b + it].toInt() }.toDouble() / channels
+                v.toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
             }
         }
     }
@@ -237,57 +244,5 @@ internal class Resampler {
         pos -= input.size
         last = input.last()
         return out.toShortArray()
-    }
-}
-
-/**
- * Cuts continuous 16 kHz audio into pieces of speech at pauses (energy-based voice activity), so
- * each subtitle gets the right time. Pieces are 1.5–12 s; pure silence is dropped.
- */
-internal class SpeechChunker(private val rate: Int) {
-    class Chunk(val startMs: Long, val endMs: Long, val pcm: ShortArray)
-
-    private val frame = rate * 30 / 1000 // 30 ms
-    private var pending = ShortArray(0)
-    private var current = ShortArray(rate * 13)
-    private var currentLen = 0
-    private var currentStart = 0L
-    private var consumed = 0L // samples seen
-    private var silentFrames = 0
-    private var voicedFrames = 0
-    private var noiseFloor = 300.0
-
-    fun add(samples: ShortArray): List<Chunk> {
-        val all = if (pending.isEmpty()) samples else pending + samples
-        val out = mutableListOf<Chunk>()
-        var at = 0
-        while (all.size - at >= frame) {
-            var sum = 0.0
-            for (k in at until at + frame) sum += all[k] * all[k].toDouble()
-            val rms = sqrt(sum / frame)
-            val voiced = rms > noiseFloor * 2.5
-            if (!voiced) noiseFloor = noiseFloor * 0.995 + rms * 0.005
-            if (currentLen == 0 && !voiced) { consumed += frame; at += frame; continue }
-            if (currentLen == 0) currentStart = consumed * 1000 / rate
-            if (currentLen + frame > current.size) current = current.copyOf(current.size * 2)
-            System.arraycopy(all, at, current, currentLen, frame)
-            currentLen += frame
-            consumed += frame
-            at += frame
-            if (voiced) { voicedFrames++; silentFrames = 0 } else silentFrames++
-            val lengthMs = currentLen * 1000L / rate
-            if ((silentFrames >= 13 && lengthMs >= 1_500) || lengthMs >= 12_000) emit()?.let { out += it }
-        }
-        pending = all.copyOfRange(at, all.size)
-        return out
-    }
-
-    fun flush(): Chunk? = emit()
-
-    private fun emit(): Chunk? {
-        if (currentLen == 0) return null
-        val chunk = if (voicedFrames >= 10) Chunk(currentStart, currentStart + currentLen * 1000L / rate, current.copyOf(currentLen)) else null
-        currentLen = 0; silentFrames = 0; voicedFrames = 0
-        return chunk
     }
 }

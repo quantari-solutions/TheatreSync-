@@ -38,7 +38,7 @@ class AccessibilityTest {
     @Test fun playingScreen() = check {
         PlayingScreen(
             MovieSession.Ui(movieTitle = "Interstellar", connectedTv = "TV", phase = MovieSession.Phase.PLAYING, positionMs = 1000, durationMs = 9000, driftMs = 4, joinAddress = "10.0.0.2:5000"),
-            {}, {}, {}, {}, {}, {}, {}, {},
+            {}, {}, {}, {}, {}, {},
         )
     }
 

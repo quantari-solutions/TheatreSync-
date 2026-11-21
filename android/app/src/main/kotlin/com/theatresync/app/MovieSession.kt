@@ -127,6 +127,11 @@ class MovieSession(private val app: Application) {
         val subtitlesOn: Boolean = true,
         /** Generating subtitles: percent done and seconds left (null when not running). */
         val subtitleProgress: Int? = null,
+        /** Smart start: how ready the TV is to play without stalling (null when not waiting). */
+        val tvReadyPercent: Int? = null,
+        val tvReadyEtaSec: Long? = null,
+        /** True while the language's speech pack is downloading (first time only). */
+        val subtitleDownloading: Boolean = false,
         val subtitleEtaSec: Long? = null,
         /** YouTube ad skipper + SponsorBlock (on by default). */
         val adSkipper: Boolean = true,
@@ -148,7 +153,7 @@ class MovieSession(private val app: Application) {
     private val deviceId: String = prefs.getString("deviceId", null) ?: ("android-" + UUID.randomUUID().toString().take(12))
         .also { prefs.edit { putString("deviceId", it) } }
 
-    private val _ui = MutableStateFlow(Ui(soundDelayMs = prefs.getInt("soundDelayMs", 0), fx = HeadphoneFx.load(app)))
+    private val _ui = MutableStateFlow(Ui(fx = HeadphoneFx.load(app))).also { prefs.edit { remove("soundDelayMs") } }
     val ui: StateFlow<Ui> = _ui
 
     private val main = Handler(Looper.getMainLooper())
@@ -773,9 +778,10 @@ class MovieSession(private val app: Application) {
             applySubtitlesToTv()
             return@guard
         }
-        _ui.update { it.copy(subtitleProgress = 0, subtitleEtaSec = null) }
+        _ui.update { it.copy(subtitleProgress = 0, subtitleEtaSec = null, subtitleDownloading = false) }
         subtitleGenerator.start(m.uri, spoken, shownIn, object : SubtitleGenerator.Listener {
-            override fun onProgress(percent: Int, etaSec: Long?) = _ui.update { it.copy(subtitleProgress = percent, subtitleEtaSec = etaSec) }
+            override fun onDownloading(percent: Int) = _ui.update { it.copy(subtitleProgress = percent, subtitleEtaSec = null, subtitleDownloading = true) }
+            override fun onProgress(percent: Int, etaSec: Long?) = _ui.update { it.copy(subtitleProgress = percent, subtitleEtaSec = etaSec, subtitleDownloading = false) }
             override fun onDone(srtFile: java.io.File) = guard("subtitles done") {
                 subtitleCues = Subtitles.parse(srtFile.readText())
                 _ui.update { it.copy(subtitleProgress = null, subtitleEtaSec = null, subtitleName = label, subtitlesOn = true) }
@@ -838,6 +844,10 @@ class MovieSession(private val app: Application) {
     private var introUrl: String? = null
     /** True once the TV has moved from the intro to the movie itself. */
     private var movieOnScreen = false
+    /** Waiting for the TV to have enough of the movie before pressing play (see [StartGate]). */
+    private var smartStarting = false
+    private var startGate: com.theatresync.core.StartGate? = null
+    private var tvFile: MediaSource? = null
 
     /** Sends [m] to the TV and starts headphone sound. */
     private fun castMovie(m: ContentUriSource, tvSource: MediaSource = m) {
@@ -894,6 +904,10 @@ class MovieSession(private val app: Application) {
         val activeTracks = if (subsTrack != null && _ui.value.subtitlesOn) longArrayOf(SUBTITLE_TRACK) else null
         movieUrl = url
         movieOnScreen = false
+        // Smart start: the movie loads paused and plays by itself once the TV has enough of it.
+        startGate = null
+        smartStarting = true
+        tvFile = tvSource
         val resumeAt = pendingResumeMs
         pendingResumeMs = 0L
         _ui.update { it.copy(tvSoundless = tvSource !== m) }
@@ -911,14 +925,14 @@ class MovieSession(private val app: Application) {
             val queue = com.google.android.gms.cast.MediaQueueData.Builder()
                 .setItems(listOf(
                     com.google.android.gms.cast.MediaQueueItem.Builder(introInfo).setAutoplay(true).setPreloadTime(4.0).build(),
-                    com.google.android.gms.cast.MediaQueueItem.Builder(info).setAutoplay(true).setStartTime(resumeAt / 1000.0)
+                    com.google.android.gms.cast.MediaQueueItem.Builder(info).setAutoplay(false).setStartTime(resumeAt / 1000.0)
                         .apply { activeTracks?.let { setActiveTrackIds(it) } }.build(),
                 ))
                 .setStartIndex(0)
                 .build()
             MediaLoadRequestData.Builder().setQueueData(queue).setAutoplay(true).build()
         } else {
-            MediaLoadRequestData.Builder().setMediaInfo(info).setAutoplay(true).setCurrentTime(resumeAt)
+            MediaLoadRequestData.Builder().setMediaInfo(info).setAutoplay(false).setCurrentTime(resumeAt)
                 .apply { activeTracks?.let { setActiveTrackIds(it) } }.build()
         }
         client.load(request).setResultCallback { result ->
@@ -936,6 +950,40 @@ class MovieSession(private val app: Application) {
         _ui.update { it.copy(phase = Phase.STARTING, joinAddress = "$ip:$port", message = null, positionMs = 0) }
         main.removeCallbacks(tick)
         main.post(tick)
+    }
+
+    /**
+     * While the movie is loaded but paused at the start: count how much of it the TV has fetched and
+     * press play once that's enough (no stalls at the start). Returns true while still waiting.
+     */
+    private fun smartStartStep(client: com.google.android.gms.cast.framework.media.RemoteMediaClient, showing: String?): Boolean {
+        val state = client.playerState
+        if (showing == null) { player?.follow(0, shouldPlay = false); return true } // still loading
+        if (showing != movieUrl || state == MediaStatus.PLAYER_STATE_IDLE) { endSmartStart(); return false } // something else, or it failed
+        if (state == MediaStatus.PLAYER_STATE_PLAYING) { endSmartStart(); return false } // the TV (or the owner) already started it
+        val srv = server ?: return false
+        val durationMs = client.streamDuration
+        val file = tvFile
+        if (startGate == null) {
+            if (durationMs <= 0 || file == null) { player?.follow(0, shouldPlay = false); return true }
+            startGate = com.theatresync.core.StartGate(file.sizeBytes * 8.0 / (durationMs / 1000.0))
+        }
+        val s = startGate!!.update(SystemClock.elapsedRealtime(), srv.mediaBytesSent)
+        player?.follow(client.approximateStreamPosition.coerceAtLeast(0), shouldPlay = false) // headphones ready at the same spot
+        if (s.ready) {
+            endSmartStart()
+            client.play()
+            return false
+        }
+        _ui.update { it.copy(phase = Phase.STARTING, tvBuffering = false, tvReadyPercent = s.percent, tvReadyEtaSec = s.etaSec) }
+        return true
+    }
+
+    private fun endSmartStart() {
+        smartStarting = false
+        startGate = null
+        startedAtMs = SystemClock.elapsedRealtime() // the "TV can't play it" check counts from the real start
+        _ui.update { it.copy(tvReadyPercent = null, tvReadyEtaSec = null) }
     }
 
     private fun stopMovieUnsafe() {
@@ -985,26 +1033,14 @@ class MovieSession(private val app: Application) {
         c.seek(MediaSeekOptions.Builder().setPosition(pos).build())
     }
 
-    /** Positive = make the sound later. Bound matches the protocol's userOffsetMs range. */
-    fun adjustSoundDelay(stepMs: Int) {
-        val v = (_ui.value.soundDelayMs + stepMs).coerceIn(-1000, 1000)
-        prefs.edit { putInt("soundDelayMs", v) }
-        _ui.update { it.copy(soundDelayMs = v) }
-        player?.onDelayChanged()
-    }
-
     fun setFx(settings: HeadphoneFx.Settings) = guard("setFx") {
         HeadphoneFx.save(app, settings)
         player?.applyFx(settings)
         _ui.update { it.copy(fx = settings) }
     }
 
-    /** Headphone settings → Reset sync: sound delay back to 0 and re-lock onto the TV. */
-    fun resetHeadphoneSync() = guard("resetHeadphoneSync") {
-        prefs.edit { putInt("soundDelayMs", 0) }
-        _ui.update { it.copy(soundDelayMs = 0) }
-        player?.resetSync()
-    }
+    /** Headphone settings → Re-sync now: re-lock onto the TV from scratch (sync is otherwise automatic). */
+    fun resetHeadphoneSync() = guard("resetHeadphoneSync") { player?.resetSync() }
 
     // ------------------------------------------------------------- YouTube ad skipper
 
@@ -1133,6 +1169,7 @@ class MovieSession(private val app: Application) {
             }
         }
         if (_ui.value.introPlaying) _ui.update { it.copy(introPlaying = false) }
+        if (smartStarting && smartStartStep(client, showing)) return
         val castPos = client.approximateStreamPosition.coerceAtLeast(0)
         val castState = client.playerState
         val playing = castState == MediaStatus.PLAYER_STATE_PLAYING

@@ -230,3 +230,11 @@ the YouTube volume changes. Send one screenshot of step 1 and one of step 3, and
 6. Guest switches between two headphones: sound stays in step after a moment.
 
 **Send:** a screenshot of your Audio sheet with a guest listed, and anything that took more than a couple of seconds.
+
+## HW-20 — Subtitles, smart start, auto sync (0.5.7)
+
+1. Choose a movie (one you know has speech) → Subtitles → **Generate** → English. The first time it shows "Getting the speech pack…" (about 40 MB), then "Making subtitles…". Start the movie: subtitles appear on the TV in time with the speech.
+2. Start a movie: the player shows "Getting the TV ready… %" for a few seconds, then plays **without stuttering at the start**, headphones in step straight away.
+3. Headphone settings → **Auto sync** shows "in step within … ms" while the movie plays. No ± buttons anywhere.
+
+**Send:** a photo of the TV with subtitles, how long the "Getting the TV ready" wait was, and whether the start still stutters.

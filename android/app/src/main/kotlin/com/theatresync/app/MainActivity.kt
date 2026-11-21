@@ -148,22 +148,8 @@ class MainActivity : ComponentActivity() {
         if (uri != null) session.loadSubtitles(uri)
     }
 
-    /** Subtitle generation waits for the speech-recognizer permission, then starts. */
-    private var pendingSubtitles: Triple<String, String, String>? = null
-    private val askMic = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        val job = pendingSubtitles
-        pendingSubtitles = null
-        if (granted && job != null) session.generateSubtitles(job.first, job.second, job.third)
-    }
-
-    private fun generateSubtitles(spoken: String, shownIn: String, label: String) {
-        if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            session.generateSubtitles(spoken, shownIn, label)
-        } else {
-            pendingSubtitles = Triple(spoken, shownIn, label)
-            askMic.launch(android.Manifest.permission.RECORD_AUDIO)
-        }
-    }
+    /** Subtitles are made from the movie file itself: no microphone permission needed. */
+    private fun generateSubtitles(spoken: String, shownIn: String, label: String) = session.generateSubtitles(spoken, shownIn, label)
 
     private val deviceCallback = object : AudioDeviceCallback() {
         override fun onAudioDevicesAdded(added: Array<out AudioDeviceInfo>) = refreshAudio()
@@ -390,7 +376,6 @@ class MainActivity : ComponentActivity() {
                                     outputs = outputs.value,
                                     onSelectOutput = { id -> session.setPreferredOutput(id) },
                                     onPickDevice = ::pickAudioDevice,
-                                    onDelay = { step -> session.adjustSoundDelay(step) },
                                     onResetSync = session::resetHeadphoneSync,
                                     onFx = session::setFx,
                                     onSoundTest = { refreshAudio(); page = Page.HEADPHONES },
@@ -563,8 +548,6 @@ class MainActivity : ComponentActivity() {
                                     onPlayPause = session::togglePause,
                                     onSkip = session::skip,
                                     onSeekTo = session::seekTo,
-                                    onSoundEarly = { session.adjustSoundDelay(+STEP_MS) },
-                                    onSoundLate = { session.adjustSoundDelay(-STEP_MS) },
                                     onHeadphonesHere = session::setHeadphonesHere,
                                     onMuteTv = session::setMuteTv,
                                     onStop = session::stopMovie,
@@ -827,8 +810,6 @@ class MainActivity : ComponentActivity() {
     }.toTypedArray()
 
     companion object {
-        const val STEP_MS = 20
-
         const val EXTRA_OPEN = "open"
         const val OPEN_REMOTE = "remote"
         const val OPEN_PIP = "pip"
@@ -1379,8 +1360,6 @@ internal fun PlayingScreen(
     ui: MovieSession.Ui,
     onPlayPause: () -> Unit,
     onSkip: (Long) -> Unit,
-    onSoundEarly: () -> Unit,
-    onSoundLate: () -> Unit,
     onHeadphonesHere: (Boolean) -> Unit,
     onMuteTv: (Boolean) -> Unit,
     onStop: () -> Unit,
@@ -1399,7 +1378,9 @@ internal fun PlayingScreen(
             ui.introPlaying -> stringResource(R.string.status_intro)
             else -> null
         } ?: when (ui.phase) {
-            Phase.STARTING -> stringResource(R.string.status_starting, ui.connectedTv ?: "TV")
+            Phase.STARTING -> ui.tvReadyPercent?.let { p ->
+                ui.tvReadyEtaSec?.takeIf { it > 0 }?.let { stringResource(R.string.status_tv_ready_eta, p, it) } ?: stringResource(R.string.status_tv_ready, p)
+            } ?: stringResource(R.string.status_starting, ui.connectedTv ?: "TV")
             Phase.PAUSED -> stringResource(R.string.status_paused)
             Phase.ENDED -> stringResource(R.string.status_ended)
             else -> stringResource(R.string.status_playing, ui.connectedTv ?: "TV")
@@ -1416,19 +1397,6 @@ internal fun PlayingScreen(
             GhostButton(stringResource(R.string.skip_fwd_short), { onSkip(10_000) }, Modifier.testTag("fwd10"), height = 52.dp, description = stringResource(R.string.skip_forward))
         }
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { SyncPill(ui) }
-    }
-
-    QCard {
-        Text(stringResource(R.string.lips_title), style = MaterialTheme.typography.titleLarge, color = Q.Text)
-        Hint(stringResource(R.string.lips_hint))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            GoldButton(stringResource(R.string.sound_early), onSoundEarly, Modifier.weight(1f).testTag("early"), height = 52.dp)
-            GoldButton(stringResource(R.string.sound_late), onSoundLate, Modifier.weight(1f).testTag("late"), height = 52.dp)
-        }
-        Text(
-            stringResource(R.string.sound_delay_value, ui.soundDelayMs), Modifier.fillMaxWidth(),
-            color = Q.TextFaint, style = MaterialTheme.typography.labelLarge, textAlign = TextAlign.Center,
-        )
     }
 
     AudioSummary(ui, onAudio)
@@ -2192,7 +2160,6 @@ internal fun HeadphoneSettingsScreen(
     outputs: List<DiagnosticsReport.Output>,
     onSelectOutput: (Int?) -> Unit,
     onPickDevice: () -> Unit,
-    onDelay: (Int) -> Unit,
     onResetSync: () -> Unit,
     onFx: (HeadphoneFx.Settings) -> Unit,
     onSoundTest: () -> Unit,
@@ -2236,7 +2203,7 @@ internal fun HeadphoneSettingsScreen(
         Hint(stringResource(R.string.hp_one_device))
     }
 
-    // Sync tool
+    // Auto sync: always on, nothing to set.
     QCard {
         Text(stringResource(R.string.hp_sync), style = MaterialTheme.typography.titleLarge, color = Q.Text)
         val drift = ui.driftMs
@@ -2245,13 +2212,6 @@ internal fun HeadphoneSettingsScreen(
             if (drift != null && kotlin.math.abs(drift) <= 40) Q.Success else Q.Primary,
             pulsing = drift != null,
         )
-        Text(stringResource(R.string.hp_delay_value, ui.soundDelayMs), style = MaterialTheme.typography.titleMedium, color = Q.Text)
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            GhostButton("−50", { onDelay(-50) }, Modifier.weight(1f), height = 48.dp, description = "Sound 50 ms earlier")
-            GhostButton("−10", { onDelay(-10) }, Modifier.weight(1f), height = 48.dp, description = "Sound 10 ms earlier")
-            GhostButton("+10", { onDelay(10) }, Modifier.weight(1f), height = 48.dp, description = "Sound 10 ms later")
-            GhostButton("+50", { onDelay(50) }, Modifier.weight(1f), height = 48.dp, description = "Sound 50 ms later")
-        }
         Hint(stringResource(R.string.hp_sync_hint))
         GhostButton("↺  " + stringResource(R.string.hp_reset_sync), onResetSync, Modifier.fillMaxWidth().testTag("hp_reset_sync"), height = 48.dp)
     }
@@ -2714,7 +2674,7 @@ private fun SubtitlesSection(ui: MovieSession.Ui, actions: SubtitleActions) {
     val progress = ui.subtitleProgress
     when {
         progress != null -> {
-            StatusPill(stringResource(R.string.subtitles_generating, progress), Q.Primary, pulsing = true)
+            StatusPill(stringResource(if (ui.subtitleDownloading) R.string.subtitles_downloading else R.string.subtitles_generating, progress), Q.Primary, pulsing = true)
             GoldProgress(progress / 100f)
             ui.subtitleEtaSec?.let { eta ->
                 Hint(if (eta < 60) pluralStringResource(R.plurals.eta_seconds, eta.toInt(), eta.toInt()) else ((eta + 59) / 60).toInt().let { m -> pluralStringResource(R.plurals.eta_minutes, m, m) })
@@ -2739,7 +2699,6 @@ private fun SubtitlesSection(ui: MovieSession.Ui, actions: SubtitleActions) {
             title = { Text(stringResource(R.string.subtitles_generate_title), color = Q.Text) },
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    if (!actions.supported) { Text(stringResource(R.string.subtitles_unsupported), color = Q.Primary); return@Column }
                     Text(stringResource(R.string.subtitles_spoken), color = Q.Text, style = MaterialTheme.typography.titleSmall)
                     LanguageGrid(spoken) { spoken = it }
                     Text(stringResource(R.string.subtitles_show_in), color = Q.Text, style = MaterialTheme.typography.titleSmall)

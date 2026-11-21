@@ -31,8 +31,6 @@ class PlayingScreenTest {
                         ui,
                         onPlayPause = { calls += "playpause" },
                         onSkip = { calls += "skip$it" },
-                        onSoundEarly = { calls += "early" },
-                        onSoundLate = { calls += "late" },
                         onHeadphonesHere = { calls += "here$it" },
                         onMuteTv = { calls += "mute$it" },
                         onStop = { calls += "stop" },
@@ -46,9 +44,7 @@ class PlayingScreenTest {
         rule.onNodeWithTag("playpause").performClick()
         rule.onNodeWithTag("back10").performClick()
         rule.onNodeWithTag("fwd10").performClick()
-        rule.onNodeWithTag("early").performScrollTo().performClick()
-        rule.onNodeWithTag("late").performScrollTo().performClick()
         rule.onNodeWithText("Stop movie", substring = true).performScrollTo().performClick()
-        assertEquals(listOf("playpause", "skip-10000", "skip10000", "early", "late", "stop"), calls)
+        assertEquals(listOf("playpause", "skip-10000", "skip10000", "stop"), calls)
     }
 }

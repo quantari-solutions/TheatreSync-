@@ -216,6 +216,12 @@ class MediaServerTest {
         assertEquals(400, get("/guest").responseCode)
     }
 
+    @Test fun tvBytesCountOnlyTheTvsFile() {
+        get("/media", "bytes=1000-1999").inputStream.readBytes()
+        get("/audio").inputStream.readBytes() // a TapIn guest, not the TV
+        assertEquals(1000L, server.mediaBytesSent)
+    }
+
     @Test fun introIsServedOnlyWhenSet() {
         assertEquals(404, get("/intro").responseCode)
         server.intro = movie

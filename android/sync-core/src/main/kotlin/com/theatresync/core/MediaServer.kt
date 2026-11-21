@@ -83,6 +83,10 @@ class MediaServer(
     /** Total movie bytes sent (to the Chromecast and listeners). Sample over time for the speed. */
     val totalBytesSent: Long get() = bytesSent.get()
 
+    private val tvBytes = java.util.concurrent.atomic.AtomicLong(0)
+    /** Bytes of the TV's own file ([media], via /media) sent so far: how much of the movie the TV has fetched. */
+    val mediaBytesSent: Long get() = tvBytes.get()
+
     /** How many times anyone (normally the Chromecast) asked for the movie. 0 = the TV never reached us. */
     val mediaRequests: Int get() = mediaRequestCount.get()
 
@@ -183,7 +187,7 @@ class MediaServer(
             when {
                 path == "/media" && (method == "GET" || method == "HEAD") -> {
                         mediaRequestCount.incrementAndGet()
-                        serveMedia(out, headers["range"], head = method == "HEAD")
+                        serveMedia(out, headers["range"], head = method == "HEAD", toTv = true)
                     }
                     path == "/intro" && (method == "GET" || method == "HEAD") ->
                         serveMedia(out, headers["range"], head = method == "HEAD", source = intro)
@@ -237,7 +241,7 @@ class MediaServer(
         respond(out, 200, "OK", "application/json", body)
     }
 
-    private fun serveMedia(out: OutputStream, rangeHeader: String?, head: Boolean, source: MediaSource? = media) {
+    private fun serveMedia(out: OutputStream, rangeHeader: String?, head: Boolean, source: MediaSource? = media, toTv: Boolean = false) {
         val m = source
         if (m == null) {
             respond(out, 404, "Not Found", "text/plain", "no movie loaded")
@@ -250,7 +254,7 @@ class MediaServer(
             }
             is HttpRange.Full -> {
                 writeHead(out, 200, "OK", m.mimeType, size, mapOf("Accept-Ranges" to "bytes"))
-                if (!head) m.open(0).use { copy(it, out, size) }
+                if (!head) m.open(0).use { copy(it, out, size, toTv) }
             }
             is HttpRange.Partial -> {
                 val len = range.endInclusive - range.start + 1
@@ -258,7 +262,7 @@ class MediaServer(
                     out, 206, "Partial Content", m.mimeType, len,
                     mapOf("Accept-Ranges" to "bytes", "Content-Range" to "bytes ${range.start}-${range.endInclusive}/$size"),
                 )
-                if (!head) m.open(range.start).use { copy(it, out, len) }
+                if (!head) m.open(range.start).use { copy(it, out, len, toTv) }
             }
         }
     }
@@ -282,7 +286,7 @@ class MediaServer(
         out.write(sb.toString().toByteArray(Charsets.ISO_8859_1))
     }
 
-    private fun copy(input: InputStream, out: OutputStream, length: Long) {
+    private fun copy(input: InputStream, out: OutputStream, length: Long, toTv: Boolean = false) {
         val buf = ByteArray(256 * 1024)
         var remaining = length
         while (remaining > 0) {
@@ -290,6 +294,7 @@ class MediaServer(
             if (n < 0) break
             out.write(buf, 0, n)
             bytesSent.addAndGet(n.toLong())
+            if (toTv) tvBytes.addAndGet(n.toLong())
             remaining -= n
         }
     }
