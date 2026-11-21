@@ -17,3 +17,8 @@ Only when the owner says "release":
 
 Signing: releases are signed with the key the owner's installed app already has (SHA-256 in
 `scripts/release-signing-cert.sha256`). The key itself never goes in a repository; it's kept as a secret.
+
+## Owner's rule (2026-11-21)
+
+All updates reach the phone through the app (Settings → About → Update) unless the owner asks otherwise:
+no APK files in chat. Only the newest APK is kept in `releases/` (older ones are removed in the same PR).
