@@ -1,6 +1,17 @@
 # Project status
 
-_Last updated: 2026-11-21. 0.5.7 (owner releases when ready): subtitles on any phone, smart start, auto sync only, YouTube sound in headphones, TV screensaver, wake projector_
+_Last updated: 2026-11-21. 0.5.8 (owner releases when ready): instant 10-band equalizer with 23 presets, Sync button, endless randomized screensaver, YouTube start and headphones improved_
+
+## 0.5.8: owner feedback
+
+| Request | Done | Verified |
+|---|---|---|
+| Equalizer changes should be heard instantly while watching | Cause: it used Android's shared audio effects (low priority; some phones' own sound processing overrides them) and sliders applied only on release. Now the equalizer runs **inside TheatreSync's player** (Media3 audio processor): biquad filters, changes take effect on the next few ms of sound, on any phone; sliders apply while dragging | Unit tests: boost heard at the band (±0.6 dB), next 100 ms already changed, no clipping at max boost |
+| A lot more equaliser options | 10 bands (31 Hz–16 kHz), bass shelf, **23 presets** in three groups — Movies: Flat, Cinema, Action, Voices, Night, Horror, Animation; Sound: Bass boost, Deep bass, Treble, Loudness, Warm, Bright, Gaming; Music: Rock, Pop, Hip-hop, Electronic, Jazz, Classical, Acoustic, Vocals, Podcast — plus **Night mode** (compressor: quieter explosions, clearer whispers) and a soft limiter | Unit tests; screenshot |
+| Remove "voice match lips", add a sync button aware of the sync | Player: **Sync** card with the live state ("In sync · 8 ms" / "Correcting…") and **Sync now** (instant re-lock). TapIn page: the lips buttons are replaced by a Sync card with live state and **Sync now**; any old manual delay is dropped | Instrumented test clicks Sync now; TapIn browser tests (12 + 16) pass |
+| Screensaver felt like a short GIF loop | Now an **endless live stream** from the phone (HLS): 12 different 10 s scenes (each with its own random glow swells, light sweep, light ray, drift and sparks), played in a fresh random order every round, never the same scene twice in a row; timestamps re-stamped on the fly so the TV sees one continuous programme. Scenes start and end in the same calm frame, so joins are invisible | `EndlessHls`/`TsRetimer` unit tests; real scenes streamed by the app's server and played in a browser (hls.js) across many scene changes |
+| YouTube casting needs improvement | Faster start: YouTube's remote link is prepared during the intro (the TV's YouTube ID is remembered); the start shows its steps (step 1 of 3 intro, 2 opening YouTube, 3 starting the video). Sound in headphones: now a small YouTube player that stays on screen across the whole app (and becomes the picture-in-picture window), remembered for the next YouTube cast, and follows pauses/skips on the TV instantly (YouTube's remote-control events trigger an immediate status refresh) | Compiles; sync logic as in 0.5.7; needs HW-21 |
+
 
 ## 0.5.7: owner feedback on 0.5.5
 

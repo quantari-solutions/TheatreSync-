@@ -50,7 +50,21 @@ class HeadphonePlayer(context: Context, uri: Uri, private val events: Events) {
     @Volatile var lastError: String? = null
         private set
 
-    val exo: ExoPlayer = ExoPlayer.Builder(context)
+    /** Equalizer inside this player's own sound chain: changes are heard at once, on any phone. */
+    private val eq = HeadphoneFx.Processor().also { it.settings = HeadphoneFx.load(context) }
+
+    @androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
+    private val renderers = object : androidx.media3.exoplayer.DefaultRenderersFactory(context) {
+        override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): androidx.media3.exoplayer.audio.AudioSink =
+            androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context)
+                .setEnableFloatOutput(enableFloatOutput)
+                .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                .setAudioProcessors(arrayOf(eq))
+                .build()
+    }
+
+    @androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
+    val exo: ExoPlayer = ExoPlayer.Builder(context, renderers)
         .setAudioAttributes(
             AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(),
             true,
@@ -86,11 +100,8 @@ class HeadphonePlayer(context: Context, uri: Uri, private val events: Events) {
             prepare()
         }
 
-    /** Equalizer + bass boost on this player's sound only. */
-    @androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
-    private val fx: HeadphoneFx.Attached? = runCatching { HeadphoneFx.Attached(exo.audioSessionId).also { it.apply(HeadphoneFx.load(contextRef)) } }.getOrNull()
-
-    fun applyFx(settings: HeadphoneFx.Settings) { fx?.apply(settings) }
+    /** Equalizer changes take effect on the next few milliseconds of sound. */
+    fun applyFx(settings: HeadphoneFx.Settings) { eq.settings = settings }
 
     /** "Reset sync": forget the learned start lead and re-lock onto the TV from scratch. */
     fun resetSync() {
@@ -195,7 +206,6 @@ class HeadphonePlayer(context: Context, uri: Uri, private val events: Events) {
     fun onDelayChanged() = corrector.forceCorrect()
 
     fun release() {
-        fx?.release()
         exo.release()
     }
 

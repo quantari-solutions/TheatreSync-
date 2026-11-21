@@ -21,6 +21,8 @@ class AdSkipper(
     /** Where the TV's video is now, if known from the Chromecast's own status. */
     private val positionSec: (tvId: String) -> Double?,
     private val onAction: (tvId: String, what: Action) -> Unit,
+    /** YouTube on the TV played, paused, sought or changed video (instant, from its remote-control events). */
+    private val onPlayerChange: (tvId: String) -> Unit = {},
 ) {
     enum class Action { SKIPPED_AD, MUTED_AD, SKIPPED_SPONSOR }
 
@@ -80,6 +82,7 @@ class AdSkipper(
                             }
                         }
                         "onStateChange", "nowPlaying" -> {
+                            onPlayerChange(tvId)
                             if (f["state"] == "1" && mutedForAd) { command("setVolume", mapOf("volume" to volume, "muted" to "false")); mutedForAd = false }
                             playing = f["state"] == "1"
                             f["currentTime"]?.toDoubleOrNull()?.let { lastPos = it; lastPosAt = System.currentTimeMillis() }

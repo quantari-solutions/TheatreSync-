@@ -122,6 +122,8 @@ class MovieSession(private val app: Application) {
         val screensaver: Boolean = true,
         /** TV whose YouTube sound plays in the headphones (phone player in step with it), or null. */
         val youTubeHeadphonesTv: String? = null,
+        /** While a YouTube cast starts: which step it's on (shown instead of a plain spinner). */
+        val youTubeStep: Int? = null,
         val youTubeHeadphonesDriftMs: Long? = null,
         val youTubeHeadphonesProblem: String? = null,
         /** Experimental: "Share audio" page (several headphones) shown in the menu. */
@@ -619,15 +621,36 @@ class MovieSession(private val app: Application) {
         _ui.update { it.copy(youTube = YouTubeState.STARTING, youTubeVideoId = videoId, youTubeTvId = tv.id, message = null) }
         Thread({
             var step = "playing the Signature Intro"
+            fun show(res: Int) = _ui.update { it.copy(youTubeStep = res) }
             val ok = try {
+                // Faster start: YouTube's remote link only needs the TV's YouTube ID (remembered from last
+                // time), so set it up while the intro plays instead of after it.
+                val known = prefs.getString("ytScreen_$tvId", null)
+                val early = known?.let { id ->
+                    java.util.concurrent.FutureTask { runCatching { YouTubeLounge().let { l -> l to l.bind(l.loungeToken(id)) } }.getOrNull() }
+                        .also { Thread(it, "youtube-prepare").start() }
+                }
+                if (_ui.value.signatureIntro && !isDial(tvId)) show(R.string.yt_step_intro)
                 playIntroBlocking(tvId)
                 step = "starting YouTube on the TV"
+                show(R.string.yt_step_opening)
                 val screenId = youTubeScreenId(tvId)
+                prefs.edit { putString("ytScreen_$tvId", screenId) }
                 step = "asking YouTube to play the video"
-                val lounge = YouTubeLounge()
-                val session = lounge.bind(lounge.loungeToken(screenId))
-                lounge.setPlaylist(session, videoId)
+                show(R.string.yt_step_video)
+                val prepared = if (screenId == known) runCatching { early?.get(8, java.util.concurrent.TimeUnit.SECONDS) }.getOrNull() else null
+                var (lounge, session) = prepared ?: YouTubeLounge().let { l -> l to l.bind(l.loungeToken(screenId)) }
+                try {
+                    lounge.setPlaylist(session, videoId)
+                } catch (e: Exception) {
+                    if (prepared == null) throw e
+                    // The early link went stale: make a fresh one.
+                    YouTubeLounge().let { l -> lounge = l; session = l.bind(l.loungeToken(screenId)) }
+                    lounge.setPlaylist(session, videoId)
+                }
                 synchronized(youTubeRemotes) { youTubeRemotes[tvId] = lounge to session }
+                // Sound in headphones was on last time: switch it on again for this video.
+                if (prefs.getBoolean("ytHeadphones", false)) main.postDelayed({ setYouTubeHeadphones(tvId, true) }, 2_500)
                 lastYouTubeError = null
                 true
             } catch (e: Exception) {
@@ -654,7 +677,7 @@ class MovieSession(private val app: Application) {
                     if (!isDial(tv.id)) tvWatchers.pollNow(tv.id)
                     CastIndicator.show(app, app.getString(R.string.casting_youtube_to, tv.name), tv.id)
                 }
-                _ui.update { it.copy(youTube = if (ok) YouTubeState.PLAYING else YouTubeState.FAILED) }
+                _ui.update { it.copy(youTube = if (ok) YouTubeState.PLAYING else YouTubeState.FAILED, youTubeStep = null) }
             }
         }, "youtube-cast").start()
     }
@@ -700,8 +723,9 @@ class MovieSession(private val app: Application) {
     @Volatile private var screensaverServer: MediaServer? = null
 
     /**
-     * Connected to a Chromecast with nothing on it: play the Quantari / TheatreSync screensaver (a silent,
-     * seamless 20 s loop, repeated) so the projector shows that instead of Google's grey cast screen.
+     * Connected to a Chromecast with nothing on it: play the Quantari / TheatreSync screensaver so the projector
+     * shows that instead of Google's grey cast screen. It's an endless live stream from the phone: 12 different
+     * 10 s scenes in an ever-changing random order ([EndlessHls]), so it never looks like a loop.
      * Leaves the TV alone if a movie, YouTube or anything else is playing.
      */
     private fun maybeStartScreensaver(force: Boolean = false) {
@@ -716,21 +740,28 @@ class MovieSession(private val app: Application) {
             stateProvider = { null },
             helloProvider = { Payload.Hello(Build.MODEL.take(64).ifBlank { "Android" }, Platform.ANDROID, Role.HOST, BuildConfig.VERSION_NAME, listOf(1)) },
         )
-        srv.media = RawResourceSource(app, R.raw.tv_screensaver, "TheatreSync")
+        srv.live = com.theatresync.core.EndlessHls(
+            SCREENSAVER_SCENES.size,
+            scene = { i -> app.resources.openRawResource(SCREENSAVER_SCENES[i]).use { it.readBytes() } },
+            clockMs = { SystemClock.elapsedRealtime() },
+        )
         val port = try { srv.start() } catch (_: Exception) { return }
         screensaverServer = srv
-        val url = "http://$ip:$port/media"
+        val url = "http://$ip:$port/live.m3u8"
         val info = MediaInfo.Builder(url).setContentUrl(url)
-            .setStreamType(MediaInfo.STREAM_TYPE_BUFFERED).setContentType("video/mp4")
+            .setStreamType(MediaInfo.STREAM_TYPE_LIVE).setContentType("application/x-mpegURL")
+            .setHlsSegmentFormat(com.google.android.gms.cast.HlsSegmentFormat.TS)
+            .setHlsVideoSegmentFormat(com.google.android.gms.cast.HlsVideoSegmentFormat.MPEG2_TS)
             .setMetadata(MediaMetadata(MediaMetadata.MEDIA_TYPE_GENERIC).apply { putString(MediaMetadata.KEY_TITLE, "TheatreSync") })
             .build()
-        val queue = com.google.android.gms.cast.MediaQueueData.Builder()
-            .setItems(listOf(com.google.android.gms.cast.MediaQueueItem.Builder(info).setAutoplay(true).build()))
-            .setRepeatMode(MediaStatus.REPEAT_MODE_REPEAT_SINGLE)
-            .build()
-        client.load(MediaLoadRequestData.Builder().setQueueData(queue).setAutoplay(true).build())
+        client.load(MediaLoadRequestData.Builder().setMediaInfo(info).setAutoplay(true).build())
             .setResultCallback { r -> if (!r.status.isSuccess) stopScreensaver() }
     }
+
+    private val SCREENSAVER_SCENES = listOf(
+        R.raw.ss01, R.raw.ss02, R.raw.ss03, R.raw.ss04, R.raw.ss05, R.raw.ss06,
+        R.raw.ss07, R.raw.ss08, R.raw.ss09, R.raw.ss10, R.raw.ss11, R.raw.ss12,
+    )
 
     private fun stopScreensaver() {
         screensaverServer?.stop()
@@ -1123,7 +1154,9 @@ class MovieSession(private val app: Application) {
     // ------------------------------------------------------------- YouTube ad skipper
 
     private val adSkipper = AdSkipper(
-        connect = { tvId -> YouTubeLounge().let { l -> l to l.bind(l.loungeToken(youTubeScreenId(tvId))) } },
+        connect = { tvId -> YouTubeLounge().let { l -> l to l.bind(l.loungeToken(prefs.getString("ytScreen_$tvId", null) ?: youTubeScreenId(tvId))) } },
+        // Pause / seek / next on the TV: fetch its exact position now, so headphones follow at once.
+        onPlayerChange = { tvId -> main.post { tvWatchers.pollNow(tvId) } },
         positionSec = { tvId -> rawNowCasting.firstOrNull { it.tvId == tvId }?.activity?.currentTimeSec },
         onAction = { _, what ->
             main.post {
@@ -1461,6 +1494,7 @@ class MovieSession(private val app: Application) {
 
     /** Headphones on for YouTube: the TV goes quiet and the phone plays the same video's sound in step. */
     fun setYouTubeHeadphones(tvId: String, on: Boolean) = guard("setYouTubeHeadphones") {
+        prefs.edit { putBoolean("ytHeadphones", on) } // remembered for the next YouTube cast
         castMute(tvId, on)
         if (on) tvWatchers.pollNow(tvId)
         _ui.update { it.copy(youTubeHeadphonesTv = if (on) tvId else null, youTubeHeadphonesDriftMs = null, youTubeHeadphonesProblem = null) }

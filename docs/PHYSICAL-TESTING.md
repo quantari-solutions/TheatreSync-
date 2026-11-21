@@ -241,3 +241,12 @@ the YouTube volume changes. Send one screenshot of step 1 and one of step 3, and
 6. With the projector and receiver off (standby), Remote → **Wake projector & receiver**: they turn on (needs HDMI-CEC enabled on them).
 
 **Send:** a photo of the TV with subtitles, how long the "Getting the TV ready" wait was, whether the start still stutters, whether YouTube sound plays in step, a photo of the screensaver, and whether Wake worked.
+
+## HW-21 — Equalizer, Sync button, endless screensaver, YouTube (0.5.8)
+
+1. Play a movie with headphones. Headphone settings → Equalizer: tap **Bass boost**, then **Voices**, then drag a slider: each change is heard immediately. Try **Night mode** in a loud scene.
+2. Player page → **Sync** card shows the live sync; tap **Sync now**: sound re-locks within a second.
+3. Leave the TV connected with nothing playing for 3–4 minutes: the screensaver keeps changing (different glows, sweeps, sparks), with no visible jumps.
+4. Cast a YouTube video from TheatreSync: the status shows Step 1, 2, 3 of 3, and it starts faster than before. Switch on **Sound in headphones**: a small player appears bottom-right and stays while you move around the app. Pause on the TV: the phone pauses straight away.
+
+**Send:** which equalizer presets you liked, a photo of the screensaver after a few minutes, and how long YouTube took to start.

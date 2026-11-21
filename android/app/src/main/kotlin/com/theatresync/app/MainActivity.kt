@@ -333,8 +333,15 @@ class MainActivity : ComponentActivity() {
                         OpeningAnimation { app.openingShown = true; opening = false }
                         return@GridBackground
                     }
+                    // YouTube sound in the headphones: its (visible) phone player, wherever you are in the app.
+                    val ytTv = ui.youTubeHeadphonesTv
+                    val ytVideo = ytTv?.let { id -> ui.nowCasting.firstOrNull { it.tvId == id }?.activity?.contentId }
                     if (inPip.value) {
-                        PipContent(ui, ui.nowCasting.firstOrNull { it.tvId == castTvId } ?: ui.nowCasting.firstOrNull())
+                        if (ytTv != null && ytVideo != null) {
+                            Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
+                                YouTubeHeadphonesPlayer(ytVideo, { session.youTubeTarget(ytTv) }, session::onYouTubeHeadphonesReport)
+                            }
+                        } else PipContent(ui, ui.nowCasting.firstOrNull { it.tvId == castTvId } ?: ui.nowCasting.firstOrNull())
                         return@GridBackground
                     }
                     // Pull down anywhere to look for TVs, smart TVs and headphones again.
@@ -564,9 +571,19 @@ class MainActivity : ComponentActivity() {
                                     onHeadphoneOptions = { openHeadphoneSettings(Page.MOVIE) },
                                     onPip = ::enterPip,
                                     onSubtitlesOn = session::setSubtitlesOn,
+                                    onResync = session::resetHeadphoneSync,
                                     onAudio = { refreshAudio(); audioSheet.value = true },
                                     onRemote = { page = Page.REMOTE },
                                 )
+                            }
+                        }
+                        if (ytTv != null && ytVideo != null) {
+                            Box(
+                                Modifier.align(Alignment.BottomEnd).padding(16.dp).width(240.dp)
+                                    .shadow(22.dp, RoundedCornerShape(14.dp), ambientColor = Q.Glow, spotColor = Q.Glow)
+                                    .testTag("yt_mini_player"),
+                            ) {
+                                YouTubeHeadphonesPlayer(ytVideo, { session.youTubeTarget(ytTv) }, session::onYouTubeHeadphonesReport)
                             }
                         }
                     }
@@ -1249,7 +1266,7 @@ internal fun YouTubeScreen(
             height = 56.dp, leading = "▶",
         )
         when (ui.youTube) {
-            MovieSession.YouTubeState.STARTING -> StatusPill(stringResource(R.string.yt_starting), Q.Primary, pulsing = true)
+            MovieSession.YouTubeState.STARTING -> StatusPill(stringResource(ui.youTubeStep ?: R.string.yt_starting), Q.Primary, pulsing = true)
             MovieSession.YouTubeState.PLAYING -> StatusPill(stringResource(R.string.yt_playing), Q.Success)
             MovieSession.YouTubeState.FAILED -> {
                 Body(stringResource(R.string.yt_failed))
@@ -1379,6 +1396,7 @@ internal fun PlayingScreen(
     onAudio: () -> Unit = {},
     onRemote: () -> Unit = {},
     onSubtitlesOn: (Boolean) -> Unit = {},
+    onResync: () -> Unit = {},
 ) = Screen {
     TopBar(stringResource(R.string.movie_player), onBack) { PlayerActions(onAudio, onRemote, onPip) }
     Eyebrow(
@@ -1404,7 +1422,18 @@ internal fun PlayingScreen(
             PlayButton(playing = ui.phase == Phase.PLAYING, onClick = onPlayPause)
             GhostButton(stringResource(R.string.skip_fwd_short), { onSkip(10_000) }, Modifier.testTag("fwd10"), height = 52.dp, description = stringResource(R.string.skip_forward))
         }
-        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { SyncPill(ui) }
+    }
+
+    // Sync: always automatic; shows how well in step the headphones are right now, and re-locks on a tap.
+    if (ui.headphonesHere) QCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                Text(stringResource(R.string.hp_sync), style = MaterialTheme.typography.titleMedium, color = Q.Text)
+                SyncPill(ui)
+            }
+            GhostButton(stringResource(R.string.sync_now), onResync, Modifier.testTag("sync_now"), height = 48.dp)
+        }
+        Hint(stringResource(R.string.sync_auto_hint))
     }
 
     AudioSummary(ui, onAudio)
@@ -1626,10 +1655,7 @@ internal fun NowCastingScreen(
                 colors = SwitchDefaults.colors(checkedThumbColor = Color.Black, checkedTrackColor = Q.Primary),
             )
         }
-        if (ytHeadphonesOn) {
-            YouTubeHeadphonesPlayer(a.contentId!!, ytTarget, onYtReport)
-            Hint(stringResource(R.string.yt_headphones_note))
-        }
+        if (ytHeadphonesOn) Hint(stringResource(R.string.yt_headphones_note))
     }
 
     if (a.canControl) {
@@ -2272,27 +2298,42 @@ internal fun HeadphoneSettingsScreen(
                 colors = SwitchDefaults.colors(checkedThumbColor = Color.Black, checkedTrackColor = Q.Primary),
             )
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf(
-                HeadphoneFx.Preset.FLAT to R.string.eq_flat, HeadphoneFx.Preset.BASS_BOOST to R.string.eq_bass,
-                HeadphoneFx.Preset.DIALOGUE to R.string.eq_dialogue, HeadphoneFx.Preset.CINEMA to R.string.eq_cinema,
-            ).forEach { (preset, label) ->
-                val selected = fx.enabled && fx.preset == preset
-                val shape = RoundedCornerShape(50)
-                Box(
-                    Modifier.weight(1f).height(44.dp).clip(shape)
-                        .background(if (selected) Q.Gold else SolidColor(Q.Card))
-                        .border(BorderStroke(1.dp, if (selected) Q.Secondary else Q.BorderAccent), shape)
-                        .clickable(role = Role.RadioButton) { onFx(HeadphoneFx.withPreset(fx, preset)) }
-                        .semantics { stateDescription = if (selected) "Selected" else "Not selected" },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        stringResource(label), color = if (selected) Color.Black else Q.PrimaryLight, style = MaterialTheme.typography.labelMedium,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 6.dp),
-                    )
+        // Presets, by kind of sound. Tapping one switches the equalizer on and is heard at once.
+        HeadphoneFx.Group.entries.forEach { group ->
+            Text(stringResource(group.label), color = Q.TextFaint, style = MaterialTheme.typography.labelLarge)
+            @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+            androidx.compose.foundation.layout.FlowRow(
+                Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                HeadphoneFx.Preset.entries.filter { it.group == group && it != HeadphoneFx.Preset.CUSTOM }.forEach { preset ->
+                    val selected = fx.enabled && fx.preset == preset
+                    val shape = RoundedCornerShape(50)
+                    Box(
+                        Modifier.height(40.dp).clip(shape)
+                            .background(if (selected) Q.Gold else SolidColor(Q.Card))
+                            .border(BorderStroke(1.dp, if (selected) Q.Secondary else Q.BorderAccent), shape)
+                            .clickable(role = Role.RadioButton) { onFx(HeadphoneFx.withPreset(fx, preset)) }
+                            .semantics { stateDescription = if (selected) "Selected" else "Not selected" }
+                            .testTag("eq_${preset.name}")
+                            .padding(horizontal = 14.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(stringResource(preset.label), color = if (selected) Color.Black else Q.PrimaryLight, style = MaterialTheme.typography.labelMedium, maxLines = 1, softWrap = false)
+                    }
                 }
             }
+        }
+        if (fx.enabled && fx.preset == HeadphoneFx.Preset.CUSTOM) Hint(stringResource(R.string.eq_custom_hint))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                Text(stringResource(R.string.eq_night_mode), color = Q.Text, style = MaterialTheme.typography.titleMedium)
+                Hint(stringResource(R.string.eq_night_mode_hint))
+            }
+            Switch(
+                checked = fx.night, onCheckedChange = { onFx(fx.copy(night = it, enabled = true, preset = HeadphoneFx.Preset.CUSTOM)) },
+                modifier = Modifier.testTag("eq_night"),
+                colors = SwitchDefaults.colors(checkedThumbColor = Color.Black, checkedTrackColor = Q.Primary),
+            )
         }
         EqSlider(stringResource(R.string.eq_bass_boost), fx.bass / 1000f, enabled = fx.enabled) {
             onFx(fx.copy(bass = (it * 1000).toInt(), preset = HeadphoneFx.Preset.CUSTOM))
@@ -2300,7 +2341,7 @@ internal fun HeadphoneSettingsScreen(
         HeadphoneFx.BAND_LABELS.forEachIndexed { i, hz ->
             EqSlider("$hz Hz", (fx.bandsDb[i] + HeadphoneFx.MAX_DB) / (2f * HeadphoneFx.MAX_DB), enabled = fx.enabled, valueText = "%+d dB".format(fx.bandsDb[i])) { v ->
                 val db = Math.round(v * 2 * HeadphoneFx.MAX_DB) - HeadphoneFx.MAX_DB
-                onFx(fx.copy(bandsDb = fx.bandsDb.toMutableList().also { it[i] = db }, preset = HeadphoneFx.Preset.CUSTOM))
+                if (db != fx.bandsDb[i]) onFx(fx.copy(bandsDb = fx.bandsDb.toMutableList().also { it[i] = db }, preset = HeadphoneFx.Preset.CUSTOM))
             }
         }
         Hint(stringResource(R.string.hp_eq_hint))
@@ -2314,7 +2355,7 @@ private fun EqSlider(label: String, value: Float, enabled: Boolean, valueText: S
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(label, Modifier.width(92.dp), color = if (enabled) Q.Text else Q.TextFaint, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Slider(
-            value = local, onValueChange = { local = it }, onValueChangeFinished = { onChange(local) },
+            value = local, onValueChange = { local = it; onChange(it) },
             enabled = enabled, modifier = Modifier.weight(1f),
             colors = SliderDefaults.colors(thumbColor = Q.Primary, activeTrackColor = Q.Primary, inactiveTrackColor = Q.Border),
         )

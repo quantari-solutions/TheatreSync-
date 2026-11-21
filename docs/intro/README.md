@@ -24,3 +24,14 @@ gold sheen across the logo 1.4–3.3 s; "PRESENTED WITH" 2.3 s; title 2.7–3.9 
 Gentle sine-like easing throughout, no sudden starts or stops.
 
 (Earlier versions recorded the page as a video first, which lost detail before encoding.)
+
+## TV screensaver (connected, nothing playing)
+
+`screensaver.html?seed=N` is one 10 s scene: random glow swells, title bloom, an optional light sweep across the
+logo and light ray, a slight drift and 8–17 sparks, all starting and ending in the same calm frame. The app ships 12
+scenes (`res/raw/ss01.ts` … `ss12.ts`, 1080p25 H.264 in MPEG-TS, ~0.7 MB each) and streams them endlessly
+(`EndlessHls` in sync-core): a fresh shuffle every round, never the same scene twice in a row, timestamps re-stamped
+so the TV sees one continuous live programme.
+
+Re-make: `node render-scenes.js frames 1 12`, then for each scene
+`ffmpeg -framerate 25 -i frames/sceneNN/%04d.png -vf format=yuv420p -c:v libx264 -profile:v high -level 4.1 -preset slower -crf 20 -tune animation -x264-params aq-mode=3:keyint=250:min-keyint=250:scenecut=0 -bf 2 -an -f mpegts ssNN.ts`.
