@@ -18,7 +18,12 @@ import javax.crypto.spec.GCMParameterSpec
 /**
  * One-time "Connect GitHub" (OAuth device flow, no secret in the app) and automatic
  * crash upload as GitHub issues. The token is encrypted with an Android Keystore key
- * and never leaves the phone except to api.github.com.
+ * and never leaves the phone except to github.com / api.github.com.
+ *
+ * Staying signed in: GitHub App sign-ins last 8 hours and come with a refresh token valid for
+ * 6 months. The app renews the sign-in by itself before it runs out (and once more if GitHub says
+ * it expired), and each renewal also renews the 6 months, so it stays connected as long as the app
+ * is opened at least once every 6 months. Device-flow sign-ins renew without any secret.
  */
 object GitHubLink {
     data class DeviceCode(val userCode: String, val verificationUri: String, val deviceCode: String, val intervalSec: Int)
@@ -60,7 +65,7 @@ object GitHubLink {
     fun lastUpload(context: Context): String? =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("last_upload", null)
 
-    fun isConnected(context: Context) = token(context) != null
+    fun isConnected(context: Context) = stored(context) != null
 
     fun disconnect(context: Context) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { clear() }
@@ -77,8 +82,11 @@ object GitHubLink {
         return DeviceCode(o.getString("user_code"), o.getString("verification_uri"), o.getString("device_code"), o.optInt("interval", 5))
     }
 
-    /** Returns true once the owner approved; false while still pending. Throws if expired/denied. */
-    fun poll(context: Context, code: DeviceCode): Boolean {
+    /** Poll result: approved, still waiting, or waiting but GitHub asked to poll more slowly. */
+    enum class Poll { APPROVED, PENDING, SLOW_DOWN }
+
+    /** Returns APPROVED once the owner approved. Throws if expired/denied. */
+    fun poll(context: Context, code: DeviceCode): Poll {
         val o = postForm(
             "$loginBase/login/oauth/access_token",
             mapOf(
@@ -87,11 +95,49 @@ object GitHubLink {
                 "grant_type" to "urn:ietf:params:oauth:grant-type:device_code",
             ),
         )
-        o.optString("access_token").takeIf { it.isNotBlank() }?.let { saveToken(context, it); return true }
+        if (o.optString("access_token").isNotBlank()) { saveTokens(context, o); return Poll.APPROVED }
         return when (val err = o.optString("error")) {
-            "authorization_pending", "slow_down" -> false
+            "authorization_pending" -> Poll.PENDING
+            "slow_down" -> Poll.SLOW_DOWN
             else -> throw IllegalStateException("GitHub: $err")
         }
+    }
+
+    // ------------------------------------------------------------- staying signed in
+
+    private data class Tokens(val access: String, val refresh: String?, val expiresAtMs: Long, val refreshExpiresAtMs: Long)
+
+    private val refreshLock = Any()
+
+    /**
+     * A working access token (call off the main thread): renews it first if it runs out within 30 minutes.
+     * Null if not connected, or if GitHub no longer accepts the refresh token (then the owner reconnects).
+     */
+    fun validToken(context: Context, forceRefresh: Boolean = false): String? = synchronized(refreshLock) {
+        val t = stored(context) ?: return null
+        val soon = System.currentTimeMillis() + 30 * 60_000
+        if (!forceRefresh && (t.refresh == null || t.expiresAtMs == 0L || t.expiresAtMs > soon)) return t.access
+        val refresh = t.refresh ?: return t.access
+        return try {
+            val o = postForm(
+                "$loginBase/login/oauth/access_token",
+                mapOf("client_id" to clientId(context), "grant_type" to "refresh_token", "refresh_token" to refresh),
+            )
+            when {
+                o.optString("access_token").isNotBlank() -> { saveTokens(context, o); o.getString("access_token") }
+                o.optString("error") in setOf("bad_refresh_token", "unauthorized_client") -> { disconnect(context); null }
+                else -> t.access // GitHub busy or odd answer: keep the old one and try again later
+            }
+        } catch (_: Exception) {
+            t.access // offline: try again next time
+        }
+    }
+
+    /** Renews the sign-in if it's due (app start / Settings): keeps it alive with no one noticing. */
+    fun keepAlive(context: Context) {
+        val app = context.applicationContext
+        if (stored(app)?.refresh == null) return
+        Thread({ validToken(app) }, "github-keepalive").apply { isDaemon = true }.start()
     }
 
     // ------------------------------------------------------------- automatic upload
@@ -99,7 +145,7 @@ object GitHubLink {
     /** Uploads every report not yet on GitHub. Safe to call often; runs on a background thread. */
     fun uploadPending(context: Context, done: (String?) -> Unit = {}) {
         val app = context.applicationContext
-        if (token(app) == null) return
+        if (stored(app) == null) return
         Thread({ done(uploadPendingNow(app) ?: lastUpload(app)) }, "crash-upload").apply { isDaemon = true }.start()
     }
 
@@ -108,7 +154,7 @@ object GitHubLink {
     /** Blocking upload (call off the main thread). Returns the new "last upload" line, or null if nothing to do. */
     fun uploadPendingNow(context: Context): String? = synchronized(uploadLock) {
         val app = context.applicationContext
-        val token = token(app) ?: return null
+        var token = validToken(app) ?: return null
         val today = System.currentTimeMillis() / 86_400_000
         val prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         var handledToday = if (prefs.getLong("day", -1) == today) prefs.getInt("handled", 0) else 0
@@ -121,7 +167,14 @@ object GitHubLink {
                 // Same handled problem already reported for this version, or daily cap reached: don't spam.
                 continue
             }
-            val r = createIssue(token, e)
+            var r = createIssue(token, e)
+            if (r.status == 401) {
+                // Sign-in ran out early: renew it and try once more, without bothering the owner.
+                val renewed = validToken(app, forceRefresh = true)
+                if (renewed == null) { last = "GitHub sign-in ended: tap Connect GitHub once"; break }
+                token = renewed
+                r = createIssue(token, e)
+            }
             if (r.number == null) { last = r.message; break } // offline or refused: retry next time
             CrashReporter.mark(app, e.id, CrashReporter.Status.SENT_GITHUB, "#${r.number}")
             last = "Uploaded #${r.number} · ${CrashReporter.formatTime(System.currentTimeMillis())}"
@@ -143,7 +196,7 @@ object GitHubLink {
         uploadPending(context, done)
     }
 
-    private data class IssueResult(val number: Int?, val message: String)
+    private data class IssueResult(val number: Int?, val message: String, val status: Int = 0)
 
     private fun createIssue(token: String, e: CrashReporter.Entry): IssueResult = try {
         val label = if (e.kind == CrashReporter.Kind.CRASH) "crash" else "handled-problem"
@@ -153,7 +206,7 @@ object GitHubLink {
         when (r.first) {
             in 200..299 -> JSONObject(r.second).optInt("number").takeIf { it > 0 }
                 ?.let { IssueResult(it, "") } ?: IssueResult(null, "GitHub gave no issue number")
-            401 -> IssueResult(null, "GitHub login expired: tap Disconnect, then Connect again")
+            401 -> IssueResult(null, "GitHub sign-in ended: tap Connect GitHub once", 401)
             403, 404 -> IssueResult(null, "GitHub refused (${r.first}): install the GitHub App on ${BuildConfig.CRASH_REPO}")
             else -> IssueResult(null, "GitHub error ${r.first}")
         }
@@ -210,22 +263,34 @@ object GitHubLink {
         return gen.generateKey()
     }
 
-    private fun saveToken(context: Context, token: String) {
+    /** Saves the access token and, for GitHub Apps, its refresh token and both expiry times (encrypted). */
+    private fun saveTokens(context: Context, o: JSONObject) {
+        val now = System.currentTimeMillis()
+        val blob = JSONObject()
+            .put("access", o.getString("access_token"))
+            .put("refresh", o.optString("refresh_token").ifBlank { null } ?: JSONObject.NULL)
+            .put("exp", if (o.optLong("expires_in") > 0) now + o.getLong("expires_in") * 1000 else 0L)
+            .put("rexp", if (o.optLong("refresh_token_expires_in") > 0) now + o.getLong("refresh_token_expires_in") * 1000 else 0L)
         val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key()) }
-        val enc = cipher.doFinal(token.toByteArray())
+        val enc = cipher.doFinal(blob.toString().toByteArray())
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit {
             putString("iv", Base64.encodeToString(cipher.iv, Base64.NO_WRAP))
             putString("token", Base64.encodeToString(enc, Base64.NO_WRAP))
         }
     }
 
-    private fun token(context: Context): String? = try {
+    /** What's saved (no network). Older versions saved just the access token; that still reads. */
+    private fun stored(context: Context): Tokens? = try {
         val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val iv = p.getString("iv", null) ?: return null
         val enc = p.getString("token", null) ?: return null
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, Base64.decode(iv, Base64.NO_WRAP)))
-        String(cipher.doFinal(Base64.decode(enc, Base64.NO_WRAP)))
+        val text = String(cipher.doFinal(Base64.decode(enc, Base64.NO_WRAP)))
+        if (!text.startsWith("{")) Tokens(text, null, 0, 0)
+        else JSONObject(text).let { o ->
+            Tokens(o.getString("access"), o.optString("refresh").takeIf { it.isNotBlank() && it != "null" }, o.optLong("exp"), o.optLong("rexp"))
+        }
     } catch (_: Exception) {
         null
     }

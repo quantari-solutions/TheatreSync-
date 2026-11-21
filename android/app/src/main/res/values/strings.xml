@@ -134,6 +134,13 @@
     <string name="send_github_hint">Opens a ready-made report on GitHub. Tap Submit there (you need to be signed in).</string>
     <string name="share">Share</string>
     <string name="about">About</string>
+    <plurals name="crash_reports_kept">
+        <item quantity="one">Reports are deleted from this phone automatically after %1$d day.</item>
+        <item quantity="other">Reports are deleted from this phone automatically after %1$d days.</item>
+    </plurals>
+    <string name="github_copy_code">Copy code</string>
+    <string name="github_code_ready">Already copied: on GitHub\'s page, just paste it.</string>
+    <string name="github_code_copied">Code copied</string>
     <string name="version_line">Version %1$s</string>
     <string name="update_available">Update available · %1$s</string>
     <string name="update_now">Update</string>

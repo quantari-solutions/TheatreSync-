@@ -354,7 +354,7 @@ class MainActivity : ComponentActivity() {
                             refreshing = true
                             session.refreshDevices()
                             refreshAudio()
-                            scope.launch { kotlinx.coroutines.delay(1_500); refreshing = false }
+                            scope.launch { kotlinx.coroutines.delay(REFRESH_SPIN_MS); refreshing = false }
                         },
                         modifier = Modifier.fillMaxSize(),
                     ) {
@@ -398,6 +398,7 @@ class MainActivity : ComponentActivity() {
                                     state = gitHubState.value,
                                     onStart = ::startGitHubConnect,
                                     onOpenGitHub = { c -> runCatching { startActivity(Intent(Intent.ACTION_VIEW, c.verificationUri.toUri())) } },
+                                    onCopyCode = ::copyGitHubCode,
                                     onDisconnect = { GitHubLink.disconnect(this@MainActivity); gitHubConnected.value = false; gitHubLastUpload.value = null },
                                     onBack = { page = Page.SETTINGS },
                                     onCreateApp = { runCatching { startActivity(Intent(Intent.ACTION_VIEW, GitHubLink.createAppUrl.toUri())) } },
@@ -470,6 +471,7 @@ class MainActivity : ComponentActivity() {
                                             state = gitHubState.value,
                                             onStart = ::startGitHubConnect,
                                             onOpenGitHub = { c -> runCatching { startActivity(Intent(Intent.ACTION_VIEW, c.verificationUri.toUri())) } },
+                                    onCopyCode = ::copyGitHubCode,
                                             onDisconnect = { GitHubLink.disconnect(this@MainActivity); gitHubConnected.value = false; gitHubLastUpload.value = null },
                                             onCreateApp = { runCatching { startActivity(Intent(Intent.ACTION_VIEW, GitHubLink.createAppUrl.toUri())) } },
                                             onSaveClientId = { id -> GitHubLink.saveClientId(this@MainActivity, id).also { if (it) gitHubConfigured.value = true } },
@@ -600,6 +602,8 @@ class MainActivity : ComponentActivity() {
         super.onStart()
         refreshCrashes()
         AppUpdates.check(this)        // quietly, at most every 10 minutes
+        GitHubLink.keepAlive(this)    // renew the crash-report sign-in before it runs out
+        CrashReporter.prune(this)     // reports older than 69 days are deleted from the phone
         AppUpdates.onResume(this)     // back from allowing updates: carry on
         session.startTvSearch()
         audioManager.registerAudioDeviceCallback(deviceCallback, null)
@@ -743,11 +747,14 @@ class MainActivity : ComponentActivity() {
         Thread({
             try {
                 val code = GitHubLink.requestCode(this)
-                runOnUiThread { gitHubCode.value = code }
+                runOnUiThread { gitHubCode.value = code; copyGitHubCode(code.userCode) } // ready to paste on GitHub's page
                 val deadline = System.currentTimeMillis() + 15 * 60_000
+                var interval = code.intervalSec * 1000L + 500
                 while (System.currentTimeMillis() < deadline) {
-                    Thread.sleep(code.intervalSec * 1000L + 500)
-                    if (GitHubLink.poll(this, code)) {
+                    Thread.sleep(interval)
+                    val result = GitHubLink.poll(this, code)
+                    if (result == GitHubLink.Poll.SLOW_DOWN) interval += 5_000 // GitHub's rule: wait 5 s longer each time it asks
+                    if (result == GitHubLink.Poll.APPROVED) {
                         runOnUiThread {
                             gitHubConnected.value = true
                             gitHubState.value = GitHubState.DONE
@@ -763,6 +770,14 @@ class MainActivity : ComponentActivity() {
                 runOnUiThread { gitHubState.value = GitHubState.FAILED; gitHubCode.value = null }
             }
         }, "github-connect").apply { isDaemon = true }.start()
+    }
+
+    /** Copies the GitHub sign-in code, so it can just be pasted on GitHub's page. */
+    private fun copyGitHubCode(code: String) {
+        val cm = getSystemService(android.content.ClipboardManager::class.java) ?: return
+        cm.setPrimaryClip(android.content.ClipData.newPlainText("GitHub code", code))
+        // Android 13+ shows its own "Copied" bubble; older versions get ours.
+        if (Build.VERSION.SDK_INT < 33) android.widget.Toast.makeText(this, getString(R.string.github_code_copied), android.widget.Toast.LENGTH_SHORT).show()
     }
 
     /** Proves the whole path: adds a test report, uploads it, shows "Uploaded #N" or the reason it failed. */
@@ -841,6 +856,9 @@ class MainActivity : ComponentActivity() {
     }.toTypedArray()
 
     companion object {
+        /** Pull to refresh: the spinner stays long enough for at least one full turn (Material's takes ~2.7 s). */
+        const val REFRESH_SPIN_MS = 3_000L
+
         const val EXTRA_OPEN = "open"
         const val OPEN_REMOTE = "remote"
         const val OPEN_PIP = "pip"
@@ -1168,6 +1186,7 @@ internal fun CrashReportsScreen(
             Eyebrow(stringResource(R.string.crash_timeline))
         }
         Hint(stringResource(if (autoReports) R.string.crash_reports_hint_auto else R.string.crash_reports_hint))
+        Hint(pluralStringResource(R.plurals.crash_reports_kept, CrashReporter.KEEP_DAYS, CrashReporter.KEEP_DAYS))
         if (entries.isEmpty()) {
             QCard {
                 StatusPill(stringResource(R.string.no_crashes), Q.Success)
@@ -1885,9 +1904,10 @@ internal fun ConnectGitHubScreen(
     lastUpload: String? = null,
     testing: Boolean = false,
     onSendTest: () -> Unit = {},
+    onCopyCode: (String) -> Unit = {},
 ) = Screen {
     TopBar(stringResource(R.string.auto_reports), onBack)
-    GitHubSection(configured = configured, connected = connected, code = code, state = state, onStart = onStart, onOpenGitHub = onOpenGitHub, onDisconnect = onDisconnect, onCreateApp = onCreateApp, onSaveClientId = onSaveClientId, lastUpload = lastUpload, testing = testing, onSendTest = onSendTest)
+    GitHubSection(configured = configured, connected = connected, code = code, state = state, onStart = onStart, onOpenGitHub = onOpenGitHub, onDisconnect = onDisconnect, onCreateApp = onCreateApp, onSaveClientId = onSaveClientId, lastUpload = lastUpload, testing = testing, onSendTest = onSendTest, onCopyCode = onCopyCode)
     Footer()
 }
 
@@ -1906,6 +1926,7 @@ internal fun GitHubSection(
     lastUpload: String? = null,
     testing: Boolean = false,
     onSendTest: () -> Unit = {},
+    onCopyCode: (String) -> Unit = {},
 ) {
     when {
         connected -> QCard(highlighted = true) {
@@ -1946,7 +1967,11 @@ internal fun GitHubSection(
         code != null -> QCard(highlighted = true) {
             Text(stringResource(R.string.github_enter_code), style = MaterialTheme.typography.titleMedium, color = Q.Text)
             GradientText(code.userCode, MaterialTheme.typography.displaySmall.copy(fontFamily = FontFamily.Monospace))
-            GoldButton(stringResource(R.string.github_open), { onOpenGitHub(code) }, Modifier.fillMaxWidth(), height = 56.dp)
+            Hint(stringResource(R.string.github_code_ready))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                GhostButton(stringResource(R.string.github_copy_code), { onCopyCode(code.userCode) }, Modifier.weight(1f).testTag("github_copy"), height = 56.dp)
+                GoldButton(stringResource(R.string.github_open), { onCopyCode(code.userCode); onOpenGitHub(code) }, Modifier.weight(1f), height = 56.dp)
+            }
             StatusPill(stringResource(R.string.github_waiting), Q.Primary, pulsing = true)
         }
         else -> QCard(highlighted = true) {
