@@ -1,6 +1,13 @@
 # Project status
 
-_Last updated: 2026-11-21. 0.6.0 (ready; owner releases when ready): the TV intro plays again (as a live stream, no progress bar), refresh spinner always does whole turns_
+_Last updated: 2026-11-21. 0.6.1 (published to the in-app updater): intro back to the video the TV is known to play, marked live (no progress bar); intro problems are now reported_
+
+## 0.6.1: "Still no signature intro" (on 0.6.0)
+
+| Report | Cause | Fix | Verified |
+|---|---|---|---|
+| No intro on 0.6.0 either | Most likely the owner's Chromecast doesn't play the live HLS stream from the phone (the screensaver uses the same method and has never been confirmed on this TV either). No report came back because the intro step gave up silently | The intro is the **same MP4 video the TV played in 0.5.8**, now with 2 s of black at the end, sent **marked as live** (the TV's player shows no progress bar or time for live). When the TV refuses or never starts it, a problem report is uploaded with what the TV said (player states, idle reason, status code). The YouTube/mirroring intro also uses the TV's remembered address and reports if it's skipped | `CastIntroTest`; needs HW-23. If the TV ignores "live" for an MP4 and shows the bar again, the report and photo will say so |
+
 
 ## 0.6.0: owner feedback on 0.5.9
 

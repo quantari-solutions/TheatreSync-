@@ -261,7 +261,7 @@ the YouTube volume changes. Send one screenshot of step 1 and one of step 3, and
 
 ## HW-23 — Intro, ads, The Frame, quick YouTube card, notification Stop (0.5.9)
 
-1. Start a movie or YouTube with the Signature Intro on: the TV shows the logo and titles (6.6 s) with **no progress bar or time**, then the film. (0.6.0: 0.5.9 showed nothing.)
+1. Start a movie or YouTube with the Signature Intro on: the TV shows the logo and titles (6.6 s) with **no progress bar or time**, then the film. (0.5.9 and 0.6.0 showed nothing; 0.6.1 uses the video your TV played before.)
 2. YouTube video with an unskippable ad: sound goes off when the ad starts and comes back by itself as it ends. Try a few ads; the sound must never stay off.
 3. Turn The Frame on, open Choose your TV (pull down to refresh): it's listed as "Smart TV · YouTube only".
 4. Cast YouTube, leave TheatreSync for a few minutes, come back: the YouTube card is there straight away.

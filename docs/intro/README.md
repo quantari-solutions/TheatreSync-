@@ -5,19 +5,19 @@
 so text is rendered at the phone's own resolution and laid out for a tall screen. The logo is
 `res/drawable-nodpi/quantari_wordmark.webp` (lossless copy of `card_wordmark.png`). Screenshot test: `opening1`.
 
-**TV (Settings → Experimental → Signature intro):** `android/app/src/main/res/raw/signature_intro.ts` (1920×1080,
-30 fps, 6.6 s, video only) plus `intro_tail.ts` (2 s of black, encoded the same way). The app serves them as a short
-**live** HLS stream (`IntroHls`: the intro, then black until the film is loaded). The Chromecast's player shows a
-progress bar and the time over a normal video (the owner saw "0:04", which looked like a promo clip) but not over a
-live stream. An animated WebP was tried in 0.5.9: the Default Media Receiver doesn't animate it (a black still frame,
-"no intro"). The phone waits 6.6 s after the TV starts, then starts the movie / YouTube / mirroring.
+**TV (Settings → Experimental → Signature intro):** `android/app/src/main/res/raw/signature_intro.mp4`
+(1920×1080, 30 fps, H.264, video only): the 6.6 s intro plus 2 s of black, sent to the Chromecast **marked as live**
+(`streamType LIVE`), so its player shows no progress bar or time (the owner saw "0:04" and a bar with the plain
+video in 0.5.8). The black tail covers the hand-over to the film.
+
+History: 0.5.9 tried an animated WebP (the Default Media Receiver doesn't animate it: black still frame) and 0.6.0 a
+live HLS stream (nothing shown on the owner's TV). Both are gone; MP4 is the format this TV is known to play.
 
 Re-make from `card.html` (needs `card_wordmark_soft.png` next to it):
 
 ```
 node render.js frames card.html 6600      # every frame as a lossless PNG at exact times (Playwright)
-ffmpeg -framerate 30 -i frames/%04d.png -an -vf format=yuv420p -c:v libx264 -profile:v high -level 4.1 -preset slower -crf 18 -tune animation -x264-params keyint=200:min-keyint=200:scenecut=0 -bf 2 -f mpegts signature_intro.ts
-ffmpeg -f lavfi -i color=black:s=1920x1080:r=30:d=2 -vf format=yuv420p -c:v libx264 -profile:v high -level 4.1 -preset slower -crf 18 -x264-params keyint=60:min-keyint=60:scenecut=0 -bf 2 -f mpegts intro_tail.ts
+ffmpeg -framerate 30 -i frames/%04d.png -f lavfi -i color=black:s=1920x1080:r=30:d=2 -filter_complex "[0:v]format=yuv420p,setsar=1[a];[1:v]format=yuv420p,setsar=1[b];[a][b]concat=n=2:v=1:a=0[v]" -map "[v]" -an -c:v libx264 -profile:v high -level 4.1 -preset slower -crf 18 -tune animation -movflags +faststart signature_intro.mp4
 ```
 
 Timeline (same on phone and TV, slow on purpose so the glow leads): glow rises 0–1.8 s; logo 0.3–1.8 s;

@@ -27,6 +27,7 @@ class CastIntro(private val connect: () -> Socket) {
             var transport: String? = null
             var loaded = false
             var started = false
+            val heard = ArrayList<String>() // what the TV said, for the problem report if it never plays
             while (System.currentTimeMillis() < deadline) {
                 val m = try { CastMessage.read(input) } catch (_: SocketTimeoutException) { continue }
                 val payload = m.payloadUtf8
@@ -42,7 +43,7 @@ class CastIntro(private val connect: () -> Socket) {
                             loaded = true
                         }
                     }
-                    m.namespace == CastMessage.NS_MEDIA && loaded -> when (playerState(payload)) {
+                    m.namespace == CastMessage.NS_MEDIA && loaded -> when (playerState(payload).also { st -> if (heard.size < 12) heard += (st ?: CastStatus.type(payload) ?: "?") + idleReason(payload) }) {
                         "PLAYING" -> {
                             started = true
                             // A live intro never "finishes": let it play for its length, then hand over.
@@ -56,7 +57,8 @@ class CastIntro(private val connect: () -> Socket) {
                         throw IOException("TV couldn't load the intro")
                 }
             }
-            return started
+            if (!started) throw IOException("TV never started the intro (transport=${transport != null}, heard: ${heard.joinToString().ifBlank { "nothing" }})")
+            return true
         }
     }
 
@@ -64,18 +66,21 @@ class CastIntro(private val connect: () -> Socket) {
         private const val SENDER = "sender-ts-intro"
 
         /**
-         * [live]: the intro as a live stream ([IntroHls]), which the TV shows with no progress bar or time
-         * (a normal video gets those and looks like an advert; animated pictures don't play at all).
+         * [live]: the intro video marked as live, so the TV shows no progress bar or time over it (a normal
+         * video gets those and looks like an advert). Same MP4 the TV plays fine as a normal video; HLS and
+         * animated pictures are unproven on the owner's Chromecast (0.5.9 / 0.6.0 showed nothing).
          */
         fun loadRequest(url: String, live: Boolean = false): String =
             if (live) """{"type":"LOAD","requestId":2,"autoplay":true,""" +
-                """"media":{"contentId":"$url","contentType":"application/x-mpegURL","streamType":"LIVE",""" +
-                """"hlsSegmentFormat":"ts","hlsVideoSegmentFormat":"mpeg2_ts","metadata":{"metadataType":0}}}"""
+                """"media":{"contentId":"$url","contentType":"video/mp4","streamType":"LIVE","metadata":{"metadataType":0}}}"""
             else """{"type":"LOAD","requestId":2,"autoplay":true,"currentTime":0,""" +
                 """"media":{"contentId":"$url","contentType":"video/mp4","streamType":"BUFFERED",""" +
                 """"metadata":{"metadataType":0,"title":"TheatreSync"}}}"""
 
         /** "PLAYING", "IDLE"… from a MEDIA_STATUS message, or null. */
+        private fun idleReason(payload: String): String =
+            Regex(""""idleReason"\s*:\s*"([A-Z]+)"""").find(payload)?.groupValues?.get(1)?.let { "($it)" } ?: ""
+
         fun playerState(payload: String): String? =
             Regex(""""playerState"\s*:\s*"([A-Z]+)"""").find(payload)?.groupValues?.get(1)
     }

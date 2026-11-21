@@ -15,10 +15,10 @@ class CastIntroTest {
     }
 
     @Test fun introAsALiveStreamHasNoProgressBarOrTitle() {
-        val r = CastIntro.loadRequest("http://192.168.1.82:40000/live.m3u8", live = true)
+        val r = CastIntro.loadRequest("http://192.168.1.82:40000/intro", live = true)
         val json = kotlinx.serialization.json.Json.parseToJsonElement(r).toString()
         assertTrue(json.contains("\"streamType\":\"LIVE\""))
-        assertTrue(json.contains("\"contentType\":\"application/x-mpegURL\""))
+        assertTrue(json.contains("\"contentType\":\"video/mp4\""))
         assertTrue(!json.contains("title"))
     }
 
