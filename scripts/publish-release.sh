@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
 # Publishes dist/TheatreSync.apk as the newest in-app update (Settings → About → Update).
 # Only when the owner says "release". Usage:
-#   scripts/publish-release.sh <checkout of quantari-solutions/theatresync-releases> "What's new, in plain words"
+#   scripts/publish-release.sh <folder> "What's new, in plain words" [base URL]
+# <folder>: a checkout of quantari-solutions/theatresync-releases (default base URL), or this repo's releases/
+# folder if the code repository is public (base URL https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases).
 # Then commit + push that checkout. The app reads latest.json from it; nothing else is public.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 root="$PWD"
 source scripts/_android-env.sh
 cd "$root"
-repo="$(cd "${1:?path to the theatresync-releases checkout}" && pwd)"; notes="${2:-}"
+repo="$(cd "${1:?folder to publish into}" && pwd)"; notes="${2:-}"
+base="${3:-https://raw.githubusercontent.com/quantari-solutions/theatresync-releases/main}"
 apk=dist/TheatreSync.apk
 [ -f "$apk" ] || { echo "Build first: scripts/build-android.sh"; exit 1; }
 
@@ -25,11 +28,11 @@ rm -f "$repo"/TheatreSync-*.apk
 cp "$apk" "$repo/$name"
 sha=$(sha256sum "$repo/$name" | cut -d' ' -f1)
 size=$(stat -c%s "$repo/$name")
-python3 - "$repo/latest.json" "$code" "$ver" "$name" "$sha" "$size" "$notes" <<'PY'
+python3 - "$repo/latest.json" "$code" "$ver" "$name" "$sha" "$size" "$notes" "$base" <<'PY'
 import json, sys
-out, code, ver, name, sha, size, notes = sys.argv[1:]
+out, code, ver, name, sha, size, notes, base = sys.argv[1:]
 json.dump({"versionCode": int(code), "versionName": ver,
-           "apkUrl": f"https://raw.githubusercontent.com/quantari-solutions/theatresync-releases/main/{name}",
+           "apkUrl": f"{base}/{name}",
            "sha256": sha, "sizeBytes": int(size), "notes": notes}, open(out, "w"), indent=2)
 PY
 echo ">> $name ($size bytes, sha256 $sha) and latest.json ready in $repo — commit and push it."

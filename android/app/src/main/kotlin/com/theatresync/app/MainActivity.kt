@@ -122,6 +122,10 @@ class MainActivity : ComponentActivity() {
     private val outputs = mutableStateOf<List<DiagnosticsReport.Output>>(emptyList())
     private val details = mutableStateOf("")
     private val sharedLink = mutableStateOf<String?>(null)
+    /** The YouTube page's link and chosen TV live here, so nothing on the way (TV list refreshes, the
+     *  Chromecast switching apps, a trip to another page) can blank them while casting. */
+    private val ytLink = mutableStateOf("")
+    private val ytTvName = mutableStateOf<String?>(null)
     private val pendingCrash = mutableStateOf<CrashReporter.Entry?>(null)
     private val crashEntries = mutableStateOf<List<CrashReporter.Entry>>(emptyList())
     private val gitHubCode = mutableStateOf<GitHubLink.DeviceCode?>(null)
@@ -284,6 +288,8 @@ class MainActivity : ComponentActivity() {
                             onGuestSound = session::setGuestSound,
                             onGuestVolume = session::setGuestVolume,
                             onGuestRemove = session::removeGuest,
+                            onYouTubeHeadphones = session::setYouTubeHeadphones,
+                            onYouTubeRoomSpeakers = { tv, on -> session.castMute(tv, !on) },
                             onMore = { audioSheet.value = false; openHeadphoneSettings(page) },
                             onDismiss = { audioSheet.value = false },
                         )
@@ -484,6 +490,10 @@ class MainActivity : ComponentActivity() {
                                 "youtube" -> YouTubeScreen(
                                     ui = ui,
                                     initialLink = sharedLink.value,
+                                    link = ytLink.value,
+                                    onLink = { ytLink.value = it },
+                                    tvName = ytTvName.value,
+                                    onTv = { ytTvName.value = it },
                                     onCast = { id, tv -> session.castYouTube(id, tv) },
                                     onOpenApp = { link -> openYouTubeApp(link) },
                                     onBack = { session.resetYouTube(); sharedLink.value = null; page = Page.HOME },
@@ -520,6 +530,7 @@ class MainActivity : ComponentActivity() {
                                         onYtHeadphones = { on -> session.setYouTubeHeadphones(c.tvId, on) },
                                         ytTarget = { session.youTubeTarget(c.tvId) },
                                         onYtReport = session::onYouTubeHeadphonesReport,
+                                        onListenAlong = { url -> runCatching { startActivity(Intent(Intent.ACTION_VIEW, url.toUri())) } },
                                     )
                                 }
                                 "setup" -> SetupScreen(
@@ -674,7 +685,7 @@ class MainActivity : ComponentActivity() {
     private fun handleShare(intent: Intent?) {
         if (intent?.action != Intent.ACTION_SEND) return
         val text = intent.getStringExtra(Intent.EXTRA_TEXT) ?: return
-        if (YouTubeLinks.videoId(text) != null) sharedLink.value = text
+        if (YouTubeLinks.videoId(text) != null) { sharedLink.value = text; ytLink.value = text }
     }
 
     private fun openYouTubeApp(link: String?) {
@@ -1254,12 +1265,16 @@ internal fun YouTubeScreen(
     onCast: (videoId: String, tvId: String) -> Unit,
     onOpenApp: (String?) -> Unit,
     onBack: () -> Unit,
+    link: String = initialLink.orEmpty(),
+    onLink: (String) -> Unit = {},
+    tvName: String? = null,
+    onTv: (String) -> Unit = {},
 ) = Screen {
-    var link by rememberSaveable(initialLink) { mutableStateOf(initialLink.orEmpty()) }
-    var tvId by rememberSaveable { mutableStateOf<String?>(null) }
     val clipboard = LocalClipboardManager.current
     val videoId = YouTubeLinks.videoId(link)
-    val chosenTv = ui.tvs.firstOrNull { it.id == tvId } ?: ui.tvs.firstOrNull { it.name == ui.connectedTv } ?: ui.tvs.singleOrNull()
+    // Chosen by name, so it stays chosen even if Android gives the TV a new id mid-cast.
+    val chosenTv = ui.tvs.firstOrNull { it.name == tvName } ?: ui.tvs.firstOrNull { it.name == ui.connectedTv } ?: ui.tvs.singleOrNull()
+    val busy = ui.youTube == MovieSession.YouTubeState.STARTING
 
     // Shared straight from the YouTube app: cast at once if there's exactly one TV.
     LaunchedEffect(initialLink, chosenTv?.id) {
@@ -1268,12 +1283,28 @@ internal fun YouTubeScreen(
     }
 
     TopBar(stringResource(R.string.youtube), onBack)
-    QCard(highlighted = true) {
+    // While it connects: one clear card with progress, instead of the page changing under you.
+    if (busy) QCard(highlighted = true, modifier = Modifier.testTag("yt_connecting")) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            androidx.compose.material3.CircularProgressIndicator(Modifier.size(28.dp), color = Q.Primary, strokeWidth = 3.dp)
+            Column(Modifier.weight(1f)) {
+                Text(stringResource(R.string.yt_connecting_to, ui.tvs.firstOrNull { it.id == ui.youTubeTvId }?.name ?: chosenTv?.name ?: "TV"), color = Q.Text, style = MaterialTheme.typography.titleMedium)
+                Hint(stringResource(ui.youTubeStep ?: R.string.yt_starting))
+            }
+        }
+        val step = when (ui.youTubeStep) { R.string.yt_step_intro -> 1; R.string.yt_step_opening -> 2; R.string.yt_step_video -> 3; else -> 0 }
+        androidx.compose.material3.LinearProgressIndicator(
+            progress = { step / 3f }, modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
+            color = Q.Primary, trackColor = Q.Border,
+        )
+    }
+    QCard(highlighted = !busy) {
         Text(stringResource(R.string.yt_cast_title), style = MaterialTheme.typography.titleLarge, color = Q.Text)
         Hint(stringResource(R.string.yt_cast_hint))
         OutlinedTextField(
             value = link,
-            onValueChange = { link = it },
+            onValueChange = onLink,
+            enabled = !busy,
             modifier = Modifier.fillMaxWidth().testTag("yt_link"),
             singleLine = true,
             placeholder = { Text("https://youtu.be/…", color = Q.TextFaint) },
@@ -1286,7 +1317,7 @@ internal fun YouTubeScreen(
             ),
         )
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            GhostButton(stringResource(R.string.paste), { clipboard.getText()?.text?.let { link = it } })
+            GhostButton(stringResource(R.string.paste), { if (!busy) clipboard.getText()?.text?.let(onLink) })
             if (link.isNotBlank() && videoId == null) Hint(stringResource(R.string.yt_not_a_link))
         }
         when {
@@ -1296,7 +1327,7 @@ internal fun YouTubeScreen(
                 Row(
                     Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
                         .border(BorderStroke(1.dp, if (selected) Q.Primary else Q.BorderAccent), RoundedCornerShape(14.dp))
-                        .clickable(role = Role.RadioButton) { tvId = tv.id }
+                        .clickable(role = Role.RadioButton, enabled = !busy) { onTv(tv.name) }
                         .padding(14.dp)
                         .semantics { stateDescription = if (selected) "Selected" else "Not selected" },
                     verticalAlignment = Alignment.CenterVertically,
@@ -1318,7 +1349,7 @@ internal fun YouTubeScreen(
             height = 56.dp, leading = "▶",
         )
         when (ui.youTube) {
-            MovieSession.YouTubeState.STARTING -> StatusPill(stringResource(ui.youTubeStep ?: R.string.yt_starting), Q.Primary, pulsing = true)
+            MovieSession.YouTubeState.STARTING -> Unit // shown in the Connecting card at the top
             MovieSession.YouTubeState.PLAYING -> StatusPill(stringResource(R.string.yt_playing), Q.Success)
             MovieSession.YouTubeState.FAILED -> {
                 Body(stringResource(R.string.yt_failed))
@@ -1664,6 +1695,7 @@ internal fun NowCastingScreen(
     onYtHeadphones: (Boolean) -> Unit = {},
     ytTarget: () -> YouTubeHeadphones.Target? = { null },
     onYtReport: (YouTubeHeadphones.Report) -> Unit = {},
+    onListenAlong: (String) -> Unit = {},
 ) = Screen {
     val a = item.activity
     // Keep "Up next" fresh while this page is open (and right after the video changes).
@@ -1708,6 +1740,14 @@ internal fun NowCastingScreen(
             )
         }
         if (ytHeadphonesOn) Hint(stringResource(R.string.yt_headphones_note))
+    }
+
+    // A movie another phone is casting with TheatreSync: listen along in this phone's headphones (TapIn page).
+    val listenUrl = a.contentId?.takeIf { it.startsWith("http://") && "/media" in it }?.let { it.substringBefore("/media") + "/listen" }
+    if (listenUrl != null && a.kind != CastActivity.Kind.YOUTUBE) QCard(highlighted = true) {
+        Text(stringResource(R.string.listen_along_title), style = MaterialTheme.typography.titleLarge, color = Q.Text)
+        Hint(stringResource(R.string.listen_along_hint))
+        GoldButton(stringResource(R.string.listen_along), { onListenAlong(listenUrl) }, Modifier.fillMaxWidth().testTag("listen_along"), height = 52.dp)
     }
 
     if (a.canControl) {
@@ -2584,6 +2624,8 @@ internal fun AudioSheet(
     onGuestSound: (String, Boolean) -> Unit = { _, _ -> },
     onGuestVolume: (String, Int) -> Unit = { _, _ -> },
     onGuestRemove: (String) -> Unit = {},
+    onYouTubeHeadphones: (String, Boolean) -> Unit = { _, _ -> },
+    onYouTubeRoomSpeakers: (String, Boolean) -> Unit = { _, _ -> },
     onMore: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -2591,6 +2633,21 @@ internal fun AudioSheet(
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(stringResource(R.string.audio_sources), style = MaterialTheme.typography.titleLarge, color = Q.Text)
             Hint(stringResource(R.string.audio_sources_hint))
+
+            // YouTube on a TV (no movie from the phone): where its sound plays, with the same checkboxes.
+            val yt = if (ui.phase == Phase.SETUP) ui.nowCasting.firstOrNull { it.activity.kind == CastActivity.Kind.YOUTUBE && it.activity.contentId != null } else null
+            if (yt != null) {
+                Text(stringResource(R.string.audio_youtube_on, yt.tvName), style = MaterialTheme.typography.titleMedium, color = Q.Primary)
+                CheckRow(
+                    checked = ui.youTubeHeadphonesTv == yt.tvId, title = stringResource(R.string.audio_youtube_headphones),
+                    subtitle = ui.headphoneName ?: stringResource(R.string.this_phone), tag = "check_yt_headphones",
+                ) { onYouTubeHeadphones(yt.tvId, it) }
+                CheckRow(
+                    checked = yt.activity.muted != true, title = stringResource(R.string.room_speakers),
+                    subtitle = stringResource(R.string.audio_youtube_room), tag = "check_yt_room",
+                ) { onYouTubeRoomSpeakers(yt.tvId, it) }
+                Text(stringResource(R.string.audio_movies), style = MaterialTheme.typography.titleMedium, color = Q.Primary, modifier = Modifier.padding(top = 6.dp))
+            }
 
             // Room speakers
             CheckRow(

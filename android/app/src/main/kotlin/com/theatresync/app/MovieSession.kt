@@ -276,6 +276,8 @@ class MovieSession(private val app: Application) {
     // ------------------------------------------------------------- smart TVs via DIAL (YouTube only)
 
     private var castTvs: List<Tv> = emptyList()
+    private data class SeenTv(val tv: Tv, val known: TvWatchers.Tv?, val seenAtMs: Long)
+    private val seenTvs = LinkedHashMap<String, SeenTv>()
     private val dialTvs = java.util.concurrent.ConcurrentHashMap<String, Dial.Device>()
     @Volatile private var dialScanning = false
     private var lastDialScanMs = 0L
@@ -344,17 +346,22 @@ class MovieSession(private val app: Application) {
 
     private fun refreshTvs() {
         val routes = router.routes.filter { !it.isDefault && it.isEnabled && it.matchesSelector(selector) }
-        castTvs = routes.map { r ->
+        val now = SystemClock.elapsedRealtime()
+        routes.forEach { r ->
             val device = CastDevice.getFromBundle(r.extras)
             // Speakers (e.g. Nest Audio) can't show video: use a speaker icon for them.
-            Tv(r.id, r.name, isSpeaker = device != null && !device.hasCapability(CastDevice.CAPABILITY_VIDEO_OUT))
+            val tv = Tv(r.id, r.name, isSpeaker = device != null && !device.hasCapability(CastDevice.CAPABILITY_VIDEO_OUT))
+            val known = device?.inetAddress?.let { TvWatchers.Tv(r.id, r.name, it, device.servicePort.takeIf { p -> p > 0 } ?: 8009) }
+            // Same TV under a new id (Android re-created its entry): forget the old one.
+            seenTvs.entries.removeAll { (id, e) -> id != r.id && e.tv.name == r.name }
+            seenTvs[r.id] = SeenTv(tv, known ?: seenTvs[r.id]?.known, now)
         }
+        // A TV that vanishes for a moment (e.g. while it opens YouTube, or right after coming back to the app)
+        // stays listed for 45 s, so choices on screen aren't lost and casts in progress can still reach it.
+        seenTvs.entries.removeAll { now - it.value.seenAtMs > 45_000 }
+        castTvs = seenTvs.values.map { it.tv }.sortedBy { it.name.lowercase() }
         publishTvs()
-        knownTvs = routes.mapNotNull { r ->
-            val device = CastDevice.getFromBundle(r.extras) ?: return@mapNotNull null
-            val address = device.inetAddress ?: return@mapNotNull null
-            TvWatchers.Tv(r.id, r.name, address, device.servicePort.takeIf { it > 0 } ?: 8009)
-        }
+        knownTvs = seenTvs.values.mapNotNull { it.known }
         tvWatchers.update(
             routes.mapNotNull { r ->
                 val device = CastDevice.getFromBundle(r.extras) ?: return@mapNotNull null
@@ -378,6 +385,8 @@ class MovieSession(private val app: Application) {
             val a = it.activity
             val isOptimistic = it === optimistic
             (a.appId == CastStatus.APP_DEFAULT_MEDIA_RECEIVER && (server != null || screensaverServer != null)) ||
+                // Any phone's TheatreSync screensaver isn't "something playing".
+                (a.contentId?.endsWith("/live.m3u8") == true) ||
                 (a.sessionId != null && a.sessionId in stoppedSessions) ||
                 // Connected but nothing playing (e.g. Google's player opened just by connecting,
                 // or YouTube left open on another TV): the TV row says "Connected" instead.
@@ -639,18 +648,18 @@ class MovieSession(private val app: Application) {
                 step = "asking YouTube to play the video"
                 show(R.string.yt_step_video)
                 val prepared = if (screenId == known) runCatching { early?.get(8, java.util.concurrent.TimeUnit.SECONDS) }.getOrNull() else null
-                var (lounge, session) = prepared ?: YouTubeLounge().let { l -> l to l.bind(l.loungeToken(screenId)) }
+                var (lounge, session) = prepared ?: retrying { YouTubeLounge().let { l -> l to l.bind(l.loungeToken(screenId)) } }
                 try {
                     lounge.setPlaylist(session, videoId)
                 } catch (e: Exception) {
                     if (prepared == null) throw e
                     // The early link went stale: make a fresh one.
-                    YouTubeLounge().let { l -> lounge = l; session = l.bind(l.loungeToken(screenId)) }
-                    lounge.setPlaylist(session, videoId)
+                    retrying { YouTubeLounge().let { l -> lounge = l; session = l.bind(l.loungeToken(screenId)) } }
+                    retrying { lounge.setPlaylist(session, videoId) }
                 }
                 synchronized(youTubeRemotes) { youTubeRemotes[tvId] = lounge to session }
                 // Sound in headphones was on last time: switch it on again for this video.
-                if (prefs.getBoolean("ytHeadphones", false)) main.postDelayed({ setYouTubeHeadphones(tvId, true) }, 2_500)
+                if (prefs.getBoolean("ytHeadphones", true) && currentHeadphones() != null) main.postDelayed({ setYouTubeHeadphones(tvId, true) }, 2_500)
                 lastYouTubeError = null
                 true
             } catch (e: Exception) {
@@ -683,6 +692,15 @@ class MovieSession(private val app: Application) {
     }
 
     fun resetYouTube() = _ui.update { it.copy(youTube = YouTubeState.IDLE) }
+
+    /** Network steps to YouTube: try up to 3 times (crash report: a Wi-Fi blip aborted the link mid-request). */
+    private fun <T> retrying(block: () -> T): T {
+        var last: Exception? = null
+        repeat(3) { attempt ->
+            try { return block() } catch (e: java.io.IOException) { last = e; Thread.sleep(800L * (attempt + 1)) }
+        }
+        throw last!!
+    }
 
 
     private fun connectTvUnsafe(id: String) {

@@ -28,8 +28,14 @@ import java.security.MessageDigest
  * TheatreSync release is.
  */
 object AppUpdates {
-    /** The releases repository holds only finished app files and this description, never code. */
-    const val LATEST_URL = "https://raw.githubusercontent.com/quantari-solutions/theatresync-releases/main/latest.json"
+    /**
+     * Where the newest release is described, tried in order: a public releases-only repository (finished app
+     * files only, never code), or, if the owner makes the code repository public instead, its releases/ folder.
+     */
+    val LATEST_URLS = listOf(
+        "https://raw.githubusercontent.com/quantari-solutions/theatresync-releases/main/latest.json",
+        "https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases/latest.json",
+    )
 
     data class State(
         val checking: Boolean = false,
@@ -56,12 +62,23 @@ object AppUpdates {
         _state.update { it.copy(checking = true, error = null) }
         Thread({
             val result = runCatching {
-                val c = URL(LATEST_URL).openConnection() as HttpURLConnection
-                c.connectTimeout = 8_000; c.readTimeout = 8_000; c.useCaches = false
-                c.setRequestProperty("Cache-Control", "no-cache")
-                try {
-                    if (c.responseCode != 200) null else UpdateInfo.parse(c.inputStream.use { it.readBytes().decodeToString() })
-                } finally { c.disconnect() }
+                var newest: UpdateInfo? = null
+                var reached = false
+                for (url in LATEST_URLS) {
+                    val c = URL(url).openConnection() as HttpURLConnection
+                    c.connectTimeout = 8_000; c.readTimeout = 8_000; c.useCaches = false
+                    c.setRequestProperty("Cache-Control", "no-cache")
+                    try {
+                        val code = c.responseCode
+                        reached = true
+                        if (code == 200) UpdateInfo.parse(c.inputStream.use { it.readBytes().decodeToString() })?.let { u ->
+                            if (newest == null || u.versionCode > newest!!.versionCode) newest = u
+                        }
+                    } catch (_: java.io.IOException) {
+                    } finally { c.disconnect() }
+                }
+                if (!reached) throw java.io.IOException("offline")
+                newest
             }
             main.post {
                 val info = result.getOrNull()

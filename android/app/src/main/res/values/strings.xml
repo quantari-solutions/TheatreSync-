@@ -89,6 +89,14 @@
     <string name="yt_not_a_link">That isn\'t a YouTube video link.</string>
     <string name="yt_cast_to">Cast to %1$s</string>
     <string name="yt_starting">Starting YouTube on the TV…</string>
+    <string name="listen_along_title">Listen in your headphones</string>
+    <string name="listen_along_hint">This movie is playing from another phone with TheatreSync. Listen along on this phone, in step with the TV, any time.</string>
+    <string name="listen_along">Listen in my headphones</string>
+    <string name="audio_youtube_on">YouTube on %1$s</string>
+    <string name="audio_youtube_headphones">Headphones (this phone)</string>
+    <string name="audio_youtube_room">The TV / receiver speakers</string>
+    <string name="audio_movies">Movies from this phone</string>
+    <string name="yt_connecting_to">Connecting to %1$s…</string>
     <string name="yt_step_intro">Step 1 of 3 · Signature intro on the TV…</string>
     <string name="yt_step_opening">Step 2 of 3 · Opening YouTube on the TV…</string>
     <string name="yt_step_video">Step 3 of 3 · Starting the video…</string>
