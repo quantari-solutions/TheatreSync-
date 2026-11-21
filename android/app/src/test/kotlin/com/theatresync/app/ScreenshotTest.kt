@@ -136,7 +136,7 @@ class ScreenshotTest {
             appId = "233637DE", appName = "YouTube", kind = CastActivity.Kind.YOUTUBE,
             title = "Interstellar – Official Trailer", subtitle = "Warner Bros. Pictures",
             imageUrl = null, playerState = "PLAYING", currentTimeSec = 84.0, durationSec = 170.0,
-            mediaSessionId = 1, transportId = "web-1", hasMedia = true, sessionId = "s1",
+            mediaSessionId = 1, transportId = "web-1", hasMedia = true, sessionId = "s1", contentId = "zSWdZVtXT7E",
         ),
     )
     private val mirroring = TvWatchers.NowCasting(

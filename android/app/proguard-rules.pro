@@ -17,3 +17,6 @@
 -keep class * implements com.sun.jna.** { *; }
 -keep class org.vosk.** { *; }
 -dontwarn java.awt.**
+
+# YouTube headphones: the page calls back into the app by method name.
+-keepclassmembers class * { @android.webkit.JavascriptInterface <methods>; }

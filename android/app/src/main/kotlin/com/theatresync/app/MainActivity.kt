@@ -416,6 +416,7 @@ class MainActivity : ComponentActivity() {
                                 "experimental" -> ExperimentalScreen(
                                     ui = ui,
                                     onSignatureIntro = session::setSignatureIntro,
+                                    onScreensaver = session::setScreensaver,
                                     onMultiAudio = session::setMultiAudio,
                                     onAdSkipper = session::setAdSkipper,
                                     onBack = { page = Page.SETTINGS },
@@ -442,6 +443,7 @@ class MainActivity : ComponentActivity() {
                                     onYouTube = { page = Page.YOUTUBE },
                                     onBack = { page = Page.SETTINGS },
                                     onDismissMessage = session::dismissMessage,
+                                    onWake = session::wakeTv,
                                 )
                                 "crashes" -> CrashReportsScreen(
                                     entries = crashEntries.value,
@@ -499,6 +501,12 @@ class MainActivity : ComponentActivity() {
                                         upNext = ui.upNext[c.tvId].orEmpty(),
                                         onUpNext = { id -> session.playUpNext(c.tvId, id) },
                                         onRefreshUpNext = { session.refreshUpNext(c.tvId) },
+                                        ytHeadphonesOn = ui.youTubeHeadphonesTv == c.tvId,
+                                        ytHeadphonesDriftMs = ui.youTubeHeadphonesDriftMs,
+                                        ytHeadphonesProblem = ui.youTubeHeadphonesProblem,
+                                        onYtHeadphones = { on -> session.setYouTubeHeadphones(c.tvId, on) },
+                                        ytTarget = { session.youTubeTarget(c.tvId) },
+                                        onYtReport = session::onYouTubeHeadphonesReport,
                                     )
                                 }
                                 "setup" -> SetupScreen(
@@ -1569,6 +1577,12 @@ internal fun NowCastingScreen(
     upNext: List<MovieSession.UpNextVideo> = emptyList(),
     onUpNext: (String) -> Unit = {},
     onRefreshUpNext: () -> Unit = {},
+    ytHeadphonesOn: Boolean = false,
+    ytHeadphonesDriftMs: Long? = null,
+    ytHeadphonesProblem: String? = null,
+    onYtHeadphones: (Boolean) -> Unit = {},
+    ytTarget: () -> YouTubeHeadphones.Target? = { null },
+    onYtReport: (YouTubeHeadphones.Report) -> Unit = {},
 ) = Screen {
     val a = item.activity
     // Keep "Up next" fresh while this page is open (and right after the video changes).
@@ -1592,6 +1606,31 @@ internal fun NowCastingScreen(
     }
     GradientText(a.headline(), MaterialTheme.typography.headlineSmall)
     a.subtitle?.let { Body(it) }
+
+    // YouTube sound in the headphones: the same video plays on the phone, in step with the TV.
+    if (a.kind == CastActivity.Kind.YOUTUBE && a.contentId != null) QCard(highlighted = ytHeadphonesOn) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                Text(stringResource(R.string.yt_headphones), style = MaterialTheme.typography.titleLarge, color = Q.Text)
+                Hint(
+                    when {
+                        !ytHeadphonesOn -> stringResource(R.string.yt_headphones_off)
+                        ytHeadphonesProblem != null -> stringResource(R.string.yt_headphones_problem)
+                        ytHeadphonesDriftMs != null -> syncText(ytHeadphonesDriftMs)
+                        else -> stringResource(R.string.yt_headphones_starting)
+                    },
+                )
+            }
+            Switch(
+                checked = ytHeadphonesOn, onCheckedChange = onYtHeadphones, modifier = Modifier.testTag("yt_headphones"),
+                colors = SwitchDefaults.colors(checkedThumbColor = Color.Black, checkedTrackColor = Q.Primary),
+            )
+        }
+        if (ytHeadphonesOn) {
+            YouTubeHeadphonesPlayer(a.contentId!!, ytTarget, onYtReport)
+            Hint(stringResource(R.string.yt_headphones_note))
+        }
+    }
 
     if (a.canControl) {
         QCard {
@@ -2059,6 +2098,7 @@ internal fun RemoteScreen(
     onYouTube: () -> Unit,
     onBack: () -> Unit,
     onDismissMessage: () -> Unit = {},
+    onWake: (String) -> Unit = {},
 ) = Screen {
     TopBar(stringResource(R.string.remote), onBack)
     Message(ui.message, onDismissMessage)
@@ -2071,6 +2111,11 @@ internal fun RemoteScreen(
         ?: ui.tvs.firstOrNull { t -> ui.nowCasting.any { it.tvId == t.id } }
         ?: ui.tvs.first()
     val activity = ui.nowCasting.firstOrNull { it.tvId == tv.id }?.activity
+    if (!tv.isSpeaker && !tv.youTubeOnly) QCard {
+        Text(stringResource(R.string.power), style = MaterialTheme.typography.titleMedium, color = Q.Text)
+        GoldButton(stringResource(R.string.wake_devices), { onWake(tv.id) }, Modifier.fillMaxWidth().testTag("wake"), height = 52.dp)
+        Hint(stringResource(R.string.power_hint))
+    }
     QCard(highlighted = activity?.isPlaying == true) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             DeviceIcon(if (tv.isSpeaker) R.drawable.ic_device_speaker else R.drawable.ic_device_cast)
@@ -2332,7 +2377,7 @@ internal fun qrBitmap(text: String, size: Int): androidx.compose.ui.graphics.Ima
 
 /** Settings → Experimental: features that are fun but optional. */
 @Composable
-internal fun ExperimentalScreen(ui: MovieSession.Ui, onSignatureIntro: (Boolean) -> Unit, onBack: () -> Unit, onMultiAudio: (Boolean) -> Unit = {}, onAdSkipper: (Boolean) -> Unit = {}) = Screen {
+internal fun ExperimentalScreen(ui: MovieSession.Ui, onSignatureIntro: (Boolean) -> Unit, onBack: () -> Unit, onMultiAudio: (Boolean) -> Unit = {}, onAdSkipper: (Boolean) -> Unit = {}, onScreensaver: (Boolean) -> Unit = {}) = Screen {
     TopBar(stringResource(R.string.experimental), onBack)
     QCard(highlighted = ui.adSkipper) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2374,6 +2419,20 @@ internal fun ExperimentalScreen(ui: MovieSession.Ui, onSignatureIntro: (Boolean)
         }
         Body(stringResource(R.string.signature_intro_text))
         Hint(stringResource(R.string.signature_intro_note))
+    }
+    QCard(highlighted = ui.screensaver) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                Text(stringResource(R.string.screensaver), style = MaterialTheme.typography.titleLarge, color = Q.Text)
+                Hint(stringResource(R.string.screensaver_short))
+            }
+            Switch(
+                checked = ui.screensaver, onCheckedChange = onScreensaver,
+                modifier = Modifier.testTag("screensaver"),
+                colors = SwitchDefaults.colors(checkedThumbColor = Color.Black, checkedTrackColor = Q.Primary),
+            )
+        }
+        Hint(stringResource(R.string.screensaver_note))
     }
     Footer()
 }
