@@ -11,3 +11,12 @@
 # The sync engine is small and uses kotlinx.serialization: keep it whole so code
 # shrinking can never break the protocol in the optimised build.
 -keep class com.theatresync.core.** { *; }
+
+# Vosk speech recognition calls native code through JNA, which finds classes and methods by name.
+-keep class com.sun.jna.** { *; }
+-keep class * implements com.sun.jna.** { *; }
+-keep class org.vosk.** { *; }
+-dontwarn java.awt.**
+
+# YouTube headphones: the page calls back into the app by method name.
+-keepclassmembers class * { @android.webkit.JavascriptInterface <methods>; }

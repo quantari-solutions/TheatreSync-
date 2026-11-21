@@ -6,6 +6,8 @@ plugins {
 }
 
 android {
+    // Store native code compressed: the speech recognizer is large, and this keeps the download small.
+    packaging { jniLibs { useLegacyPackaging = true } }
     namespace = "com.theatresync.app"
     compileSdk = 35
 
@@ -14,8 +16,8 @@ android {
         // 29 = Android 10, the first release with AudioPlaybackCapture.
         minSdk = 29
         targetSdk = 35
-        versionCode = 21
-        versionName = "0.5.6"
+        versionCode = 22
+        versionName = "0.5.7"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Where "Send to GitHub" opens a pre-filled crash issue (the owner submits it).
         buildConfigField("String", "CRASH_REPO", "\"quantari-solutions/TheatreSync-\"")
@@ -76,6 +78,9 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.zxing.core) // QR code for TapIn (encoding only, pure Java)
     implementation(libs.mlkit.translate) // on-device subtitle translation (models downloaded on first use)
+    // Offline speech recognition for generated subtitles (works on any phone; language pack downloaded once).
+    implementation(libs.vosk.android) { exclude(group = "net.java.dev.jna") }
+    implementation(libs.jna) { artifact { type = "aar" } }
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)

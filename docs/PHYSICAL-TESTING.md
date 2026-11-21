@@ -230,3 +230,14 @@ the YouTube volume changes. Send one screenshot of step 1 and one of step 3, and
 6. Guest switches between two headphones: sound stays in step after a moment.
 
 **Send:** a screenshot of your Audio sheet with a guest listed, and anything that took more than a couple of seconds.
+
+## HW-20 — Subtitles, smart start, auto sync (0.5.7)
+
+1. Choose a movie (one you know has speech) → Subtitles → **Generate** → English. The first time it shows "Getting the speech pack…" (about 40 MB), then "Making subtitles…". Start the movie: subtitles appear on the TV in time with the speech.
+2. Start a movie: the player shows "Getting the TV ready… %" for a few seconds, then plays **without stuttering at the start**, headphones in step straight away.
+3. Headphone settings → **Auto sync** shows "in step within … ms" while the movie plays. No ± buttons anywhere.
+4. Play YouTube on the TV (from ReVanced or TheatreSync) → TheatreSync → Now casting → switch on **Sound in headphones**: the video appears small on the phone, the TV goes quiet, the sound plays in your headphones in step. Pause / skip on the TV: the phone follows.
+5. Stop the movie (or just connect to the TV): instead of the grey cast screen, the projector shows the gold Quantari screensaver.
+6. With the projector and receiver off (standby), Remote → **Wake projector & receiver**: they turn on (needs HDMI-CEC enabled on them).
+
+**Send:** a photo of the TV with subtitles, how long the "Getting the TV ready" wait was, whether the start still stutters, whether YouTube sound plays in step, a photo of the screensaver, and whether Wake worked.

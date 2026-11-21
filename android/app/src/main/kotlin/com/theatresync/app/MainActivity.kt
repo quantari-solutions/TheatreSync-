@@ -148,22 +148,8 @@ class MainActivity : ComponentActivity() {
         if (uri != null) session.loadSubtitles(uri)
     }
 
-    /** Subtitle generation waits for the speech-recognizer permission, then starts. */
-    private var pendingSubtitles: Triple<String, String, String>? = null
-    private val askMic = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        val job = pendingSubtitles
-        pendingSubtitles = null
-        if (granted && job != null) session.generateSubtitles(job.first, job.second, job.third)
-    }
-
-    private fun generateSubtitles(spoken: String, shownIn: String, label: String) {
-        if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            session.generateSubtitles(spoken, shownIn, label)
-        } else {
-            pendingSubtitles = Triple(spoken, shownIn, label)
-            askMic.launch(android.Manifest.permission.RECORD_AUDIO)
-        }
-    }
+    /** Subtitles are made from the movie file itself: no microphone permission needed. */
+    private fun generateSubtitles(spoken: String, shownIn: String, label: String) = session.generateSubtitles(spoken, shownIn, label)
 
     private val deviceCallback = object : AudioDeviceCallback() {
         override fun onAudioDevicesAdded(added: Array<out AudioDeviceInfo>) = refreshAudio()
@@ -390,7 +376,6 @@ class MainActivity : ComponentActivity() {
                                     outputs = outputs.value,
                                     onSelectOutput = { id -> session.setPreferredOutput(id) },
                                     onPickDevice = ::pickAudioDevice,
-                                    onDelay = { step -> session.adjustSoundDelay(step) },
                                     onResetSync = session::resetHeadphoneSync,
                                     onFx = session::setFx,
                                     onSoundTest = { refreshAudio(); page = Page.HEADPHONES },
@@ -431,6 +416,7 @@ class MainActivity : ComponentActivity() {
                                 "experimental" -> ExperimentalScreen(
                                     ui = ui,
                                     onSignatureIntro = session::setSignatureIntro,
+                                    onScreensaver = session::setScreensaver,
                                     onMultiAudio = session::setMultiAudio,
                                     onAdSkipper = session::setAdSkipper,
                                     onBack = { page = Page.SETTINGS },
@@ -457,6 +443,7 @@ class MainActivity : ComponentActivity() {
                                     onYouTube = { page = Page.YOUTUBE },
                                     onBack = { page = Page.SETTINGS },
                                     onDismissMessage = session::dismissMessage,
+                                    onWake = session::wakeTv,
                                 )
                                 "crashes" -> CrashReportsScreen(
                                     entries = crashEntries.value,
@@ -514,6 +501,12 @@ class MainActivity : ComponentActivity() {
                                         upNext = ui.upNext[c.tvId].orEmpty(),
                                         onUpNext = { id -> session.playUpNext(c.tvId, id) },
                                         onRefreshUpNext = { session.refreshUpNext(c.tvId) },
+                                        ytHeadphonesOn = ui.youTubeHeadphonesTv == c.tvId,
+                                        ytHeadphonesDriftMs = ui.youTubeHeadphonesDriftMs,
+                                        ytHeadphonesProblem = ui.youTubeHeadphonesProblem,
+                                        onYtHeadphones = { on -> session.setYouTubeHeadphones(c.tvId, on) },
+                                        ytTarget = { session.youTubeTarget(c.tvId) },
+                                        onYtReport = session::onYouTubeHeadphonesReport,
                                     )
                                 }
                                 "setup" -> SetupScreen(
@@ -563,8 +556,6 @@ class MainActivity : ComponentActivity() {
                                     onPlayPause = session::togglePause,
                                     onSkip = session::skip,
                                     onSeekTo = session::seekTo,
-                                    onSoundEarly = { session.adjustSoundDelay(+STEP_MS) },
-                                    onSoundLate = { session.adjustSoundDelay(-STEP_MS) },
                                     onHeadphonesHere = session::setHeadphonesHere,
                                     onMuteTv = session::setMuteTv,
                                     onStop = session::stopMovie,
@@ -827,8 +818,6 @@ class MainActivity : ComponentActivity() {
     }.toTypedArray()
 
     companion object {
-        const val STEP_MS = 20
-
         const val EXTRA_OPEN = "open"
         const val OPEN_REMOTE = "remote"
         const val OPEN_PIP = "pip"
@@ -1379,8 +1368,6 @@ internal fun PlayingScreen(
     ui: MovieSession.Ui,
     onPlayPause: () -> Unit,
     onSkip: (Long) -> Unit,
-    onSoundEarly: () -> Unit,
-    onSoundLate: () -> Unit,
     onHeadphonesHere: (Boolean) -> Unit,
     onMuteTv: (Boolean) -> Unit,
     onStop: () -> Unit,
@@ -1399,7 +1386,9 @@ internal fun PlayingScreen(
             ui.introPlaying -> stringResource(R.string.status_intro)
             else -> null
         } ?: when (ui.phase) {
-            Phase.STARTING -> stringResource(R.string.status_starting, ui.connectedTv ?: "TV")
+            Phase.STARTING -> ui.tvReadyPercent?.let { p ->
+                ui.tvReadyEtaSec?.takeIf { it > 0 }?.let { stringResource(R.string.status_tv_ready_eta, p, it) } ?: stringResource(R.string.status_tv_ready, p)
+            } ?: stringResource(R.string.status_starting, ui.connectedTv ?: "TV")
             Phase.PAUSED -> stringResource(R.string.status_paused)
             Phase.ENDED -> stringResource(R.string.status_ended)
             else -> stringResource(R.string.status_playing, ui.connectedTv ?: "TV")
@@ -1416,19 +1405,6 @@ internal fun PlayingScreen(
             GhostButton(stringResource(R.string.skip_fwd_short), { onSkip(10_000) }, Modifier.testTag("fwd10"), height = 52.dp, description = stringResource(R.string.skip_forward))
         }
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { SyncPill(ui) }
-    }
-
-    QCard {
-        Text(stringResource(R.string.lips_title), style = MaterialTheme.typography.titleLarge, color = Q.Text)
-        Hint(stringResource(R.string.lips_hint))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            GoldButton(stringResource(R.string.sound_early), onSoundEarly, Modifier.weight(1f).testTag("early"), height = 52.dp)
-            GoldButton(stringResource(R.string.sound_late), onSoundLate, Modifier.weight(1f).testTag("late"), height = 52.dp)
-        }
-        Text(
-            stringResource(R.string.sound_delay_value, ui.soundDelayMs), Modifier.fillMaxWidth(),
-            color = Q.TextFaint, style = MaterialTheme.typography.labelLarge, textAlign = TextAlign.Center,
-        )
     }
 
     AudioSummary(ui, onAudio)
@@ -1601,6 +1577,12 @@ internal fun NowCastingScreen(
     upNext: List<MovieSession.UpNextVideo> = emptyList(),
     onUpNext: (String) -> Unit = {},
     onRefreshUpNext: () -> Unit = {},
+    ytHeadphonesOn: Boolean = false,
+    ytHeadphonesDriftMs: Long? = null,
+    ytHeadphonesProblem: String? = null,
+    onYtHeadphones: (Boolean) -> Unit = {},
+    ytTarget: () -> YouTubeHeadphones.Target? = { null },
+    onYtReport: (YouTubeHeadphones.Report) -> Unit = {},
 ) = Screen {
     val a = item.activity
     // Keep "Up next" fresh while this page is open (and right after the video changes).
@@ -1624,6 +1606,31 @@ internal fun NowCastingScreen(
     }
     GradientText(a.headline(), MaterialTheme.typography.headlineSmall)
     a.subtitle?.let { Body(it) }
+
+    // YouTube sound in the headphones: the same video plays on the phone, in step with the TV.
+    if (a.kind == CastActivity.Kind.YOUTUBE && a.contentId != null) QCard(highlighted = ytHeadphonesOn) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                Text(stringResource(R.string.yt_headphones), style = MaterialTheme.typography.titleLarge, color = Q.Text)
+                Hint(
+                    when {
+                        !ytHeadphonesOn -> stringResource(R.string.yt_headphones_off)
+                        ytHeadphonesProblem != null -> stringResource(R.string.yt_headphones_problem)
+                        ytHeadphonesDriftMs != null -> syncText(ytHeadphonesDriftMs)
+                        else -> stringResource(R.string.yt_headphones_starting)
+                    },
+                )
+            }
+            Switch(
+                checked = ytHeadphonesOn, onCheckedChange = onYtHeadphones, modifier = Modifier.testTag("yt_headphones"),
+                colors = SwitchDefaults.colors(checkedThumbColor = Color.Black, checkedTrackColor = Q.Primary),
+            )
+        }
+        if (ytHeadphonesOn) {
+            YouTubeHeadphonesPlayer(a.contentId!!, ytTarget, onYtReport)
+            Hint(stringResource(R.string.yt_headphones_note))
+        }
+    }
 
     if (a.canControl) {
         QCard {
@@ -2091,6 +2098,7 @@ internal fun RemoteScreen(
     onYouTube: () -> Unit,
     onBack: () -> Unit,
     onDismissMessage: () -> Unit = {},
+    onWake: (String) -> Unit = {},
 ) = Screen {
     TopBar(stringResource(R.string.remote), onBack)
     Message(ui.message, onDismissMessage)
@@ -2103,6 +2111,11 @@ internal fun RemoteScreen(
         ?: ui.tvs.firstOrNull { t -> ui.nowCasting.any { it.tvId == t.id } }
         ?: ui.tvs.first()
     val activity = ui.nowCasting.firstOrNull { it.tvId == tv.id }?.activity
+    if (!tv.isSpeaker && !tv.youTubeOnly) QCard {
+        Text(stringResource(R.string.power), style = MaterialTheme.typography.titleMedium, color = Q.Text)
+        GoldButton(stringResource(R.string.wake_devices), { onWake(tv.id) }, Modifier.fillMaxWidth().testTag("wake"), height = 52.dp)
+        Hint(stringResource(R.string.power_hint))
+    }
     QCard(highlighted = activity?.isPlaying == true) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             DeviceIcon(if (tv.isSpeaker) R.drawable.ic_device_speaker else R.drawable.ic_device_cast)
@@ -2192,7 +2205,6 @@ internal fun HeadphoneSettingsScreen(
     outputs: List<DiagnosticsReport.Output>,
     onSelectOutput: (Int?) -> Unit,
     onPickDevice: () -> Unit,
-    onDelay: (Int) -> Unit,
     onResetSync: () -> Unit,
     onFx: (HeadphoneFx.Settings) -> Unit,
     onSoundTest: () -> Unit,
@@ -2236,7 +2248,7 @@ internal fun HeadphoneSettingsScreen(
         Hint(stringResource(R.string.hp_one_device))
     }
 
-    // Sync tool
+    // Auto sync: always on, nothing to set.
     QCard {
         Text(stringResource(R.string.hp_sync), style = MaterialTheme.typography.titleLarge, color = Q.Text)
         val drift = ui.driftMs
@@ -2245,13 +2257,6 @@ internal fun HeadphoneSettingsScreen(
             if (drift != null && kotlin.math.abs(drift) <= 40) Q.Success else Q.Primary,
             pulsing = drift != null,
         )
-        Text(stringResource(R.string.hp_delay_value, ui.soundDelayMs), style = MaterialTheme.typography.titleMedium, color = Q.Text)
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            GhostButton("−50", { onDelay(-50) }, Modifier.weight(1f), height = 48.dp, description = "Sound 50 ms earlier")
-            GhostButton("−10", { onDelay(-10) }, Modifier.weight(1f), height = 48.dp, description = "Sound 10 ms earlier")
-            GhostButton("+10", { onDelay(10) }, Modifier.weight(1f), height = 48.dp, description = "Sound 10 ms later")
-            GhostButton("+50", { onDelay(50) }, Modifier.weight(1f), height = 48.dp, description = "Sound 50 ms later")
-        }
         Hint(stringResource(R.string.hp_sync_hint))
         GhostButton("↺  " + stringResource(R.string.hp_reset_sync), onResetSync, Modifier.fillMaxWidth().testTag("hp_reset_sync"), height = 48.dp)
     }
@@ -2372,7 +2377,7 @@ internal fun qrBitmap(text: String, size: Int): androidx.compose.ui.graphics.Ima
 
 /** Settings → Experimental: features that are fun but optional. */
 @Composable
-internal fun ExperimentalScreen(ui: MovieSession.Ui, onSignatureIntro: (Boolean) -> Unit, onBack: () -> Unit, onMultiAudio: (Boolean) -> Unit = {}, onAdSkipper: (Boolean) -> Unit = {}) = Screen {
+internal fun ExperimentalScreen(ui: MovieSession.Ui, onSignatureIntro: (Boolean) -> Unit, onBack: () -> Unit, onMultiAudio: (Boolean) -> Unit = {}, onAdSkipper: (Boolean) -> Unit = {}, onScreensaver: (Boolean) -> Unit = {}) = Screen {
     TopBar(stringResource(R.string.experimental), onBack)
     QCard(highlighted = ui.adSkipper) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2414,6 +2419,20 @@ internal fun ExperimentalScreen(ui: MovieSession.Ui, onSignatureIntro: (Boolean)
         }
         Body(stringResource(R.string.signature_intro_text))
         Hint(stringResource(R.string.signature_intro_note))
+    }
+    QCard(highlighted = ui.screensaver) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                Text(stringResource(R.string.screensaver), style = MaterialTheme.typography.titleLarge, color = Q.Text)
+                Hint(stringResource(R.string.screensaver_short))
+            }
+            Switch(
+                checked = ui.screensaver, onCheckedChange = onScreensaver,
+                modifier = Modifier.testTag("screensaver"),
+                colors = SwitchDefaults.colors(checkedThumbColor = Color.Black, checkedTrackColor = Q.Primary),
+            )
+        }
+        Hint(stringResource(R.string.screensaver_note))
     }
     Footer()
 }
@@ -2714,7 +2733,7 @@ private fun SubtitlesSection(ui: MovieSession.Ui, actions: SubtitleActions) {
     val progress = ui.subtitleProgress
     when {
         progress != null -> {
-            StatusPill(stringResource(R.string.subtitles_generating, progress), Q.Primary, pulsing = true)
+            StatusPill(stringResource(if (ui.subtitleDownloading) R.string.subtitles_downloading else R.string.subtitles_generating, progress), Q.Primary, pulsing = true)
             GoldProgress(progress / 100f)
             ui.subtitleEtaSec?.let { eta ->
                 Hint(if (eta < 60) pluralStringResource(R.plurals.eta_seconds, eta.toInt(), eta.toInt()) else ((eta + 59) / 60).toInt().let { m -> pluralStringResource(R.plurals.eta_minutes, m, m) })
@@ -2739,7 +2758,6 @@ private fun SubtitlesSection(ui: MovieSession.Ui, actions: SubtitleActions) {
             title = { Text(stringResource(R.string.subtitles_generate_title), color = Q.Text) },
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    if (!actions.supported) { Text(stringResource(R.string.subtitles_unsupported), color = Q.Primary); return@Column }
                     Text(stringResource(R.string.subtitles_spoken), color = Q.Text, style = MaterialTheme.typography.titleSmall)
                     LanguageGrid(spoken) { spoken = it }
                     Text(stringResource(R.string.subtitles_show_in), color = Q.Text, style = MaterialTheme.typography.titleSmall)

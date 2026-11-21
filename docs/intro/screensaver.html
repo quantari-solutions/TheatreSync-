@@ -1,0 +1,33 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+/* TV screensaver while connected but idle: 1920×1080, seamless 20 s loop (every motion repeats exactly every 20 s). */
+html,body{margin:0;width:1920px;height:1080px;background:#050507;overflow:hidden;font-family:"Inter","Helvetica Neue",Arial,sans-serif}
+:root{--gentle:cubic-bezier(.37,0,.63,1)}
+.glow{position:absolute;inset:0;background:radial-gradient(ellipse 58% 48% at 50% 47%,rgba(232,184,74,.24),rgba(232,184,74,.10) 45%,transparent 75%);animation:breathe 20s var(--gentle) infinite}
+.halo{position:absolute;left:50%;top:640px;width:1400px;height:500px;transform:translate(-50%,-50%);background:radial-gradient(ellipse closest-side,rgba(232,184,74,.12),rgba(232,184,74,.06) 40%,transparent);animation:breathe 20s -10s var(--gentle) infinite}
+.stack{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;animation:drift 20s var(--gentle) infinite}
+.mark{position:relative;width:600px;height:254px;-webkit-mask-image:linear-gradient(to right,transparent,#000 9%,#000 91%,transparent),linear-gradient(to bottom,transparent,#000 14%,#000 86%,transparent);-webkit-mask-composite:source-in;opacity:.92}
+.inner{position:absolute;left:40px;top:0;width:520px;height:254px}
+.inner img{position:absolute;inset:0;width:100%;height:100%}
+.sheen{position:absolute;inset:0;overflow:hidden;-webkit-mask-image:url(card_wordmark.png);-webkit-mask-size:100% 100%}
+.sheen span{position:absolute;top:-50%;left:0;width:55%;height:200%;background:linear-gradient(100deg,transparent 30%,rgba(255,248,214,.85) 50%,transparent 70%);filter:blur(2px);transform:skewX(-14deg) translateX(-220%);animation:shine 20s 3s var(--gentle) infinite}
+.title{margin-top:30px;font-size:96px;font-weight:800;letter-spacing:-.02em;background:linear-gradient(90deg,#E8B84A,#FFE7A3 55%,#E8B84A);-webkit-background-clip:text;color:transparent;animation:bloom 20s var(--gentle) infinite}
+.tag{color:#8F897F;font-size:28px;letter-spacing:.08em}
+.spark{position:absolute;width:4px;height:4px;border-radius:50%;background:#FFE7A3;box-shadow:0 0 10px 2px rgba(232,184,74,.7);opacity:0;animation:float 20s linear infinite}
+@keyframes breathe{0%,100%{opacity:.55}50%{opacity:1}}
+@keyframes bloom{0%,100%{filter:drop-shadow(0 0 14px rgba(232,184,74,.35))}50%{filter:drop-shadow(0 0 40px rgba(232,184,74,.85))}}
+@keyframes drift{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
+@keyframes shine{0%{transform:skewX(-14deg) translateX(-220%)}14%,100%{transform:skewX(-14deg) translateX(320%)}}
+@keyframes float{0%{opacity:0;transform:translate(0,0)}15%{opacity:.9}85%{opacity:.9}100%{opacity:0;transform:translate(var(--dx),var(--dy))}}
+</style></head><body>
+<div class="glow"></div><div class="halo"></div>
+<div class="stack">
+  <div class="mark"><div class="inner"><img src="card_wordmark.png"><div class="sheen"><span></span></div></div></div>
+  <div class="title">TheatreSync</div>
+  <div class="tag">Ready when you are</div>
+</div>
+<script>
+// Sparks: fixed positions/timings (deterministic), each on its own 20 s cycle.
+const S=[[300,820,60,-260,0],[520,300,-40,-200,-3],[760,900,30,-300,-7],[1180,860,-50,-280,-11],[1420,280,40,-180,-5],[1640,780,-30,-240,-15],[980,200,20,-150,-9],[220,500,50,-220,-13],[1720,520,-60,-200,-17],[640,620,30,-260,-1]];
+for(const [x,y,dx,dy,d] of S){const e=document.createElement('div');e.className='spark';e.style.left=x+'px';e.style.top=y+'px';e.style.setProperty('--dx',dx+'px');e.style.setProperty('--dy',dy+'px');e.style.animationDelay=d+'s';document.body.appendChild(e);}
+</script>
+</body></html>
