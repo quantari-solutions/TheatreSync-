@@ -1,24 +1,32 @@
 <!doctype html><html><head><meta charset="utf-8"><style>
+/* TV Signature Intro, 1920×1080, 6.6 s. Same timeline as the phone opening (OpeningAnimation.kt):
+   the glow builds slowly, the gold sheen crosses the logo, the title's glow blooms, the whole glow swells once, fade out. */
 html,body{margin:0;width:1920px;height:1080px;background:#050507;overflow:hidden;font-family:"Inter","Helvetica Neue",Arial,sans-serif}
-.glow{position:absolute;inset:0;background:radial-gradient(ellipse 60% 50% at 50% 46%,rgba(232,184,74,.16),transparent 70%);opacity:0;animation:fade 1s .1s forwards}
-.stack{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;animation:out .6s 3.4s forwards}
-.mark{position:relative;width:600px;height:254px;-webkit-mask-image:linear-gradient(to right,transparent,#000 9%,#000 91%,transparent),linear-gradient(to bottom,transparent,#000 14%,#000 86%,transparent);-webkit-mask-composite:source-in;opacity:0;transform:scale(.96);animation:in .9s .05s cubic-bezier(.2,.7,.2,1) forwards}
+:root{--gentle:cubic-bezier(.37,0,.63,1);--soft:cubic-bezier(.2,.7,.2,1)}
+.glow{position:absolute;inset:0;background:radial-gradient(ellipse 60% 50% at 50% 46%,rgba(232,184,74,.26),rgba(232,184,74,.11) 45%,transparent 75%);opacity:0;animation:glow 6.6s var(--gentle) forwards}
+.halo{position:absolute;left:50%;top:672px;width:1500px;height:560px;transform:translate(-50%,-50%);background:radial-gradient(ellipse closest-side,rgba(232,184,74,.16),rgba(232,184,74,.09) 35%,rgba(232,184,74,.025) 70%,transparent);opacity:0;animation:halo 3.7s 2.9s linear forwards}
+.stack{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;animation:out .9s 5.7s var(--gentle) forwards}
+.mark{position:relative;width:600px;height:254px;-webkit-mask-image:linear-gradient(to right,transparent,#000 9%,#000 91%,transparent),linear-gradient(to bottom,transparent,#000 14%,#000 86%,transparent);-webkit-mask-composite:source-in;opacity:0;transform:scale(.96);animation:in 1.5s .3s var(--soft) forwards}
 .inner{position:absolute;left:40px;top:0;width:520px;height:254px}
 .inner img{position:absolute;inset:0;width:100%;height:100%}
 .sheen{position:absolute;inset:0;overflow:hidden;-webkit-mask-image:url(card_wordmark.png);-webkit-mask-size:100% 100%}
-.sheen span{position:absolute;top:-50%;left:0;width:55%;height:200%;background:linear-gradient(100deg,transparent 30%,rgba(255,248,214,.9) 50%,transparent 70%);filter:blur(2px);transform:skewX(-14deg) translateX(-220%);animation:shine 1.3s .7s ease-in-out forwards}
-.eyebrow{margin-top:26px;color:#E8B84A;letter-spacing:.42em;font-size:26px;font-weight:700;opacity:0;animation:rise .7s 1.15s ease-out forwards}
-.title{font-size:132px;font-weight:800;letter-spacing:-.02em;background:linear-gradient(90deg,#E8B84A,#FFE7A3 55%,#E8B84A);-webkit-background-clip:text;color:transparent;opacity:0;transform:translateY(24px);animation:rise .8s 1.4s cubic-bezier(.2,.7,.2,1) forwards;filter:drop-shadow(0 0 28px rgba(232,184,74,.35))}
-.tag{margin-top:8px;color:#A9A39A;font-size:34px;letter-spacing:.06em;opacity:0;animation:rise .7s 2.05s ease-out forwards}
-.line{width:0;height:2px;background:linear-gradient(90deg,transparent,#E8B84A,transparent);animation:grow 1s 1.9s ease-out forwards}
+.sheen span{position:absolute;top:-50%;left:0;width:55%;height:200%;background:linear-gradient(100deg,transparent 30%,rgba(255,248,214,.9) 50%,transparent 70%);filter:blur(2px);transform:skewX(-14deg) translateX(-220%);animation:shine 1.9s 1.4s var(--gentle) forwards}
+.eyebrow{margin-top:26px;color:#E8B84A;letter-spacing:.42em;font-size:26px;font-weight:700;opacity:0;animation:rise .9s 2.3s var(--soft) forwards}
+.title{position:relative;font-size:132px;font-weight:800;letter-spacing:-.02em;background:linear-gradient(90deg,#E8B84A,#FFE7A3 55%,#E8B84A);-webkit-background-clip:text;color:transparent;opacity:0;transform:translateY(24px);filter:drop-shadow(0 0 6px rgba(232,184,74,.25));animation:rise 1.2s 2.7s var(--soft) forwards,bloom 2.9s 2.9s linear forwards}
+.tag{margin-top:8px;color:#A9A39A;font-size:34px;letter-spacing:.06em;opacity:0;animation:rise .9s 3.9s var(--soft) forwards}
+.line{width:0;height:2px;background:linear-gradient(90deg,transparent,#E8B84A,transparent);animation:grow 1.4s 3.5s var(--gentle) forwards}
 @keyframes in{to{opacity:1;transform:scale(1)}}
-@keyframes fade{to{opacity:1}}
+/* 0–1.8 s rise; swell peaks at 5.05 s; settles by 5.8 s; fades with everything at 5.7–6.6 s */
+@keyframes glow{0%{opacity:0}27%{opacity:.62;animation-timing-function:var(--gentle)}65%{opacity:.62}76.5%{opacity:1}86.4%{opacity:.62}100%{opacity:0}}
+@keyframes halo{0%{opacity:0}46%{opacity:.6}65%{opacity:1}75%{opacity:.6}100%{opacity:0}}
+@keyframes bloom{0%{filter:drop-shadow(0 0 6px rgba(232,184,74,.25))}59%{filter:drop-shadow(0 0 30px rgba(232,184,74,.7))}74%{filter:drop-shadow(0 0 48px rgba(232,184,74,.95))}100%{filter:drop-shadow(0 0 30px rgba(232,184,74,.7))}}
 @keyframes rise{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
 @keyframes shine{to{transform:skewX(-14deg) translateX(320%)}}
 @keyframes grow{to{width:640px}}
 @keyframes out{to{opacity:0}}
 </style></head><body>
 <div class="glow"></div>
+<div class="halo"></div>
 <div class="stack">
   <div class="mark"><div class="inner"><img src="card_wordmark.png"><div class="sheen"><span></span></div></div></div>
   <div class="eyebrow">PRESENTED WITH</div>

@@ -9,7 +9,7 @@ const path = require('path'), fs = require('fs');
   await p.goto('file://' + path.join(__dirname, 'card.html'));
   await p.evaluate(() => Promise.all([document.fonts.ready, ...[...document.images].map(i => i.decode())]));
   await p.evaluate(() => document.getAnimations().forEach(a => a.pause()));
-  const FPS = 30, MS = 4300;
+  const FPS = 30, MS = 6600;
   for (let i = 0; i < Math.round(MS * FPS / 1000); i++) {
     await p.evaluate(t => document.getAnimations().forEach(a => { a.currentTime = t; }), i * 1000 / FPS);
     await p.screenshot({ path: path.join(out, String(i).padStart(4, '0') + '.png') });

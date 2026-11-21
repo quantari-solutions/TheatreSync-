@@ -30,6 +30,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
@@ -70,14 +71,18 @@ fun OpeningAnimation(frameMs: Int? = null, onDone: () -> Unit) {
     }
     val t = clock.value
 
-    val glow = seg(t, 100, 1000)
-    val mark = seg(t, 50, 900, SOFT)
-    val sheen = seg(t, 700, 1300, FastOutSlowInEasing)
-    val eyebrow = seg(t, 1150, 700)
-    val title = seg(t, 1400, 800, SOFT)
-    val line = seg(t, 1900, 1000)
-    val tag = seg(t, 2050, 700)
-    val out = 1f - seg(t, 3400, 600)
+    // Timeline (ms). Slow on purpose: the glow builds, blooms around the title, swells once, then fades.
+    val glowIn = seg(t, 0, 1800, GENTLE)
+    val mark = seg(t, 300, 1500, SOFT)
+    val sheen = seg(t, 1400, 1900, GENTLE)
+    val eyebrow = seg(t, 2300, 900, SOFT)
+    val title = seg(t, 2700, 1200, SOFT)
+    val bloom = seg(t, 2900, 1700, GENTLE)            // the title's own glow
+    val line = seg(t, 3500, 1400, GENTLE)
+    val tag = seg(t, 3900, 900, SOFT)
+    val swell = bell(t, 4300, 1500)                   // one slow swell of the whole glow
+    val out = 1f - seg(t, 5700, 900, GENTLE)
+    val glow = glowIn * (1f + 0.6f * swell)
 
     BoxWithConstraints(
         Modifier.fillMaxSize().background(BG)
@@ -87,10 +92,10 @@ fun OpeningAnimation(frameMs: Int? = null, onDone: () -> Unit) {
     ) {
         val w = min(maxWidth, 480.dp)
         // Soft gold glow behind everything.
-        Canvas(Modifier.fillMaxSize().graphicsLayer { alpha = glow * out }) {
+        Canvas(Modifier.fillMaxSize().graphicsLayer { alpha = out }) {
             drawRect(
                 Brush.radialGradient(
-                    listOf(Color(0x29E8B84A), Color.Transparent),
+                    0f to GOLD.copy(alpha = (0.16f * glow).coerceAtMost(1f)), 0.45f to GOLD.copy(alpha = (0.07f * glow).coerceAtMost(1f)), 1f to Color.Transparent,
                     center = Offset(size.width / 2, size.height * 0.46f),
                     radius = size.minDimension * 0.75f,
                 ),
@@ -137,16 +142,34 @@ fun OpeningAnimation(frameMs: Int? = null, onDone: () -> Unit) {
                 maxLines = 1, softWrap = false,
             )
             Spacer(Modifier.height(10.dp))
+            Box(contentAlignment = Alignment.Center) {
+            // Warm halo behind the title that blooms in, then swells with the rest.
+            Canvas(Modifier.matchParentSize().graphicsLayer { alpha = out }) {
+                val a = (0.13f * bloom * (1f + 0.8f * swell)).coerceAtMost(1f)
+                val r = size.width * 0.7f
+                // A wide, soft oval: several stops so it fades out with no visible edge.
+                scale(scaleX = 1f, scaleY = 0.42f, pivot = center) {
+                    drawCircle(
+                        Brush.radialGradient(
+                            0f to GOLD.copy(alpha = a), 0.35f to GOLD.copy(alpha = a * 0.55f),
+                            0.7f to GOLD.copy(alpha = a * 0.15f), 1f to Color.Transparent,
+                            center = center, radius = r,
+                        ),
+                        radius = r, center = center,
+                    )
+                }
+            }
             Text(
                 "TheatreSync",
                 Modifier.rise(title),
                 style = TextStyle(
                     fontFamily = Inter, fontWeight = FontWeight.ExtraBold, fontSize = 50.sp, letterSpacing = (-0.02).em,
                     brush = Brush.horizontalGradient(listOf(GOLD, Color(0xFFFFE7A3), GOLD)),
-                    shadow = Shadow(Color(0x59E8B84A), blurRadius = 36f),
+                    shadow = Shadow(GOLD.copy(alpha = (0.25f + 0.45f * bloom + 0.25f * swell).coerceAtMost(1f)), blurRadius = 12f + 44f * bloom + 24f * swell),
                 ),
                 maxLines = 1, softWrap = false, textAlign = TextAlign.Center,
             )
+            }
             Spacer(Modifier.height(14.dp))
             Canvas(Modifier.width(w * 0.62f).height(2.dp)) {
                 val lw = size.width * line
@@ -166,12 +189,20 @@ fun OpeningAnimation(frameMs: Int? = null, onDone: () -> Unit) {
     }
 }
 
-private const val TOTAL_MS = 4000
+private const val TOTAL_MS = 6600
 /** Extra width around the logo so only the swooshes fade at the sides, never the letters. */
 private const val LOGO_ROOM = 1.14f
 private val BG = Color(0xFF050507)
 private val GOLD = Color(0xFFE8B84A)
 private val SOFT: Easing = CubicBezierEasing(0.2f, 0.7f, 0.2f, 1f)
+/** Ease in and out like a sine wave: no sudden starts or stops. */
+private val GENTLE: Easing = CubicBezierEasing(0.37f, 0f, 0.63f, 1f)
+
+/** 0 → 1 → 0 over [dur] ms from [start], smooth at both ends (a slow swell). */
+private fun bell(t: Float, start: Int, dur: Int): Float {
+    val x = ((t - start) / dur).coerceIn(0f, 1f)
+    return (0.5f - 0.5f * kotlin.math.cos(2f * Math.PI.toFloat() * x))
+}
 
 /** Progress 0..1 of a step that starts at [start] ms and lasts [dur] ms. */
 private fun seg(t: Float, start: Int, dur: Int, easing: Easing = FastOutSlowInEasing): Float =
