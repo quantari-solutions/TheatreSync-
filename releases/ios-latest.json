@@ -1,0 +1,6 @@
+{
+  "version": "0.7.0",
+  "build": 5,
+  "notes": "Full TheatreSync on iPhone and iPad (part 1): your Chromecast with Now casting, play/pause, skip, volume, mute and Stop; projector & receiver Turn on / Turn off; the living title card and screensaver on the TV; the opening animation; listen along.",
+  "zipUrl": "https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases/ios/TheatreSync-iOS.zip"
+}

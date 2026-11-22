@@ -71,6 +71,9 @@ class MediaServer(
     /** Endless screensaver stream for the TV, or null. */
     @Volatile var live: LiveStream? = null
 
+    /** TapIn for YouTube: what the TV's YouTube is doing (serves /yt and /yt/state when set). */
+    @Volatile var youTube: (() -> YouTubeTapIn.State?)? = null
+
     private var serverSocket: ServerSocket? = null
     private val pool: ExecutorService = Executors.newCachedThreadPool { r ->
         Thread(r, "theatresync-http").apply { isDaemon = true }
@@ -228,6 +231,8 @@ class MediaServer(
                         query["status"].orEmpty(), hidden = query["hidden"] == "1", device = query["dev"],
                     ).toJson())
                 }
+                path == "/yt" && youTube != null -> respond(out, 200, "OK", "text/html; charset=utf-8", YouTubeTapIn.PAGE)
+                path == "/yt/state" && youTube != null -> sendBytes(out, "application/json", YouTubeTapIn.stateJson(youTube?.invoke()).toByteArray())
                 path == "/listen" || path == "/" -> respond(out, 200, "OK", "text/html; charset=utf-8", ListenPage.HTML)
                 else -> respond(out, 404, "Not Found", "text/plain", "not found")
             }

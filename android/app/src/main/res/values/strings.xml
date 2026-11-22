@@ -31,7 +31,7 @@
     <string name="searching">Searching</string>
     <string name="connect">Connect</string>
     <string name="footer">TheatreSync · by Quantari Solutions</string>
-    <string name="friends_heading">Friends listening</string>
+    <string name="friends_heading">Guests listening (TapIn)</string>
     <string name="sync_off">Sound off on this phone</string>
     <string name="sync_waiting">Starting…</string>
     <string name="sync_ok">In sync · %1$+d ms</string>
@@ -335,6 +335,7 @@
     <string name="yt_headphones_note">Kept in step with the TV automatically. On other pages the sound link stays as a small tile in the corner (✕ switches it off). Adverts can differ between the TV and the headphones for a moment; it catches up afterwards.</string>
     <string name="yt_mini_label">🎧 TV sound</string>
     <string name="yt_your_headphones">your headphones</string>
+    <string name="yt_tapin_note">For YouTube, the guest\'s browser plays the same video\'s sound, kept in step with the TV by this phone. Works whoever cast it. Keep TheatreSync running.</string>
     <string name="yt_sound_link_label">Sound link. YouTube needs it on screen to send the sound to your headphones.</string>
     <string name="yt_mini_close">Switch off YouTube sound in headphones</string>
     <string name="power">Projector &amp; receiver</string>
@@ -386,7 +387,7 @@
     <string name="guest_remove">Remove</string>
     <string name="guests_title">Guests\' phones (TapIn)</string>
     <string name="guests_hint">A guest connects their headphones to their own phone, then taps or scans. No app needed.</string>
-    <string name="guests_need_movie">Start a movie to let guests listen.</string>
+    <string name="guests_need_movie">TapIn works while a movie from this phone is playing: start one, and the QR code and NFC sharing appear here and on the movie screen. YouTube and mirroring send their sound from the TV, so guests can\'t listen to those through TapIn.</string>
     <string name="share_nfc">Share by NFC</string>
     <string name="show_qr">Show QR code</string>
     <string name="nfc_hold">Hold their phone to the back of this one</string>

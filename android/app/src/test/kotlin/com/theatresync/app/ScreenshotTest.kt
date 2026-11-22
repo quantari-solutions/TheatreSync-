@@ -279,3 +279,13 @@ class TabletScreenshotTest {
         QuantariTheme { GridBackground { SetupScreen(Ui(movieTitle = "Interstellar", tvs = listOf(Tv("1", "Theatre Room TV"))), {}, {}, {}, {}, {}, {}) } }
     }
 }
+
+/** TapIn on the movie screen: QR code, address and NFC button. */
+class TapInScreenshotTest {
+    @get:Rule
+    val paparazzi = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6, theme = "android:Theme.Material.NoActionBar", maxPercentDifference = 0.01)
+
+    @Test fun tapInCard() = paparazzi.snapshot {
+        QuantariTheme { GridBackground { androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.padding(16.dp)) { QCard { TapInCard("http://192.168.1.23:41234/listen", {}, "On an iPhone or iPad on the same Wi-Fi, open TheatreSync and tap Join.") } } } }
+    }
+}

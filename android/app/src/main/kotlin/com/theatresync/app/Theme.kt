@@ -41,6 +41,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
@@ -331,12 +332,26 @@ fun StatusPill(text: String, color: Color, pulsing: Boolean = false) {
 @Composable
 fun SeekBar(positionMs: Long, durationMs: Long, onSeek: (Long) -> Unit, modifier: Modifier = Modifier) {
     var dragging by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<Float?>(null) }
-    val fraction = dragging ?: if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
+    // After a drag the bar stays where you let go ("Loading…") until the TV gets there, instead of jumping
+    // back to the old spot while the TV buffers (owner). Gives up after 15 s.
+    var pending by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<Long?>(null) }
+    var pendingAt by androidx.compose.runtime.remember { androidx.compose.runtime.mutableLongStateOf(0L) }
+    val target = pending
+    if (target != null && (kotlin.math.abs(positionMs - target) < 3_000 || android.os.SystemClock.elapsedRealtime() - pendingAt > 15_000)) pending = null
+    androidx.compose.runtime.LaunchedEffect(target) { if (target != null) { kotlinx.coroutines.delay(15_500); pending = null } }
+    val shownMs = pending ?: positionMs
+    val fraction = dragging ?: if (durationMs > 0) (shownMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
     androidx.compose.material3.Slider(
         value = fraction,
         onValueChange = { dragging = it },
         onValueChangeFinished = {
-            dragging?.let { f -> if (durationMs > 0) onSeek((f * durationMs).toLong()) }
+            dragging?.let { f ->
+                if (durationMs > 0) {
+                    val ms = (f * durationMs).toLong()
+                    pending = ms; pendingAt = android.os.SystemClock.elapsedRealtime()
+                    onSeek(ms)
+                }
+            }
             dragging = null
         },
         enabled = durationMs > 0,
@@ -347,7 +362,8 @@ fun SeekBar(positionMs: Long, durationMs: Long, onSeek: (Long) -> Unit, modifier
         ),
     )
     androidx.compose.foundation.layout.Row {
-        Text(formatClock(if (dragging != null) (fraction * durationMs).toLong() else positionMs), color = Q.TextMuted, style = MaterialTheme.typography.labelLarge)
+        Text(formatClock(if (dragging != null) (fraction * durationMs).toLong() else shownMs), color = Q.TextMuted, style = MaterialTheme.typography.labelLarge)
+        if (pending != null && dragging == null) Text("  ·  Loading…", color = Q.Primary, style = MaterialTheme.typography.labelLarge, modifier = Modifier.testTag("seek_loading"))
         Spacer1()
         Text(if (durationMs > 0) formatClock(durationMs) else "--:--", color = Q.TextFaint, style = MaterialTheme.typography.labelLarge)
     }

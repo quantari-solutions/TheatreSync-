@@ -20,7 +20,8 @@ for rel in ["Package.swift", "TheatreSyncApp.swift", "JoinView.swift", "Listenin
         errors.append(f"missing {rel}")
 
 ALLOWED = {"SwiftUI", "Foundation", "Combine", "AVFoundation", "AVKit", "Network",
-           "MediaPlayer", "UIKit", "PackageDescription", "AppleProductTypes", "os", "Observation"}
+           "MediaPlayer", "UIKit", "PackageDescription", "AppleProductTypes", "os", "Observation",
+           "CryptoKit", "WebKit"}
 swift_files = sorted(pkg.rglob("*.swift"))
 for f in swift_files:
     src = f.read_text()

@@ -12,6 +12,9 @@
 - **Scheduled tasks / check-ins must be cheap** (owner, 2026-11-21): don't schedule check-ins into this
   (expensive) session. GitHub PR events already wake the session for CI results. If a scheduled task is
   really needed, make it start a fresh session and set its model to Haiku (`claude-haiku-5-5`).
+- **Free tier only** (owner, 2026-11-22: "I don't want to pay… free tier as much as possible"): no paid
+  services or accounts (no Apple Developer Program / TestFlight / App Store, no paid Google Cast registration,
+  no paid hosting). iOS installs via Swift Playgrounds (zip); the app's About card announces updates.
 - The owner is not technical: explain results in plain language, and keep
   physical tests to simple steps + a screenshot (see docs/PHYSICAL-TESTING.md).
 

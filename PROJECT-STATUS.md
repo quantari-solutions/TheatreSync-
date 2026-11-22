@@ -1,6 +1,31 @@
 # Project status
 
-_Last updated: 2026-11-22. 0.6.9 (published to the in-app updater): the TV title card is alive again (endless loop, no player bar)_
+_Last updated: 2026-11-22. Android 0.7.0: TapIn fixed and on the movie screen, TapIn for YouTube (any phone's cast). iOS 0.7.0: full TheatreSync part 1_
+
+## Also in 0.7.0 (owner, 2026-11-22 night)
+
+| Request | Done | Verified |
+|---|---|---|
+| Seek bar jumps back to the old spot while the TV buffers | The bar stays where you let go with "Loading…" until the TV reaches it (or 15 s) | Compiles; needs the TV |
+| Title card / screensaver at 60 fps; particles like gentle, very slow bonfire sparks | `loop.html`: warm embers rise slowly, sway, flicker and fade (cooling gold → orange); 12 s seamless loop; animated picture 1280×720 at 60 fps (8.7 MB), Android and iOS | Preview video sent; needs the TV |
+
+## Android 0.7.0: TapIn
+
+| Report | Cause | Fix | Verified |
+|---|---|---|---|
+| Can't see TapIn / the QR code sometimes | TapIn lived only in the Audio sheet and only during a movie from this phone; with YouTube or before a movie it just said "Start a movie" | The movie screen's guests card now shows the **QR code**, the address (typeable) and **Share by NFC** directly. The Audio sheet explains when TapIn is available. The QR dialog shows the address too | Screenshot `tapInCard` (QR renders) |
+| NFC: "choose TheatreSync" pops up on my phone, nothing on the other | Two phones back to back both read each other; the host read the guest instead of being read | While sharing, the host stops reading (Android 15 `setDiscoveryTechnology`: reader off, card emulation kept), so the guest's phone reads the page | Compiles; needs two phones |
+| YouTube cast from a friend's phone: no TapIn on Now casting | TapIn shared the phone's own movie sound; YouTube's sound comes from the TV | **TapIn for YouTube**: Now casting (YouTube, whoever cast it) shows a TapIn QR / NFC. The guest's browser (no app) plays the same video with YouTube's player, kept in step with the TV by this phone's `/yt/state` (same method as TV sound in headphones) | `YouTubeTapInTest` (page + state served); needs phones |
+| "Keeps crashing" | No crash report reached GitHub; not reproduced | — (the crash reporter uploads the next one; if it happens again, please keep GitHub signed in under Settings → Crash reports) | — |
+
+
+## iOS 0.7.0: "fix up the iOS app with the latest updates… setting → update for iOS as well"
+
+| Request | Done | Verified |
+|---|---|---|
+| Same app on iPhone / iPad | Part 1: Chromecast discovery and direct Cast connection (`CastController`, `Shared/CastProtocol.swift`, mirror of `CastV2.kt`), Now casting with picture, play/pause, ±10 s, volume, mute, Stop; Projector & receiver Turn on / Turn off (`NetworkPower.swift`, mirror of Android); living title card + screensaver served from the device (`TitleCardServer`); opening animation (own clock, once per fresh start); listen along kept. Part 2 next: YouTube casting, TV sound in headphones | `ios-sim.sh` on GitHub's Mac: Xcode build, shared tests (incl. Cast protocol) compiled and run, launch + screenshots on iPhone and iPad simulators. Chromecast / projector need the real devices |
+| Settings → Update on iOS | Apple doesn't allow apps to install updates. About shows "Update available" from `releases/ios-latest.json` with the new zip's link. Fully automatic updates need TestFlight (owner's Apple Developer account, US$99/yr) | — |
+
 
 ## 0.6.9: "I want the same animation… but no progress bar… an infinite loop… like a loading screen"
 

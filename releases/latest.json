@@ -1,8 +1,8 @@
 {
-  "versionCode": 34,
-  "versionName": "0.6.9",
-  "apkUrl": "https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases/TheatreSync-0.6.9.apk",
-  "sha256": "701ca36319c0c4602b8d78d0e482cc417af4725d8a51ab18089989e29e0a76ab",
-  "sizeBytes": 21180247,
-  "notes": "The TV title card is alive again, with no progress bar: the glow breathes and drifts, a shine sweeps the Quantari swooshes, a light runs along the line and particles float around, in an endless loop."
+  "versionCode": 35,
+  "versionName": "0.7.0",
+  "apkUrl": "https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases/TheatreSync-0.7.0.apk",
+  "sha256": "b9b61c2b19d153086e85db52cc80fc43c927dc8c00709d09f62567bc0c3829c8",
+  "sizeBytes": 26864283,
+  "notes": "TapIn fixed and on the movie screen; TapIn for YouTube (whoever cast it); the seek bar stays where you drag it; the TV title card at 60 fps with gentle bonfire embers."
 }
