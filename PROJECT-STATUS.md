@@ -1,6 +1,14 @@
 # Project status
 
-_Last updated: 2026-11-22. 0.6.9 (published to the in-app updater): the TV title card is alive again (endless loop, no player bar)_
+_Last updated: 2026-11-22. iOS 0.7.0: full TheatreSync part 1 on iPhone / iPad (compiled with Xcode and run on simulated iPhone and iPad on GitHub). Android 0.6.9_
+
+## iOS 0.7.0: "fix up the iOS app with the latest updates… setting → update for iOS as well"
+
+| Request | Done | Verified |
+|---|---|---|
+| Same app on iPhone / iPad | Part 1: Chromecast discovery and direct Cast connection (`CastController`, `Shared/CastProtocol.swift`, mirror of `CastV2.kt`), Now casting with picture, play/pause, ±10 s, volume, mute, Stop; Projector & receiver Turn on / Turn off (`NetworkPower.swift`, mirror of Android); living title card + screensaver served from the device (`TitleCardServer`); opening animation (own clock, once per fresh start); listen along kept. Part 2 next: YouTube casting, TV sound in headphones | `ios-sim.sh` on GitHub's Mac: Xcode build, shared tests (incl. Cast protocol) compiled and run, launch + screenshots on iPhone and iPad simulators. Chromecast / projector need the real devices |
+| Settings → Update on iOS | Apple doesn't allow apps to install updates. About shows "Update available" from `releases/ios-latest.json` with the new zip's link. Fully automatic updates need TestFlight (owner's Apple Developer account, US$99/yr) | — |
+
 
 ## 0.6.9: "I want the same animation… but no progress bar… an infinite loop… like a loading screen"
 

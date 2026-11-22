@@ -12,14 +12,22 @@ struct TheatreSyncApp: App {
 struct RootView: View {
     @StateObject private var session = ListenerSession()
     @StateObject private var browser = HostBrowser()
+    @StateObject private var cast = CastController()
+    @StateObject private var power = NetworkPower()
+    @StateObject private var updates = UpdateCheck()
+    /// The opening plays once each time the app starts fresh (not when coming back from the background).
+    @State private var opening = true
 
     var body: some View {
-        NavigationStack {
-            if session.status == .idle {
-                JoinView(session: session, browser: browser)
-            } else {
-                ListeningView(session: session)
+        ZStack {
+            NavigationStack {
+                if session.status == .idle {
+                    HomeView(cast: cast, power: power, updates: updates, session: session, browser: browser)
+                } else {
+                    ListeningView(session: session)
+                }
             }
+            if opening { OpeningView { opening = false }.transition(.identity) }
         }
         .preferredColorScheme(.dark)
         .tint(Q.primary)

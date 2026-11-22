@@ -9,6 +9,9 @@ ROOT="$PWD"; OUT="$ROOT/ios-shots"; mkdir -p "$OUT"
 DD="${RUNNER_TEMP:-/tmp}/tsdd"
 BUNDLE=com.theatresync.ios
 xcodebuild -version
+echo "== Shared code tests (protocol, sync, Cast) compiled with Apple's swiftc"
+swiftc -swift-version 5 -O -o "$OUT/shared-tests" ios/TheatreSync.swiftpm/Shared/*.swift ios/SharedTests/main.swift
+"$OUT/shared-tests" contracts | tail -3
 cd ios/TheatreSync.swiftpm
 echo "== Schemes"; xcodebuild -list || true
 echo "== Build (iOS Simulator)"
@@ -36,7 +39,11 @@ print(c[-1]['udid'] if c else '')")
   xcrun simctl bootstatus "$UDID" -b
   xcrun simctl install "$UDID" "$APP"
   xcrun simctl launch "$UDID" "$BUNDLE"
-  sleep 10
+  sleep 3
+  xcrun simctl io "$UDID" screenshot "$OUT/$KIND-opening.png"
+  sips -Z 420 -s format jpeg -s formatOptions 55 "$OUT/$KIND-opening.png" --out "$OUT/$KIND-opening-small.jpg" >/dev/null
+  echo "SCREENSHOT-$KIND-opening-BEGIN"; base64 -b 1000 -i "$OUT/$KIND-opening-small.jpg"; echo "SCREENSHOT-$KIND-opening-END"
+  sleep 7
   xcrun simctl io "$UDID" screenshot "$OUT/$KIND.png"
   if xcrun simctl spawn "$UDID" launchctl list | grep -q "$BUNDLE"; then echo "PASS  $KIND: launched and still running after 10 s"
   else echo "FAIL  $KIND: not running after 10 s (crashed?)"; FAIL=1

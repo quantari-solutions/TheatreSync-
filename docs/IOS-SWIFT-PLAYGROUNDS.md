@@ -8,8 +8,17 @@ AVFoundation) — no Xcode-only dependencies.
 > for Linux. The **app itself** (SwiftUI, AVFoundation, Network) is first compiled when you
 > open it in Swift Playgrounds. Please report any compile error back verbatim.
 
-The iOS app is a **listener**: it joins a movie that the Android phone is playing and plays
-the sound in this device's headphones. The first time, iOS asks to allow **Local Network**.
+Since 0.7.0 the iOS app is the **full TheatreSync, part 1**: it finds your Chromecast (Bonjour) and talks to it
+directly (Cast v2 over TLS, no Google library): Now casting with play/pause, ±10 s, volume, mute and Stop; projector &
+receiver Turn on / Turn off (HDMI-CEC wake + PJLink, Denon/Marantz, Onkyo/Pioneer/Integra, Yamaha over the Wi-Fi); the
+living title card and screensaver on the TV (served from the iPhone/iPad as an animated picture, no player bar); the
+opening animation (once per fresh start); listen along (joins a movie the Android phone is playing). Part 2: YouTube
+casting and the TV's sound in your headphones. Every change is compiled with Xcode and run on simulated iPhone and iPad
+on GitHub (`scripts/ios-sim.sh`) before a zip is made.
+
+Updates: Settings isn't allowed to install them on iOS. The app's About card says when a newer version is out
+(`releases/ios-latest.json`) with a link to the new zip (`releases/ios/TheatreSync-iOS.zip`). Automatic updates need
+TestFlight (Apple Developer account). The first time, iOS asks to allow **Local Network**.
 Tap **Allow**, because that's how it finds the phone.
 
 ## Get the package onto the iPad

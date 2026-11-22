@@ -105,5 +105,21 @@ do {
 let s = PlaybackState(state: .playing, mediaPositionMs: 60_000, hostTimeMs: 1_000, playbackRate: 1.0, mediaTitle: nil)
 check(ListenerTarget.targetMs(state: s, hostNowMs: 1_500, soundDelayMs: 120) == 60_380, "listener target")
 
+// 7. Cast protocol (mirror of CastV2.kt): frames round-trip, status parsing, picture load.
+do {
+    let m = CastMessage(sourceId: "sender-ts-ios", destinationId: "receiver-0", namespace: CastMessage.nsReceiver, payload: "{\"type\":\"GET_STATUS\",\"requestId\":1}")
+    let f = m.frame()
+    check(CastMessage.frameLength(f.prefix(4)) == f.count - 4, "cast frame length")
+    check(CastMessage.decode(f.dropFirst(4)) == m, "cast message round-trip")
+    let status = "{\"type\":\"RECEIVER_STATUS\",\"status\":{\"volume\":{\"level\":0.4,\"muted\":false},\"applications\":[{\"appId\":\"233637DE\",\"displayName\":\"YouTube\",\"sessionId\":\"s1\",\"transportId\":\"t1\",\"namespaces\":[{\"name\":\"urn:x-cast:com.google.cast.media\"}]}]}}"
+    let a = CastStatus.parseReceiver(status)
+    check(a?.kind == .youtube && a?.transportId == "t1" && a?.volumeLevel == 0.4, "cast receiver status")
+    let media = "{\"type\":\"MEDIA_STATUS\",\"status\":[{\"mediaSessionId\":3,\"playerState\":\"PLAYING\",\"currentTime\":12.5,\"media\":{\"contentId\":\"dQw4w9WgXcQ\",\"metadata\":{\"title\":\"Song\"}}}]}"
+    let merged = a.map { CastStatus.mergeMedia($0, media) }
+    check(merged?.isPlaying == true && merged?.canControl == true && merged?.imageUrl?.contains("dQw4w9WgXcQ") == true, "cast media status")
+    let load = CastStatus.loadPicture(url: "http://192.168.1.5:5000/card.webp", requestId: 2)
+    check(load.contains("\"streamType\":\"NONE\"") && load.contains("image/webp") && !load.contains("title"), "title card is a picture (no player bar)")
+}
+
 print("\(passed) passed, \(failures) failed")
 exit(failures == 0 ? 0 : 1)
