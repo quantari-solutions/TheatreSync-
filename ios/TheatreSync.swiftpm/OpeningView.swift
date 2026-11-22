@@ -55,13 +55,19 @@ struct OpeningView: View {
                 }
                 .frame(width: geo.size.width, height: geo.size.height)
             }
-            .onChange(of: t >= total) { finished in if finished { onDone() } }
+            .onChange(of: t >= total) { finished in if finished { finish("played in full") } }
         }
         .ignoresSafeArea()
         .contentShape(Rectangle())
-        .onTapGesture { onDone() }
+        .onTapGesture { finish("tapped") }
         .accessibilityLabel("TheatreSync, a Quantari Solutions module")
-        .onAppear { start = Date() }
+        .onAppear { start = Date(); print("Opening: shown") }
+    }
+
+    /// Logged so the simulator check (CI) can prove it shows and for how long.
+    private func finish(_ why: String) {
+        print("Opening: finished after \(Int(Date().timeIntervalSince(start) * 1000)) ms (\(why))")
+        onDone()
     }
 
     private func seg(_ t: Double, _ s: Double, _ d: Double) -> Double {

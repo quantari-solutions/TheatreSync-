@@ -38,8 +38,12 @@ print(c[-1]['udid'] if c else '')")
   xcrun simctl boot "$UDID" || true
   xcrun simctl bootstatus "$UDID" -b
   xcrun simctl install "$UDID" "$APP"
-  xcrun simctl launch "$UDID" "$BUNDLE"
-  sleep 3
+  xcrun simctl launch --stdout="$OUT/$KIND-stdout.txt" --stderr="$OUT/$KIND-stderr.txt" "$UDID" "$BUNDLE"
+  sleep 1.5
+  xcrun simctl io "$UDID" screenshot "$OUT/$KIND-early.png"
+  sips -Z 420 -s format jpeg -s formatOptions 55 "$OUT/$KIND-early.png" --out "$OUT/$KIND-early-small.jpg" >/dev/null
+  echo "SCREENSHOT-$KIND-early-BEGIN"; base64 -b 1000 -i "$OUT/$KIND-early-small.jpg"; echo "SCREENSHOT-$KIND-early-END"
+  sleep 1.5
   xcrun simctl io "$UDID" screenshot "$OUT/$KIND-opening.png"
   sips -Z 420 -s format jpeg -s formatOptions 55 "$OUT/$KIND-opening.png" --out "$OUT/$KIND-opening-small.jpg" >/dev/null
   echo "SCREENSHOT-$KIND-opening-BEGIN"; base64 -b 1000 -i "$OUT/$KIND-opening-small.jpg"; echo "SCREENSHOT-$KIND-opening-END"
@@ -48,6 +52,7 @@ print(c[-1]['udid'] if c else '')")
   if xcrun simctl spawn "$UDID" launchctl list | grep -q "$BUNDLE"; then echo "PASS  $KIND: launched and still running after 10 s"
   else echo "FAIL  $KIND: not running after 10 s (crashed?)"; FAIL=1
     xcrun simctl spawn "$UDID" log show --last 1m --predicate "process == \"TheatreSync\"" --style compact 2>/dev/null | tail -40 || true; fi
+  echo "App log ($KIND):"; grep -h "Opening:" "$OUT/$KIND-stdout.txt" "$OUT/$KIND-stderr.txt" 2>/dev/null || echo "  (no Opening lines)"
   sips -Z 420 -s format jpeg -s formatOptions 55 "$OUT/$KIND.png" --out "$OUT/$KIND-small.jpg" >/dev/null
   echo "SCREENSHOT-$KIND-BEGIN"; base64 -b 1000 -i "$OUT/$KIND-small.jpg"; echo "SCREENSHOT-$KIND-END"
   xcrun simctl shutdown "$UDID" || true
