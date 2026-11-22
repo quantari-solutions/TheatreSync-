@@ -3,7 +3,7 @@
 **Phone (opening when the app starts fresh):** drawn by the app itself in
 [`OpeningAnimation.kt`](../../android/app/src/main/kotlin/com/theatresync/app/OpeningAnimation.kt), not a video,
 so text is rendered at the phone's own resolution and laid out for a tall screen. The logo is
-`res/drawable-nodpi/quantari_wordmark.webp` (lossless copy of `card_wordmark.png`). Screenshot test: `opening1`.
+`res/drawable-nodpi/quantari_wordmark.webp`: `card_wordmark.png` rebuilt at 2× (1904×930) by `upscale_wordmark.py` (letters re-drawn crisp, swooshes enlarged smoothly; run it, then downsample the 3× result to 1904×930), so the logo stays sharp on any phone or tablet. Screenshot tests: `opening1`, `opening_largeFont`, `opening_tablet`.
 
 **TV (Settings → Experimental → Signature intro):** `android/app/src/main/res/raw/signature_intro.mp4`
 (1920×1080, 30 fps, H.264, video only): the 6.6 s intro plus 2 s of black, sent to the Chromecast **marked as live**

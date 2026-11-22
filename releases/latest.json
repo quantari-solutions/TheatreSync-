@@ -1,8 +1,8 @@
 {
-  "versionCode": 26,
-  "versionName": "0.6.1",
-  "apkUrl": "https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases/TheatreSync-0.6.1.apk",
-  "sha256": "d583788c20acba275baf6d3c7d0c707e19c054372044613e47d9487d32141ebe",
-  "sizeBytes": 26810478,
-  "notes": "The TV intro is back: now using the same video your TV played before, without the progress bar or time. If the TV refuses it, the app reports why."
+  "versionCode": 27,
+  "versionName": "0.6.2",
+  "apkUrl": "https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases/TheatreSync-0.6.2.apk",
+  "sha256": "b6edd97398dfb993f630d722223058ab4e5e2fb82ddb938a9f4393ac727c9179",
+  "sizeBytes": 26969330,
+  "notes": "The Quantari opening on the phone plays again whenever you open the app fresh, with a sharper, high-definition logo and text that fits every phone. Coming back to the app still carries on where you left off."
 }

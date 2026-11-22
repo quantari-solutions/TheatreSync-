@@ -49,7 +49,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.min
-import androidx.compose.ui.unit.sp
 
 /**
  * The Quantari / TheatreSync opening, shown full screen when the app starts fresh. Tap to skip.
@@ -91,6 +90,14 @@ fun OpeningAnimation(frameMs: Int? = null, onDone: () -> Unit) {
             .testTag("opening"),
     ) {
         val w = min(maxWidth, 480.dp)
+        // Text sized from the screen width (not the phone's font-size setting), so it always fits and
+        // looks the same on every phone: "TheatreSync" fills ~80% of the column on a typical phone.
+        val inner = w - 48.dp
+        val density = androidx.compose.ui.platform.LocalDensity.current
+        fun size(fraction: Float, max: androidx.compose.ui.unit.Dp) = with(density) { min(inner * fraction, max).toSp() }
+        val titleSize = size(0.15f, 52.dp)
+        val eyebrowSize = size(0.038f, 14.dp)
+        val tagSize = size(0.046f, 17.dp)
         // Soft gold glow behind everything.
         Canvas(Modifier.fillMaxSize().graphicsLayer { alpha = out }) {
             drawRect(
@@ -135,7 +142,7 @@ fun OpeningAnimation(frameMs: Int? = null, onDone: () -> Unit) {
             Text(
                 "PRESENTED WITH",
                 Modifier.rise(eyebrow),
-                style = TextStyle(fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 13.sp, letterSpacing = 0.42.em, color = GOLD),
+                style = TextStyle(fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = eyebrowSize, letterSpacing = 0.42.em, color = GOLD),
                 maxLines = 1, softWrap = false,
             )
             Spacer(Modifier.height(10.dp))
@@ -160,7 +167,7 @@ fun OpeningAnimation(frameMs: Int? = null, onDone: () -> Unit) {
                 "TheatreSync",
                 Modifier.rise(title),
                 style = TextStyle(
-                    fontFamily = Inter, fontWeight = FontWeight.ExtraBold, fontSize = 50.sp, letterSpacing = (-0.02).em,
+                    fontFamily = Inter, fontWeight = FontWeight.ExtraBold, fontSize = titleSize, letterSpacing = (-0.02).em,
                     brush = Brush.horizontalGradient(listOf(GOLD, Color(0xFFFFE7A3), GOLD)),
                     shadow = Shadow(GOLD.copy(alpha = (0.25f + 0.45f * bloom + 0.25f * swell).coerceAtMost(1f)), blurRadius = 12f + 44f * bloom + 24f * swell),
                 ),
@@ -179,7 +186,7 @@ fun OpeningAnimation(frameMs: Int? = null, onDone: () -> Unit) {
             Text(
                 "a Quantari Solutions module",
                 Modifier.rise(tag),
-                style = TextStyle(fontFamily = Inter, fontWeight = FontWeight.Medium, fontSize = 16.sp, letterSpacing = 0.06.em, color = Color(0xFFA9A39A)),
+                style = TextStyle(fontFamily = Inter, fontWeight = FontWeight.Medium, fontSize = tagSize, letterSpacing = 0.06.em, color = Color(0xFFA9A39A)),
                 maxLines = 1, softWrap = false,
             )
         }
