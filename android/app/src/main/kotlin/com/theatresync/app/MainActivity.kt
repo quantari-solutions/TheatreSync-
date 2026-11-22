@@ -483,6 +483,8 @@ class MainActivity : ComponentActivity() {
                                     onBack = { page = Page.SETTINGS },
                                     onDismissMessage = session::dismissMessage,
                                     onWake = session::wakeTv,
+                                    onPower = session::setRoomPower,
+                                    onFindPower = session::findPowerDevices,
                                 )
                                 "crashes" -> CrashReportsScreen(
                                     entries = crashEntries.value,
@@ -645,6 +647,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        // Keep running in the background for as long as needed (owner). Started now, while on screen,
+        // because Android doesn't allow it from the background.
+        if (!runningUnderTest) HostService.start(this, movie = false)
+        askToRunInBackgroundOnce()
         refreshCrashes()
         AppUpdates.check(this)        // quietly, at most every 10 minutes
         GitHubLink.keepAlive(this)    // renew the crash-report sign-in before it runs out
@@ -719,6 +725,26 @@ class MainActivity : ComponentActivity() {
     /** Each increase shows the Quantari opening once. */
     private val openingRequest = androidx.compose.runtime.mutableIntStateOf(0)
     private val openingGate = OpeningGate()
+
+    /**
+     * Once: ask Android to let TheatreSync always run in the background (its own "Let app always run in
+     * background?" dialog). Phones like Motorola otherwise close background apps to save battery.
+     * Asked a few seconds after start, so it never covers the opening.
+     */
+    private fun askToRunInBackgroundOnce() {
+        if (runningUnderTest) return
+        val prefs = getSharedPreferences("ui", MODE_PRIVATE)
+        if (prefs.getBoolean("askedBattery", false)) return
+        val pm = getSystemService(android.os.PowerManager::class.java) ?: return
+        if (pm.isIgnoringBatteryOptimizations(packageName)) return
+        window.decorView.postDelayed({
+            if (isFinishing || prefs.getBoolean("askedBattery", false)) return@postDelayed
+            prefs.edit().putBoolean("askedBattery", true).apply()
+            @android.annotation.SuppressLint("BatteryLife")
+            val ask = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, "package:$packageName".toUri())
+            runCatching { startActivity(ask) }
+        }, 8_000)
+    }
 
     private fun fromNotificationOrShare(i: Intent?) =
         i?.getStringExtra(EXTRA_OPEN) != null || i?.action == Intent.ACTION_SEND || i?.action == Intent.ACTION_VIEW
@@ -2281,8 +2307,12 @@ internal fun RemoteScreen(
     onBack: () -> Unit,
     onDismissMessage: () -> Unit = {},
     onWake: (String) -> Unit = {},
+    onPower: (String, Boolean) -> Unit = { id, on -> if (on) onWake(id) },
+    onFindPower: (Boolean) -> Unit = {},
 ) = Screen {
     TopBar(stringResource(R.string.remote), onBack)
+    // Look for projectors / receivers that can be switched on and off (quietly, at most every 10 minutes).
+    LaunchedEffect(Unit) { onFindPower(false) }
     Message(ui.message, onDismissMessage)
     if (ui.tvs.isEmpty()) {
         QCard { StatusPill(stringResource(R.string.searching), Q.Primary, pulsing = true) }
@@ -2295,8 +2325,17 @@ internal fun RemoteScreen(
     val activity = ui.nowCasting.firstOrNull { it.tvId == tv.id }?.activity
     if (!tv.isSpeaker && !tv.youTubeOnly) QCard {
         Text(stringResource(R.string.power), style = MaterialTheme.typography.titleMedium, color = Q.Text)
-        GoldButton(stringResource(R.string.wake_devices), { onWake(tv.id) }, Modifier.fillMaxWidth().testTag("wake"), height = 52.dp)
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            GoldButton(stringResource(R.string.power_on), { onPower(tv.id, true) }, Modifier.weight(1f).testTag("wake"), height = 52.dp)
+            GhostButton(stringResource(R.string.power_off), { onPower(tv.id, false) }, Modifier.weight(1f).testTag("power_off"), height = 52.dp)
+        }
+        when {
+            ui.powerSearching -> Hint(stringResource(R.string.power_searching))
+            ui.powerDevices.isNotEmpty() -> Hint(stringResource(R.string.power_found, ui.powerDevices.joinToString(", ")))
+            else -> Hint(stringResource(R.string.power_none))
+        }
         Hint(stringResource(R.string.power_hint))
+        if (!ui.powerSearching) GhostButton(stringResource(R.string.power_search), { onFindPower(true) }, Modifier.fillMaxWidth().testTag("power_search"), height = 44.dp)
     }
     QCard(highlighted = activity?.isPlaying == true) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {

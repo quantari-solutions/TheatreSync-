@@ -120,6 +120,9 @@ class MovieSession(private val app: Application) {
         val signatureIntro: Boolean = false,
         /** Quantari screensaver on the TV while connected with nothing playing (Settings → Experimental). */
         val screensaver: Boolean = true,
+        /** Projectors / receivers found on the Wi-Fi that can be switched on and off (labels). */
+        val powerDevices: List<String> = emptyList(),
+        val powerSearching: Boolean = false,
         /** TV whose YouTube sound plays in the headphones (phone player in step with it), or null. */
         val youTubeHeadphonesTv: String? = null,
         /** While a YouTube cast starts: which step it's on (shown instead of a plain spinner). */
@@ -379,15 +382,16 @@ class MovieSession(private val app: Application) {
     }
 
     /**
-     * Leaving the app: stop the Wi-Fi scan at once (battery), but keep watching the TVs for 10 minutes,
-     * so coming back shows what's playing straight away (and the notification's controls keep working).
+     * Leaving the app: stop the Wi-Fi scan at once (battery), but keep watching the TVs (for as long as
+     * TheatreSync runs), so coming back shows what's playing straight away and the notification works.
      */
     private fun stopTvSearchUnsafe() {
         router.removeCallback(routerCallback)
         samsungFinder.stop()
         main.removeCallbacks(dialRepeat)
         main.removeCallbacks(stopWatchers)
-        main.postDelayed(stopWatchers, 10 * 60_000L)
+        // TVs keep being watched in the background for as long as TheatreSync runs (owner: run in the
+        // background however long needed), so the TV card, Stop and ad muting always work.
     }
 
     private val stopWatchers = Runnable { guard("stop watchers") { tvWatchers.stopAll() } }
@@ -848,6 +852,70 @@ class MovieSession(private val app: Application) {
         if (castSession?.isConnected == true && name != null && name == _ui.value.connectedTv) maybeStartScreensaver(force = true)
         else connectTvUnsafe(tvId) // connecting starts the screensaver (when on), which wakes the chain
         say(R.string.msg_wake_sent)
+    }
+
+    // ------------------------------------------------------------- projector & receiver on / off
+
+    private var powerFoundAtMs = 0L
+    private val powerDevices: List<com.theatresync.core.NetworkPower.Device>
+        get() = prefs.getStringSet("powerDevices", emptySet()).orEmpty().mapNotNull { com.theatresync.core.NetworkPower.Device.decode(it) }
+
+    private fun powerLabels() = powerDevices.map { "${it.kind.label} · ${it.host}" }.sorted()
+
+    /**
+     * Looks on the Wi-Fi for projectors and receivers that can be switched on and off (PJLink, Denon/Marantz,
+     * Onkyo/Pioneer/Integra, Yamaha). Remembered, so On / Off work at once next time. At most every 10 min
+     * unless [force].
+     */
+    fun findPowerDevices(force: Boolean = false) = guard("findPowerDevices") {
+        if (_ui.value.powerSearching || (!force && SystemClock.elapsedRealtime() - powerFoundAtMs < 10 * 60_000 && powerFoundAtMs > 0)) return@guard
+        val me = NetworkInfo.localIpv4(app) ?: return@guard
+        val prefix = me.substringBeforeLast('.')
+        _ui.update { it.copy(powerSearching = true, powerDevices = powerLabels()) }
+        Thread({
+            val pool = java.util.concurrent.Executors.newFixedThreadPool(48)
+            val found = java.util.concurrent.ConcurrentLinkedQueue<com.theatresync.core.NetworkPower.Device>()
+            try {
+                val jobs = (1..254).map { "$prefix.$it" }.filter { it != me }.flatMap { host ->
+                    com.theatresync.core.NetworkPower.Kind.entries.map { kind ->
+                        pool.submit {
+                            if (com.theatresync.core.NetworkPower.portOpen(host, kind.port)) {
+                                com.theatresync.core.NetworkPower.probe(host, kind)?.let { found += it }
+                            }
+                        }
+                    }
+                }
+                jobs.forEach { runCatching { it.get(10, java.util.concurrent.TimeUnit.SECONDS) } }
+            } finally { pool.shutdownNow() }
+            main.post {
+                guard("power found") {
+                    powerFoundAtMs = SystemClock.elapsedRealtime()
+                    // Keep ones seen before (they may be in deep standby with the network off right now).
+                    val all = (powerDevices + found).distinctBy { it.encode() }
+                    prefs.edit { putStringSet("powerDevices", all.map { it.encode() }.toSet()) }
+                    _ui.update { it.copy(powerSearching = false, powerDevices = powerLabels()) }
+                }
+            }
+        }, "power-scan").apply { isDaemon = true }.start()
+    }
+
+    /**
+     * Remote → On / Off. On: wakes the chain through the Chromecast (HDMI-CEC) and switches on every
+     * projector / receiver found on the Wi-Fi. Off: puts those in standby (the Chromecast can't switch
+     * anything off).
+     */
+    fun setRoomPower(tvId: String, on: Boolean) = guard("setRoomPower") {
+        val devices = powerDevices
+        if (on) wakeTv(tvId)
+        if (devices.isEmpty()) {
+            if (!on) say(R.string.msg_power_none)
+            findPowerDevices(force = true)
+            return@guard
+        }
+        Thread({
+            val ok = devices.count { com.theatresync.core.NetworkPower.setPower(it, on) }
+            main.post { guard("power result") { say(if (ok > 0) (if (on) R.string.msg_power_on else R.string.msg_power_off) else R.string.msg_power_failed) } }
+        }, "power").apply { isDaemon = true }.start()
     }
 
     fun setScreensaver(on: Boolean) = guard("setScreensaver") {

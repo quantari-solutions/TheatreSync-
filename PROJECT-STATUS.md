@@ -1,6 +1,14 @@
 # Project status
 
-_Last updated: 2026-11-22. 0.6.7 (published to the in-app updater): phone opening only on a fresh start; TV intro and screensaver are a still title card (no progress bar, no "LIVE", no blackouts or restarts); YouTube headphones reads as the TV's sound in your headphones_
+_Last updated: 2026-11-22. 0.6.8 (published to the in-app updater): runs in the background for as long as needed; Remote has Turn on / Turn off for the projector and receiver; phone opening only on a fresh start; TV card as a still picture; YouTube headphones as TV sound_
+
+## 0.6.8: background and power
+
+| Request | Done | Verified |
+|---|---|---|
+| "Let the app run in the background, no issues, for however long I need it" | A quiet notification keeps TheatreSync running whenever it's been opened (not only during movies), with **Remote** and **Quit** (movie controls during a movie). TVs keep being watched in the background with no time limit (was 10 minutes). Asks Android once to let it always run in the background (Motorola otherwise closes background apps) | Compiles; emulator crash/monkey tests; needs a day of normal use |
+| On / off button on the remote | Remote → Projector & receiver: **Turn on** (Chromecast HDMI-CEC wake + network) and **Turn off** (network standby). Finds them on the Wi-Fi with no model numbers needed if they speak PJLink (most projectors), Denon/Marantz, Onkyo/Pioneer/Integra or Yamaha; remembered. If none is found it says how to switch on network control in their menus | `NetworkPowerTest` (7, fake projector and receivers); screenshot `remote2_power`; needs the real projector / receiver |
+
 
 ## 0.6.7: phone opening only on a fresh start
 

@@ -94,6 +94,13 @@ class ScreenshotTest {
             {}, { _, _ -> }, { _, _ -> }, { _, _ -> }, {}, {}, { _, _ -> }, {}, {}, {},
         )
     }
+    /** Projector and receiver found on the Wi-Fi: On / Off. */
+    @Test fun remote2_power() = shot {
+        RemoteScreen(
+            Ui(tvs = listOf(Tv("1", "Media Room TV")), connectedTv = "Media Room TV", powerDevices = listOf("Projector (PJLink) · 192.168.1.30", "Denon / Marantz receiver · 192.168.1.31")),
+            {}, { _, _ -> }, { _, _ -> }, { _, _ -> }, {}, {}, { _, _ -> }, {}, {}, {},
+        )
+    }
     /** Long and many TV names must never overflow or wrap letter by letter. */
     @Test fun youtube3_smartTvLongNames() = shot {
         YouTubeScreen(
