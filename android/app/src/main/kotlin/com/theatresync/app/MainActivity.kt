@@ -219,6 +219,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         audioManager = getSystemService(AudioManager::class.java)
         refreshCrashes()
+        // Opened fresh from the app icon (not coming back to it, not from the notification or a share):
+        // the Quantari opening plays. Coming back after leaving it, it carries on where you left off.
+        val freshLaunch = savedInstanceState == null && intent?.action == android.content.Intent.ACTION_MAIN &&
+            intent?.getStringExtra(EXTRA_OPEN) == null
         handleShare(intent)
         if (intent?.getStringExtra(EXTRA_OPEN) == OPEN_REMOTE) openRemote.intValue++
         mirroringLabel = getString(R.string.screen_mirroring)
@@ -334,10 +338,11 @@ class MainActivity : ComponentActivity() {
                         page == Page.MOVIE && ui.phase != Phase.SETUP -> "playing"
                         else -> "setup"
                     }
-                    // Fresh start: the Quantari opening first (once per process; not when coming back from another app).
-                    var opening by remember { mutableStateOf(!app.openingShown && !runningUnderTest) }
+                    // Fresh start: the Quantari opening first. Not when coming back to the app (it stays where it was),
+                    // and once only per opening (kept across screen rotation).
+                    var opening by rememberSaveable { mutableStateOf(freshLaunch && !runningUnderTest) }
                     if (opening) {
-                        OpeningAnimation { app.openingShown = true; opening = false }
+                        OpeningAnimation { opening = false }
                         return@GridBackground
                     }
                     // YouTube sound in the headphones: its (visible) phone player, wherever you are in the app.

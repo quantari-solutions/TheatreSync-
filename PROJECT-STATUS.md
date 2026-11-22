@@ -1,6 +1,13 @@
 # Project status
 
-_Last updated: 2026-11-21. 0.6.1 (published to the in-app updater): intro back to the video the TV is known to play, marked live (no progress bar); intro problems are now reported_
+_Last updated: 2026-11-22. 0.6.2 (published to the in-app updater): the phone's opening animation plays again whenever the app is opened fresh_
+
+## 0.6.2: phone opening animation not showing
+
+| Report | Cause | Fix | Verified |
+|---|---|---|---|
+| The Quantari opening on the phone no longer shows when the app is opened | It played once per app *process*. TheatreSync keeps running in the background (casting, notification, and since 0.5.9 watching the TVs for 10 minutes), so Android rarely ends it and the opening was skipped | Plays whenever the app is **opened fresh from its icon** (after closing / swiping it away). Coming back to it (recent apps, after idling, from the notification or a share) carries on where you left off. Not repeated on screen rotation | Compiles; needs a look on the phone |
+
 
 ## 0.6.1: "Still no signature intro" (on 0.6.0)
 
