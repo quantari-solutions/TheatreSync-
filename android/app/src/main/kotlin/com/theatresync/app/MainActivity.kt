@@ -337,6 +337,13 @@ class MainActivity : ComponentActivity() {
                         page == Page.MOVIE && ui.phase != Phase.SETUP -> "playing"
                         else -> "setup"
                     }
+                    // YouTube sound in the headphones: one phone player for as long as it's on, created here (before
+                    // the opening, so the opening never interrupts the sound) and shown wherever it fits below.
+                    val ytTv = ui.youTubeHeadphonesTv
+                    val ytVideo = ytTv?.let { id -> ui.nowCasting.firstOrNull { it.tvId == id }?.activity?.contentId }
+                    val ytWeb = if (ytTv != null && ytVideo != null) {
+                        rememberYouTubeHeadphonesWeb(ytTv, ytVideo, { session.youTubeTarget(ytTv) }, session::onYouTubeHeadphonesReport)
+                    } else null
                     // The Quantari opening, each time TheatreSync is opened (see onStart). It's drawn over the app,
                     // which stays exactly where it was underneath.
                     var openingDone by remember { androidx.compose.runtime.mutableIntStateOf(0) }
@@ -349,13 +356,10 @@ class MainActivity : ComponentActivity() {
                         }
                         return@GridBackground
                     }
-                    // YouTube sound in the headphones: its (visible) phone player, wherever you are in the app.
-                    val ytTv = ui.youTubeHeadphonesTv
-                    val ytVideo = ytTv?.let { id -> ui.nowCasting.firstOrNull { it.tvId == id }?.activity?.contentId }
                     if (inPip.value) {
-                        if (ytTv != null && ytVideo != null) {
+                        if (ytWeb != null && ytVideo != null) {
                             Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
-                                YouTubeHeadphonesPlayer(ytVideo, { session.youTubeTarget(ytTv) }, session::onYouTubeHeadphonesReport)
+                                YouTubeHeadphonesView(ytWeb, ytVideo)
                             }
                         } else PipContent(ui, ui.nowCasting.firstOrNull { it.tvId == castTvId } ?: ui.nowCasting.firstOrNull())
                         return@GridBackground
@@ -544,8 +548,8 @@ class MainActivity : ComponentActivity() {
                                         ytHeadphonesDriftMs = ui.youTubeHeadphonesDriftMs,
                                         ytHeadphonesProblem = ui.youTubeHeadphonesProblem,
                                         onYtHeadphones = { on -> session.setYouTubeHeadphones(c.tvId, on) },
-                                        ytTarget = { session.youTubeTarget(c.tvId) },
-                                        onYtReport = session::onYouTubeHeadphonesReport,
+                                        // On this page the headphones player sits inside its card (not floating over the page).
+                                        ytPlayer = if (ytWeb != null && ytVideo != null && ytTv == c.tvId) { { YouTubeHeadphonesView(ytWeb, ytVideo) } } else null,
                                         onListenAlong = { url -> runCatching { startActivity(Intent(Intent.ACTION_VIEW, url.toUri())) } },
                                     )
                                 }
@@ -610,13 +614,25 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                         }
-                        if (ytTv != null && ytVideo != null) {
-                            Box(
+                        // Other pages: a small framed player in the corner (YouTube requires it to stay visible),
+                        // labelled, with ✕ to switch headphone sound off.
+                        if (ytWeb != null && ytVideo != null && ytTv != null && target != "casting") {
+                            Column(
                                 Modifier.align(Alignment.BottomEnd).padding(16.dp).width(240.dp)
-                                    .shadow(22.dp, RoundedCornerShape(14.dp), ambientColor = Q.Glow, spotColor = Q.Glow)
+                                    .background(Q.Card, RoundedCornerShape(14.dp))
+                                    .border(1.dp, Q.BorderAccent, RoundedCornerShape(14.dp))
+                                    .padding(6.dp)
                                     .testTag("yt_mini_player"),
                             ) {
-                                YouTubeHeadphonesPlayer(ytVideo, { session.youTubeTarget(ytTv) }, session::onYouTubeHeadphonesReport)
+                                Row(Modifier.fillMaxWidth().padding(start = 6.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(stringResource(R.string.yt_mini_label), color = Q.TextMuted, style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f), maxLines = 1)
+                                    Text(
+                                        "✕", color = Q.Primary, style = MaterialTheme.typography.titleMedium,
+                                        modifier = Modifier.clickable(onClickLabel = stringResource(R.string.yt_mini_close)) { session.setYouTubeHeadphones(ytTv, false) }
+                                            .padding(horizontal = 10.dp, vertical = 4.dp).testTag("yt_mini_close"),
+                                    )
+                                }
+                                YouTubeHeadphonesView(ytWeb, ytVideo)
                             }
                         }
                     }
@@ -1727,8 +1743,8 @@ internal fun NowCastingScreen(
     ytHeadphonesDriftMs: Long? = null,
     ytHeadphonesProblem: String? = null,
     onYtHeadphones: (Boolean) -> Unit = {},
-    ytTarget: () -> YouTubeHeadphones.Target? = { null },
-    onYtReport: (YouTubeHeadphones.Report) -> Unit = {},
+    /** The YouTube headphones player, shown inside its card while sound in headphones is on. */
+    ytPlayer: (@Composable () -> Unit)? = null,
     onListenAlong: (String) -> Unit = {},
 ) = Screen {
     val a = item.activity
@@ -1773,7 +1789,10 @@ internal fun NowCastingScreen(
                 colors = SwitchDefaults.colors(checkedThumbColor = Color.Black, checkedTrackColor = Q.Primary),
             )
         }
-        if (ytHeadphonesOn) Hint(stringResource(R.string.yt_headphones_note))
+        if (ytHeadphonesOn) {
+            ytPlayer?.let { Spacer(Modifier.height(12.dp)); it() }
+            Hint(stringResource(R.string.yt_headphones_note))
+        }
     }
 
     // A movie another phone is casting with TheatreSync: listen along in this phone's headphones (TapIn page).
@@ -1835,7 +1854,8 @@ internal fun NowCastingScreen(
     if (a.sessionId != null) {
         GhostButton("■  " + stringResource(R.string.stop_casting), onStop, Modifier.fillMaxWidth().testTag("stop_casting"), height = 52.dp, description = stringResource(R.string.stop_casting))
     }
-    QCard {
+    // YouTube has its own "Sound in headphones" card above; this note is for mirroring and other apps.
+    if (a.kind != CastActivity.Kind.YOUTUBE) QCard {
         Text(stringResource(R.string.cast_sound_title), style = MaterialTheme.typography.titleMedium, color = Q.Text)
         Hint(stringResource(R.string.cast_sound_hint))
         GhostButton("🎧  " + stringResource(R.string.hp_settings), onHeadphoneOptions, Modifier.fillMaxWidth().testTag("cast_hp_settings"), height = 48.dp)

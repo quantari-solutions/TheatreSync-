@@ -1,8 +1,8 @@
 {
-  "versionCode": 29,
-  "versionName": "0.6.4",
-  "apkUrl": "https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases/TheatreSync-0.6.4.apk",
-  "sha256": "2ba712da65166ec68661832434db7875339e08665ff886d5a990e3fb6f40b7df",
-  "sizeBytes": 26970270,
-  "notes": "The Quantari opening and the refresh arrow now always play in full, even if your phone has animations turned down or off (battery saver, Remove animations)."
+  "versionCode": 30,
+  "versionName": "0.6.5",
+  "apkUrl": "https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases/TheatreSync-0.6.5.apk",
+  "sha256": "465333c85a9b0750ee3ff335faa82aeb3569492ca90846c2248aa1e407711cb8",
+  "sizeBytes": 26971862,
+  "notes": "No more black square in the corner: with YouTube sound in your headphones, the player now sits inside its card on Now casting (and as a small framed player with \u2715 on other pages), showing the video's picture while it loads."
 }

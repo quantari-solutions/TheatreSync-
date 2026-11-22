@@ -52,7 +52,7 @@
     <string name="mirroring_title">Mirroring from another device</string>
     <string name="mirroring_hint">Use the laptop or phone that started it to pause or stop.</string>
     <string name="cast_sound_title">Want this in your headphones?</string>
-    <string name="cast_sound_hint">YouTube and mirrored tabs send their sound straight to the TV, so it plays through the room speakers. For headphones in perfect sync, play your own movie files with TheatreSync.</string>
+    <string name="cast_sound_hint">Mirrored screens and tabs send their sound straight to the TV, so it plays through the room speakers. For headphones in perfect sync, play your own movie files with TheatreSync, or YouTube with Sound in headphones.</string>
     <string name="headphones">Headphones</string>
     <string name="technical_details">Technical details</string>
     <string name="no_headphones">No headphones connected</string>
@@ -217,7 +217,7 @@
     <string name="verdict_resolution">Too sharp for your Chromecast (max 1080p). Pick 1080p or 720p</string>
     <string name="verdict_bitrate">Very large video. 1080p loads faster on Wi-Fi</string>
     <string name="tv_volume">TV volume</string>
-    <string name="tv_volume_hint">Controls the Chromecast\'s volume (room speakers). YouTube sound can\'t go to your headphones.</string>
+    <string name="tv_volume_hint">Controls the Chromecast\'s volume (room speakers).</string>
     <string name="mute">Mute</string>
     <string name="unmute">Unmute</string>
     <string name="github_setup_title">Set up once (about 2 minutes)</string>
@@ -329,7 +329,9 @@
     <string name="yt_headphones_off">Plays this video\'s sound on the phone, in step with the TV; the TV goes quiet</string>
     <string name="yt_headphones_starting">Getting in step…</string>
     <string name="yt_headphones_problem">YouTube won\'t play this video outside its own apps, so its sound is back on the TV.</string>
-    <string name="yt_headphones_note">Playing in the small YouTube player at the bottom of the screen (it stays while you use the app, and becomes the picture-in-picture window if you leave). Kept in step with the TV automatically. Adverts can differ between phone and TV; it catches up afterwards.</string>
+    <string name="yt_headphones_note">The phone plays the same video in this player, kept in step with the TV automatically. On other pages it stays as a small player in the corner (✕ switches it off), and becomes the picture-in-picture window if you leave. Adverts can differ between phone and TV; it catches up afterwards.</string>
+    <string name="yt_mini_label">🎧 YouTube in your headphones</string>
+    <string name="yt_mini_close">Switch off YouTube sound in headphones</string>
     <string name="power">Projector &amp; receiver</string>
     <string name="wake_devices">Wake projector &amp; receiver</string>
     <string name="power_hint">Turns them on through the Chromecast (needs HDMI-CEC on). Turning off and brightness need their own network control: send us their model numbers.</string>

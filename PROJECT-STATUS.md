@@ -1,6 +1,13 @@
 # Project status
 
-_Last updated: 2026-11-22. 0.6.4 (published to the in-app updater): opening and refresh spinner play in full even with Android animations off; proven by an emulator simulation in CI_
+_Last updated: 2026-11-22. 0.6.5 (published to the in-app updater): no more black square over the Now casting page; YouTube headphones player inside its card_
+
+## 0.6.5: "remove the black square void in the corner"
+
+| Report | Cause | Fix | Verified |
+|---|---|---|---|
+| Black square floating in the bottom corner of Now casting | The YouTube headphones player (YouTube requires it to be visible) floated over every page, with a black page behind it, clipped and shadowed (Android can draw WebView video as a separate layer that goes black when clipped). It was also rebuilt on each page change and removed while the opening played | **One shared player** for as long as Sound in headphones is on (never reloaded; the opening no longer interrupts the sound). On **Now casting** it sits **inside the Sound in headphones card**, full width, not over the page. On other pages: a small framed, labelled player with **✕** to switch it off. The video's thumbnail shows underneath until YouTube draws (never a black void); no clipping or shadow on the video. Out-of-date notes fixed ("YouTube sound can't go to your headphones", "Want this in your headphones?" on YouTube) | Screenshot `casting4_youtubeHeadphones`; compiles. Whether the phone's YouTube video itself draws (not black) needs a look on the phone |
+
 
 ## 0.6.4: opening still not showing on 0.6.3 → simulated
 

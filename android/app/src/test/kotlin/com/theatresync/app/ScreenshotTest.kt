@@ -1,5 +1,8 @@
 package com.theatresync.app
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.dp
@@ -165,6 +168,17 @@ class ScreenshotTest {
     @Test fun casting1_youtube() = shot { NowCastingScreen(youtube, {}, {}, {}) }
     @Test fun casting3_youtubeVolume() = shot { NowCastingScreen(youtube.copy(activity = youtube.activity.copy(volumeLevel = 0.6, muted = false)), {}, {}, {}) }
     @Test fun casting2_mirroring() = shot { NowCastingScreen(mirroring, {}, {}, {}) }
+    /** Sound in headphones on: the phone player sits inside its card (a stand-in here; WebViews don't render in tests). */
+    @Test fun casting4_youtubeHeadphones() = shot {
+        NowCastingScreen(
+            youtube, {}, {}, {}, ytHeadphonesOn = true, ytHeadphonesDriftMs = 12,
+            ytPlayer = {
+                androidx.compose.foundation.layout.Box(
+                    androidx.compose.ui.Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(androidx.compose.ui.graphics.Color(0xFF1B1B22)),
+                )
+            },
+        )
+    }
     @Test fun headphones1_connected() = shot {
         HeadphonesScreen(
             listOf(DiagnosticsReport.Output("WH-1000XM4", DiagnosticsReport.Kind.BLUETOOTH), DiagnosticsReport.Output("Phone speaker", DiagnosticsReport.Kind.SPEAKER)),
