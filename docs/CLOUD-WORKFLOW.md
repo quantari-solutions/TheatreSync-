@@ -28,6 +28,7 @@ The Windows PC is **optional**. Everything below runs in Claude Code Cloud or Gi
 | `scripts/build-android.sh` | Debug APK → `dist/TheatreSync-debug.apk` |
 | `scripts/validate-contracts.sh` | JSON Schema validation of `contracts/` |
 | `scripts/validate-ios-source.sh` | Static iOS checks (**not a compile**) |
+| `scripts/ios-sim.sh` | **Real iOS compile** with Xcode on GitHub's Mac (workflow `iOS`), then launch on simulated iPhone and iPad with screenshots (a small copy in the log). No Bluetooth or Chromecast in the simulator |
 | `scripts/run-tests.sh` | All of the above except the APK build |
 
 ## Network & secrets
