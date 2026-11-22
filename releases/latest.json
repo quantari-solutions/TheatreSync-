@@ -1,8 +1,8 @@
 {
-  "versionCode": 33,
-  "versionName": "0.6.8",
-  "apkUrl": "https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases/TheatreSync-0.6.8.apk",
-  "sha256": "f48ea96a41c27326802eb2b28146bad786efd8756b552d92b933d79f0e4a95a3",
-  "sizeBytes": 19059478,
-  "notes": "Runs in the background for as long as you need (quiet notification with Remote and Quit). The Remote has Turn on and Turn off for the projector and receiver. The TV intro and screensaver are a still Quantari card with no progress bar. The phone's opening plays only on a fresh start. YouTube in your headphones shows as the TV's sound."
+  "versionCode": 34,
+  "versionName": "0.6.9",
+  "apkUrl": "https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases/TheatreSync-0.6.9.apk",
+  "sha256": "701ca36319c0c4602b8d78d0e482cc417af4725d8a51ab18089989e29e0a76ab",
+  "sizeBytes": 21180247,
+  "notes": "The TV title card is alive again, with no progress bar: the glow breathes and drifts, a shine sweeps the Quantari swooshes, a light runs along the line and particles float around, in an endless loop."
 }

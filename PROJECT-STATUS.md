@@ -1,6 +1,13 @@
 # Project status
 
-_Last updated: 2026-11-22. 0.6.8 (published to the in-app updater): runs in the background for as long as needed; Remote has Turn on / Turn off for the projector and receiver; phone opening only on a fresh start; TV card as a still picture; YouTube headphones as TV sound_
+_Last updated: 2026-11-22. 0.6.9 (published to the in-app updater): the TV title card is alive again (endless loop, no player bar)_
+
+## 0.6.9: "I want the same animation… but no progress bar… an infinite loop… like a loading screen"
+
+| Request | Done | Verified |
+|---|---|---|
+| Animated card, endless, no progress bar, no refresh; glow fading and moving around TheatreSync; shine across the Quantari swooshes; particles floating randomly; the sleek line | `docs/intro/loop.html`: the words stay still; the glow breathes (8 s) and drifts around the title (16 s); a shine sweeps the swooshes every 8 s, alternating direction; a light glides along the line; 80 particles wander on their own random paths and twinkle. Every motion repeats exactly every 16 s, so it loops with no visible join. Sent to the TV as an **animated picture** (1280×720 WebP, 15 fps, 3 MB, endless): pictures get no player bar, "LIVE" or time. Intro and screensaver both use it. Its first frame is the full card, so if this Chromecast doesn't animate pictures it shows the still card (as in 0.6.8) | Loop join measured (last→first frame differs no more than any two neighbours); preview video sent to the owner; needs a look on the TV. Guaranteed alternative: our own Cast receiver (one-time Google Cast developer registration by the owner) running `loop.html` live |
+
 
 ## 0.6.8: background and power
 

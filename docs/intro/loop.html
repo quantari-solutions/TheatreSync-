@@ -1,0 +1,82 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+/* Signature title card, alive and endless (1920×1080). The words stay still; the glow breathes and drifts,
+   a shine crosses the Quantari swooshes, a light runs along the line, particles wander and twinkle.
+   ?render: time is set from outside (window.setTime) and every motion repeats exactly every 16 s, so the
+   frames make a seamless loop (animated picture). Otherwise it runs live with a real clock (own Cast receiver). */
+html,body{margin:0;width:1920px;height:1080px;background:#000;overflow:hidden;font-family:"Inter","Helvetica Neue",Arial,sans-serif}
+#glow,#halo{position:absolute;inset:0;pointer-events:none}
+#fx{position:absolute;inset:0}
+.stack{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px}
+.mark{position:relative;width:600px;height:254px}
+.inner{position:absolute;left:40px;top:0;width:520px;height:254px}
+.inner img{position:absolute;inset:0;width:100%;height:100%}
+.sheen{position:absolute;inset:0;overflow:hidden;-webkit-mask-image:url(card_wordmark_soft.png);-webkit-mask-size:100% 100%}
+.sheen span{position:absolute;top:-50%;left:0;width:55%;height:200%;background:linear-gradient(100deg,transparent 30%,rgba(255,248,214,.9) 50%,transparent 70%);filter:blur(2px);transform:skewX(-14deg) translateX(-220%)}
+.eyebrow{margin-top:26px;color:#E8B84A;letter-spacing:.42em;font-size:26px;font-weight:700}
+.title{position:relative;font-size:132px;font-weight:800;letter-spacing:-.02em;background:linear-gradient(90deg,#E8B84A,#FFE7A3 55%,#E8B84A);-webkit-background-clip:text;color:transparent}
+.tag{margin-top:8px;color:#A9A39A;font-size:34px;letter-spacing:.06em}
+.line{position:relative;width:640px;height:2px;background:linear-gradient(90deg,transparent,#E8B84A,transparent);overflow:visible}
+.line i{position:absolute;top:-3px;width:140px;height:8px;border-radius:4px;background:radial-gradient(ellipse closest-side,rgba(255,240,200,.95),rgba(232,184,74,.35) 60%,transparent);filter:blur(1px)}
+</style></head><body>
+<div id="glow"></div><div id="halo"></div>
+<canvas id="fx" width="1920" height="1080"></canvas>
+<div class="stack">
+  <div class="mark"><div class="inner"><img src="card_wordmark_soft.png"><div class="sheen"><span id="sheen"></span></div></div></div>
+  <div class="eyebrow">PRESENTED WITH</div>
+  <div class="title" id="title">TheatreSync</div>
+  <div class="line"><i id="runner"></i></div>
+  <div class="tag">a Quantari Solutions module</div>
+</div>
+<script>
+const P = 16;                         // seconds: every motion repeats exactly (seamless loop)
+const TAU = Math.PI * 2;
+const render = location.search.includes('render');
+let seed = 20261122;
+const rnd = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
+const ri = (a, b) => a + Math.floor(rnd() * (b - a + 1));
+const gentle = x => 0.5 - 0.5 * Math.cos(Math.PI * Math.min(1, Math.max(0, x)));
+// Particles on wandering Lissajous paths with whole-number frequencies (so they loop), random everything else.
+const N = 80, parts = [];
+for (let i = 0; i < N; i++) parts.push({
+  cx: rnd() * 1920, cy: rnd() * 1080, ax: 120 + rnd() * 420, ay: 80 + rnd() * 300,
+  kx: ri(1, 3) * (rnd() < .5 ? -1 : 1), ky: ri(1, 3) * (rnd() < .5 ? -1 : 1), px: rnd() * TAU, py: rnd() * TAU,
+  r: .8 + rnd() * 2.4, kt: ri(1, 4), pt: rnd() * TAU, warm: rnd(),
+});
+const glow = document.getElementById('glow'), halo = document.getElementById('halo');
+const title = document.getElementById('title'), sheen = document.getElementById('sheen'), runner = document.getElementById('runner');
+const ctx = document.getElementById('fx').getContext('2d');
+function frame(t) {
+  const w = TAU * t / P;
+  // Glow: breathes (8 s) and drifts slowly around the title (16 s), never fully off.
+  const breath = 0.5 + 0.5 * Math.sin(w * 2 - 1.2);
+  const gx = 50 + 4.5 * Math.sin(w), gy = 47 + 3 * Math.sin(w * 2 + 0.7);
+  glow.style.background = `radial-gradient(ellipse 60% 50% at ${gx}% ${gy}%,rgba(232,184,74,${.16 + .14 * breath}),rgba(232,184,74,${.06 + .06 * breath}) 45%,transparent 75%)`;
+  const hb = 0.5 + 0.5 * Math.sin(w * 2 + 1.4);
+  halo.style.background = `radial-gradient(ellipse 760px 280px at ${50 + 2.5 * Math.sin(w + 2)}% 62%,rgba(232,184,74,${.08 + .10 * hb}),rgba(232,184,74,${.03 + .04 * hb}) 45%,transparent 75%)`;
+  const bloom = 14 + 30 * breath;
+  title.style.filter = `drop-shadow(0 0 ${bloom.toFixed(1)}px rgba(232,184,74,${(.45 + .4 * breath).toFixed(2)}))`;
+  // Shine across the Quantari swooshes: left→right at 0 s, right→left at 8 s (1.9 s each).
+  const m = t % 8, dir = (t % 16) < 8 ? 1 : -1;
+  const s = m < 1.9 ? gentle(m / 1.9) : (m < 4 ? 1 : 0);
+  const x = dir > 0 ? -220 + 540 * s : 320 - 540 * s;
+  sheen.style.transform = `skewX(-14deg) translateX(${x}%)`;
+  // A light glides along the line under the title (every 8 s, offset from the shine).
+  const lm = (t + 4) % 8, lp = lm < 2.6 ? gentle(lm / 2.6) : -1;
+  runner.style.opacity = lp < 0 ? 0 : Math.sin(Math.PI * lp).toFixed(3);
+  runner.style.left = (-70 + 640 * Math.max(0, lp)) + 'px';
+  // Particles: wander, twinkle, soft gold.
+  ctx.clearRect(0, 0, 1920, 1080);
+  for (const p of parts) {
+    const px = p.cx + p.ax * Math.sin(w * p.kx + p.px), py = p.cy + p.ay * Math.sin(w * p.ky + p.py);
+    const a = .15 + .75 * (0.5 + 0.5 * Math.sin(w * p.kt + p.pt));
+    const xx = ((px % 1920) + 1920) % 1920, yy = ((py % 1080) + 1080) % 1080;
+    ctx.shadowBlur = 10 * p.r; ctx.shadowColor = `rgba(255,${200 + 40 * p.warm},120,${a})`;
+    ctx.fillStyle = `rgba(255,${215 + 35 * p.warm},${150 + 60 * p.warm},${a})`;
+    ctx.beginPath(); ctx.arc(xx, yy, p.r, 0, TAU); ctx.fill();
+  }
+}
+window.setTime = t => frame(t);
+if (!render) { const t0 = performance.now(); const loop = () => { frame((performance.now() - t0) / 1000); requestAnimationFrame(loop); }; requestAnimationFrame(loop); }
+else frame(0);
+</script>
+</body></html>

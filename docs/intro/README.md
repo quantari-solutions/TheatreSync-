@@ -5,16 +5,20 @@
 so text is rendered at the phone's own resolution and laid out for a tall screen. The logo is
 `res/drawable-nodpi/quantari_wordmark.webp`: `card_wordmark.png` rebuilt at 2× (1904×930) by `upscale_wordmark.py` (letters re-drawn crisp, swooshes enlarged smoothly; run it, then downsample the 3× result to 1904×930), so the logo stays sharp on any phone or tablet. Screenshot tests: `opening1`, `opening_largeFont`, `opening_tablet`.
 
-**TV (intro and screensaver):** `android/app/src/main/res/raw/signature_card.png`, a 1920×1080 still of
-`card.html` at 5.0 s (fullest glow). The Chromecast shows pictures full-screen with no player bar, "LIVE" label or time,
-and leaves them exactly as they are: the intro shows it for 4.5 s before the film, the screensaver keeps it up.
+**TV (intro and screensaver):** `android/app/src/main/res/raw/signature_card_live.webp`, an **animated picture that
+loops forever** (1280×720, 15 fps, 16 s, ~3 MB), rendered from `loop.html`: the words stay still while the glow
+breathes and drifts, a shine sweeps the Quantari swooshes, a light runs along the line and particles wander. Every
+motion repeats exactly every 16 s, so the loop has no visible join. The Chromecast shows pictures full-screen with no
+player bar, "LIVE" or time. Its first frame is the full card, so a TV that doesn't animate pictures shows the still card.
 
-History: 0.5.8 video (progress bar and time), 0.5.9 animated WebP (not animated: black), 0.6.0 live HLS (nothing),
-0.6.1–0.6.5 MP4 marked live (bar with "LIVE") and the HLS screensaver (scenes faded to black and replayed). A moving
-glow with no player UI needs a custom Cast receiver (one-time Google Cast developer registration).
+`loop.html` without `?render` runs live with a real clock: it's ready to be the page of our own Cast receiver (needs a
+one-time Google Cast developer registration), which would make the animation independent of how the TV treats pictures.
 
-Re-make the still: render `card.html` at 1920×1080 with every animation paused at 5000 ms (Playwright, as
-`render.js` does per frame) and save the screenshot as PNG.
+History: 0.5.8 video (progress bar and time), 0.5.9 animated WebP starting on black (nothing visible), 0.6.0 live HLS
+(nothing), 0.6.1–0.6.5 MP4 marked live and HLS screensaver (bar with "LIVE", fades, replays), 0.6.6–0.6.8 still PNG.
+
+Re-make: render 240 frames of `loop.html?render` (Playwright: `window.setTime(i / 15)` then a 1920×1080 screenshot),
+scale to 1280×720 and save with Pillow: `save_all=True, duration=67, loop=0, quality=70, kmin=1, kmax=1, allow_mixed=False`.
 
 Re-make from `card.html` (needs `card_wordmark_soft.png` next to it):
 

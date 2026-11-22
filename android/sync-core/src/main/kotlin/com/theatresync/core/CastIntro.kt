@@ -64,12 +64,12 @@ class CastIntro(private val connect: () -> Socket) {
         private const val SENDER = "sender-ts-intro"
 
         /**
-         * [image]: the Signature title card as a still picture (PNG). The TV shows pictures full-screen with no
+         * [image]: the Signature title card as an animated picture (WebP, endless loop). The TV shows pictures full-screen with no
          * player bar, "LIVE" label or time; the video and live-stream versions got those (0.5.8–0.6.5).
          */
         fun loadRequest(url: String, image: Boolean = false): String =
             if (image) """{"type":"LOAD","requestId":2,"autoplay":true,""" +
-                """"media":{"contentId":"$url","contentType":"image/png","streamType":"NONE","metadata":{"metadataType":4}}}"""
+                """"media":{"contentId":"$url","contentType":"image/webp","streamType":"NONE","metadata":{"metadataType":4}}}"""
             else """{"type":"LOAD","requestId":2,"autoplay":true,"currentTime":0,""" +
                 """"media":{"contentId":"$url","contentType":"video/mp4","streamType":"BUFFERED",""" +
                 """"metadata":{"metadataType":0,"title":"TheatreSync"}}}"""
