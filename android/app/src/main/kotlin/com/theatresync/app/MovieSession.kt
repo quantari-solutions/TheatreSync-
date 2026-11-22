@@ -829,12 +829,17 @@ class MovieSession(private val app: Application) {
             .setResultCallback { r -> if (!r.status.isSuccess) stopScreensaver() }
     }
 
-    /** The Signature title card (Quantari logo, "Presented with TheatreSync"), 1920×1080 PNG. */
-    private fun signatureCard() = RawResourceSource(app, R.raw.signature_card, "TheatreSync", "image/png")
+    /**
+     * The Signature title card, alive: an animated picture that loops seamlessly forever (glow breathing and
+     * drifting, shine across the swooshes, light along the line, wandering particles; the words stay still).
+     * Pictures get no player bar, "LIVE" or time on the TV. Its first frame is the full card, so a TV that
+     * doesn't animate pictures still shows the card. Made from docs/intro/loop.html.
+     */
+    private fun signatureCard() = RawResourceSource(app, R.raw.signature_card_live, "TheatreSync", "image/webp")
 
     /** A picture for the TV: full-screen, no controls, no title, no progress bar. */
     private fun signatureCardInfo(url: String) = MediaInfo.Builder(url).setContentUrl(url)
-        .setStreamType(MediaInfo.STREAM_TYPE_NONE).setContentType("image/png")
+        .setStreamType(MediaInfo.STREAM_TYPE_NONE).setContentType("image/webp")
         .setMetadata(MediaMetadata(MediaMetadata.MEDIA_TYPE_PHOTO))
         .build()
 

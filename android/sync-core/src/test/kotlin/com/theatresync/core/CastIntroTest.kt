@@ -17,7 +17,7 @@ class CastIntroTest {
     @Test fun introAsAPictureHasNoPlayerBarOrTitle() {
         val r = CastIntro.loadRequest("http://192.168.1.82:40000/intro", image = true)
         val json = kotlinx.serialization.json.Json.parseToJsonElement(r).toString()
-        assertTrue(json.contains("\"contentType\":\"image/png\""))
+        assertTrue(json.contains("\"contentType\":\"image/webp\""))
         assertTrue(json.contains("\"streamType\":\"NONE\""))
         assertTrue(json.contains("\"metadataType\":4"))
         assertTrue(!json.contains("title"))
