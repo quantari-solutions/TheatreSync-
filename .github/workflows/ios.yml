@@ -1,0 +1,36 @@
+name: iOS
+
+# Builds the iOS app with Apple's own tools (Xcode, on GitHub's Mac) and runs it on simulated iPhone
+# and iPad: a real compile and launch before the owner ever opens it in Swift Playgrounds. Free for
+# public repositories. The simulator has no Bluetooth headphones or Chromecast; those need the devices.
+
+on:
+  pull_request:
+    paths: ["ios/**", "scripts/ios-sim.sh", ".github/workflows/ios.yml"]
+  push:
+    branches: [main]
+    paths: ["ios/**", "scripts/ios-sim.sh", ".github/workflows/ios.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  simulator:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run on iPhone and iPad simulators
+        run: ./scripts/ios-sim.sh
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-simulator-screenshots
+          path: ios-shots/
+          retention-days: 7
