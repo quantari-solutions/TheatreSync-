@@ -50,9 +50,10 @@ final class NetworkPower: ObservableObject {
                 }
                 for await d in group { if let d { found.append(d) } }
             }
+            let result = found
             await MainActor.run {
                 guard let self else { return }
-                let all = Array(Set(self.devices + found))
+                let all = Array(Set(self.devices + result))
                 self.devices = all
                 if let d = try? JSONEncoder().encode(all) { UserDefaults.standard.set(d, forKey: "powerDevices") }
                 self.searching = false
@@ -131,8 +132,8 @@ final class NetworkPower: ObservableObject {
         await withCheckedContinuation { (cont: CheckedContinuation<String?, Never>) in
             let c = NWConnection(host: NWEndpoint.Host(host), port: NWEndpoint.Port(rawValue: port)!, using: .tcp)
             let q = DispatchQueue(label: "power")
-            var done = false
-            func finish(_ v: String?) { q.async { if done { return }; done = true; c.cancel(); cont.resume(returning: v) } }
+            let state = Once()
+            func finish(_ v: String?) { q.async { if state.done { return }; state.done = true; c.cancel(); cont.resume(returning: v) } }
             q.asyncAfter(deadline: .now() + timeout) { finish(nil) }
             func read() {
                 c.receive(minimumIncompleteLength: 1, maximumLength: 512) { data, _, _, err in
@@ -169,3 +170,6 @@ final class NetworkPower: ObservableObject {
         return String(decoding: result.0, as: UTF8.self)
     }
 }
+
+/// A flag shared by a connection's callbacks (all on one queue): finish only once.
+private final class Once { var done = false }
