@@ -219,10 +219,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         audioManager = getSystemService(AudioManager::class.java)
         refreshCrashes()
-        // Opened fresh from the app icon (not coming back to it, not from the notification or a share):
-        // the Quantari opening plays. Coming back after leaving it, it carries on where you left off.
-        val freshLaunch = savedInstanceState == null && intent?.action == android.content.Intent.ACTION_MAIN &&
-            intent?.getStringExtra(EXTRA_OPEN) == null
+        // The screen is being built (app opened, or rebuilt after Android closed it in the background):
+        // the opening plays, unless this came from the notification or a share.
+        if (openingGate.created(fromNotificationOrShare(intent)) && !runningUnderTest) openingRequest.intValue++
         handleShare(intent)
         if (intent?.getStringExtra(EXTRA_OPEN) == OPEN_REMOTE) openRemote.intValue++
         mirroringLabel = getString(R.string.screen_mirroring)
@@ -338,11 +337,11 @@ class MainActivity : ComponentActivity() {
                         page == Page.MOVIE && ui.phase != Phase.SETUP -> "playing"
                         else -> "setup"
                     }
-                    // Fresh start: the Quantari opening first. Not when coming back to the app (it stays where it was),
-                    // and once only per opening (kept across screen rotation).
-                    var opening by rememberSaveable { mutableStateOf(freshLaunch && !runningUnderTest) }
-                    if (opening) {
-                        OpeningAnimation { opening = false }
+                    // The Quantari opening, each time TheatreSync is opened (see onStart). It's drawn over the app,
+                    // which stays exactly where it was underneath.
+                    var openingDone by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+                    if (openingRequest.intValue > openingDone) {
+                        OpeningAnimation { openingDone = openingRequest.intValue }
                         return@GridBackground
                     }
                     // YouTube sound in the headphones: its (visible) phone player, wherever you are in the app.
@@ -623,6 +622,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        // Opened again after being away (other apps, home screen) for more than 30 s: the opening plays.
+        // Not after the phone just went idle with TheatreSync open, a quick app switch, the notification
+        // or a share: then it carries on where you left off.
+        if (openingGate.started(android.os.SystemClock.elapsedRealtime()) && !runningUnderTest) openingRequest.intValue++
         refreshCrashes()
         AppUpdates.check(this)        // quietly, at most every 10 minutes
         GitHubLink.keepAlive(this)    // renew the crash-report sign-in before it runs out
@@ -634,6 +637,12 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onStop() {
+        // Left for other apps (screen still on) — not the phone going idle, a rotation or picture-in-picture.
+        openingGate.stopped(
+            android.os.SystemClock.elapsedRealtime(),
+            screenOn = getSystemService(android.os.PowerManager::class.java)?.isInteractive != false,
+            rotating = isChangingConfigurations, pictureInPicture = isInPictureInPictureMode,
+        )
         session.stopTvSearch()
         audioManager.unregisterAudioDeviceCallback(deviceCallback)
         super.onStop()
@@ -653,6 +662,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        openingGate.newIntent(fromNotificationOrShare(intent))
         handleShare(intent)
         if (intent.getStringExtra(EXTRA_OPEN) == OPEN_REMOTE) openRemote.intValue++
         if (intent.getStringExtra(EXTRA_OPEN) == OPEN_PIP) window.decorView.post { enterPip() }
@@ -692,6 +702,13 @@ class MainActivity : ComponentActivity() {
 
     /** Incremented to ask the UI to show the remote (from the notification). */
     private val openRemote = androidx.compose.runtime.mutableIntStateOf(0)
+
+    /** Each increase shows the Quantari opening once. */
+    private val openingRequest = androidx.compose.runtime.mutableIntStateOf(0)
+    private val openingGate = OpeningGate(OPENING_AFTER_AWAY_MS)
+
+    private fun fromNotificationOrShare(i: Intent?) =
+        i?.getStringExtra(EXTRA_OPEN) != null || i?.action == Intent.ACTION_SEND || i?.action == Intent.ACTION_VIEW
 
     /** "Share → TheatreSync" from the YouTube app (or any app sharing a YouTube link). */
     private fun handleShare(intent: Intent?) {
@@ -879,6 +896,9 @@ class MainActivity : ComponentActivity() {
     }.toTypedArray()
 
     companion object {
+        /** Away from TheatreSync at least this long, and opening it again plays the Quantari opening. */
+        const val OPENING_AFTER_AWAY_MS = 30_000L
+
         const val EXTRA_OPEN = "open"
         const val OPEN_REMOTE = "remote"
         const val OPEN_PIP = "pip"

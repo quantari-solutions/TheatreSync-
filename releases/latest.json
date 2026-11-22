@@ -1,8 +1,8 @@
 {
-  "versionCode": 27,
-  "versionName": "0.6.2",
-  "apkUrl": "https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases/TheatreSync-0.6.2.apk",
-  "sha256": "b6edd97398dfb993f630d722223058ab4e5e2fb82ddb938a9f4393ac727c9179",
-  "sizeBytes": 26969330,
-  "notes": "The Quantari opening on the phone plays again whenever you open the app fresh, with a sharper, high-definition logo and text that fits every phone. Coming back to the app still carries on where you left off."
+  "versionCode": 28,
+  "versionName": "0.6.3",
+  "apkUrl": "https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases/TheatreSync-0.6.3.apk",
+  "sha256": "7509f60431e6ed2d506c5d3dabf9b5293bddcbaae6d6cfec825c238535b54486",
+  "sizeBytes": 26969450,
+  "notes": "The Quantari opening now plays every time you open TheatreSync again after using other apps, then the app is right where you left it. It doesn't replay when your phone just went idle with the app open."
 }
