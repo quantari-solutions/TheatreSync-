@@ -26,7 +26,7 @@ struct OpeningView: View {
                                    center: UnitPoint(x: 0.5, y: 0.46), startRadius: 0, endRadius: min(geo.size.width, geo.size.height) * 0.75)
                         .opacity(out)
                     VStack(spacing: 0) {
-                        Image(uiImage: UIImage(named: "quantari_wordmark", in: .module, with: nil) ?? UIImage())
+                        Image(uiImage: UIImage(named: "quantari_wordmark", in: .main, with: nil) ?? UIImage())
                             .resizable().scaledToFit()
                             .frame(width: w * 0.9 / 1.14)
                             .opacity(mark).scaleEffect(0.96 + 0.04 * mark)

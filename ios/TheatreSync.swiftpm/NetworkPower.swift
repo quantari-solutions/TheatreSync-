@@ -44,7 +44,7 @@ final class NetworkPower: ObservableObject {
                     if host == me { continue }
                     for kind in Kind.allCases {
                         if running >= 40 { if let d = await group.next() ?? nil { found.append(d) }; running -= 1 }
-                        group.addTask { await Self.probe(host: host, kind: kind) }
+                        group.addTask { await NetworkPower.probe(host: host, kind: kind) }
                         running += 1
                     }
                 }
@@ -66,7 +66,9 @@ final class NetworkPower: ObservableObject {
     /// True if at least one device accepted.
     func setPower(on: Bool) async -> Bool {
         var ok = false
-        for d in devices where await Self.setPower(d, on: on) { ok = true }
+        for d in devices {
+            if await NetworkPower.setPower(d, on: on) { ok = true }
+        }
         return ok
     }
 
@@ -162,7 +164,8 @@ final class NetworkPower: ObservableObject {
     private static func http(_ url: String, timeout: Double) async -> String? {
         guard let u = URL(string: url) else { return nil }
         var r = URLRequest(url: u); r.timeoutInterval = timeout
-        guard let (data, resp) = try? await URLSession.shared.data(for: r), (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
-        return String(decoding: data, as: UTF8.self)
+        guard let result = try? await URLSession.shared.data(for: r),
+              (result.1 as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+        return String(decoding: result.0, as: UTF8.self)
     }
 }

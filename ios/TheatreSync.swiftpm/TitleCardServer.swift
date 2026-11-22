@@ -9,7 +9,7 @@ final class TitleCardServer {
     private var port: UInt16?
     private let queue = DispatchQueue(label: "title-card")
     private lazy var card: Data = {
-        guard let u = Bundle.module.url(forResource: "signature_card_live", withExtension: "webp"),
+        guard let u = Bundle.main.url(forResource: "signature_card_live", withExtension: "webp"),
               let d = try? Data(contentsOf: u) else { return Data() }
         return d
     }()

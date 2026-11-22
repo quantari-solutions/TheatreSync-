@@ -122,7 +122,8 @@ struct HomeView: View {
                 }.buttonStyle(GoldButtonStyle())
                 Button("Turn off") {
                     Task {
-                        let ok = power.devices.isEmpty ? false : await power.setPower(on: false)
+                        var ok = false
+                        if !power.devices.isEmpty { ok = await power.setPower(on: false) }
                         await MainActor.run {
                             powerMessage = power.devices.isEmpty
                                 ? "No projector or receiver that can be switched off was found on the Wi-Fi. Switch on network control in their menus (Network Standby / PJLink / IP Control), then search again."
