@@ -27,8 +27,13 @@ struct RootView: View {
                     ListeningView(session: session)
                 }
             }
-            if opening { OpeningView { opening = false }.transition(.identity) }
+            if opening {
+                OpeningView { opening = false }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .zIndex(1)
+            }
         }
+        .onAppear { FileHandle.standardError.write(Data("Root: opening=\(opening)\n".utf8)) }
         .preferredColorScheme(.dark)
         .tint(Q.primary)
     }

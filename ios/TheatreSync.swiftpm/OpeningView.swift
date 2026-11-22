@@ -7,6 +7,7 @@ import UIKit
 struct OpeningView: View {
     var onDone: () -> Void
     @State private var start = Date()
+    @State private var done = false
     private let total = 6.6
     private let gold = Color(red: 232 / 255, green: 184 / 255, blue: 74 / 255)
 
@@ -55,20 +56,29 @@ struct OpeningView: View {
                 }
                 .frame(width: geo.size.width, height: geo.size.height)
             }
-            .onChange(of: t >= total) { finished in if finished { finish("played in full") } }
         }
         .ignoresSafeArea()
         .contentShape(Rectangle())
         .onTapGesture { finish("tapped") }
         .accessibilityLabel("TheatreSync, a Quantari Solutions module")
-        .onAppear { start = Date(); print("Opening: shown") }
+        .onAppear { start = Date(); log("Opening: shown") }
+        // Ends after its full length (a timer, independent of how often the screen redraws).
+        .task {
+            try? await Task.sleep(nanoseconds: UInt64(total * 1_000_000_000))
+            finish("played in full")
+        }
     }
 
     /// Logged so the simulator check (CI) can prove it shows and for how long.
     private func finish(_ why: String) {
-        print("Opening: finished after \(Int(Date().timeIntervalSince(start) * 1000)) ms (\(why))")
+        guard !done else { return }
+        done = true
+        log("Opening: finished after \(Int(Date().timeIntervalSince(start) * 1000)) ms (\(why))")
         onDone()
     }
+
+    /// Unbuffered (standard error), so the simulator check sees it at once.
+    private func log(_ s: String) { FileHandle.standardError.write(Data((s + "\n").utf8)) }
 
     private func seg(_ t: Double, _ s: Double, _ d: Double) -> Double {
         let x = min(1, max(0, (t - s) / d))
