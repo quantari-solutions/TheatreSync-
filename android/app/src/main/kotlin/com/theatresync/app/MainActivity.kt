@@ -40,6 +40,7 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.ColumnScope
@@ -219,9 +220,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         audioManager = getSystemService(AudioManager::class.java)
         refreshCrashes()
-        // The screen is being built (app opened, or rebuilt after Android closed it in the background):
-        // the opening plays, unless this came from the notification or a share.
-        if (openingGate.created(fromNotificationOrShare(intent)) && !runningUnderTest) openingRequest.intValue++
+        // The opening plays only when TheatreSync starts fresh: not when Android rebuilds the screen of an app
+        // that was running in the background (it has saved state), nor from the notification or a share.
+        // Coming back to it while it's running never shows it (onStart does nothing here).
+        if (openingGate.created(fromNotificationOrShare(intent), restoredFromBackground = savedInstanceState != null) && !runningUnderTest) openingRequest.intValue++
         handleShare(intent)
         if (intent?.getStringExtra(EXTRA_OPEN) == OPEN_REMOTE) openRemote.intValue++
         mirroringLabel = getString(R.string.screen_mirroring)
@@ -337,8 +339,14 @@ class MainActivity : ComponentActivity() {
                         page == Page.MOVIE && ui.phase != Phase.SETUP -> "playing"
                         else -> "setup"
                     }
-                    // The Quantari opening, each time TheatreSync is opened (see onStart). It's drawn over the app,
-                    // which stays exactly where it was underneath.
+                    // YouTube sound in the headphones: one phone player for as long as it's on, created here (before
+                    // the opening, so the opening never interrupts the sound) and shown wherever it fits below.
+                    val ytTv = ui.youTubeHeadphonesTv
+                    val ytVideo = ytTv?.let { id -> ui.nowCasting.firstOrNull { it.tvId == id }?.activity?.contentId }
+                    val ytWeb = if (ytTv != null && ytVideo != null) {
+                        rememberYouTubeHeadphonesWeb(ytTv, ytVideo, { session.youTubeTarget(ytTv) }, session::onYouTubeHeadphonesReport)
+                    } else null
+                    // The Quantari opening, only when TheatreSync starts fresh (see onCreate).
                     var openingDone by remember { androidx.compose.runtime.mutableIntStateOf(0) }
                     if (openingRequest.intValue > openingDone) {
                         // Logged so the emulator check (CI) can prove it shows and for how long.
@@ -349,13 +357,10 @@ class MainActivity : ComponentActivity() {
                         }
                         return@GridBackground
                     }
-                    // YouTube sound in the headphones: its (visible) phone player, wherever you are in the app.
-                    val ytTv = ui.youTubeHeadphonesTv
-                    val ytVideo = ytTv?.let { id -> ui.nowCasting.firstOrNull { it.tvId == id }?.activity?.contentId }
                     if (inPip.value) {
-                        if (ytTv != null && ytVideo != null) {
+                        if (ytWeb != null && ytVideo != null) {
                             Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
-                                YouTubeHeadphonesPlayer(ytVideo, { session.youTubeTarget(ytTv) }, session::onYouTubeHeadphonesReport)
+                                YouTubeHeadphonesView(ytWeb, ytVideo)
                             }
                         } else PipContent(ui, ui.nowCasting.firstOrNull { it.tvId == castTvId } ?: ui.nowCasting.firstOrNull())
                         return@GridBackground
@@ -478,6 +483,8 @@ class MainActivity : ComponentActivity() {
                                     onBack = { page = Page.SETTINGS },
                                     onDismissMessage = session::dismissMessage,
                                     onWake = session::wakeTv,
+                                    onPower = session::setRoomPower,
+                                    onFindPower = session::findPowerDevices,
                                 )
                                 "crashes" -> CrashReportsScreen(
                                     entries = crashEntries.value,
@@ -544,8 +551,9 @@ class MainActivity : ComponentActivity() {
                                         ytHeadphonesDriftMs = ui.youTubeHeadphonesDriftMs,
                                         ytHeadphonesProblem = ui.youTubeHeadphonesProblem,
                                         onYtHeadphones = { on -> session.setYouTubeHeadphones(c.tvId, on) },
-                                        ytTarget = { session.youTubeTarget(c.tvId) },
-                                        onYtReport = session::onYouTubeHeadphonesReport,
+                                        // On this page the headphones player sits inside its card (not floating over the page).
+                                        ytPlayer = if (ytWeb != null && ytVideo != null && ytTv == c.tvId) { { YouTubeHeadphonesView(ytWeb, ytVideo, compact = true) } } else null,
+                                        headphoneName = ui.headphoneName,
                                         onListenAlong = { url -> runCatching { startActivity(Intent(Intent.ACTION_VIEW, url.toUri())) } },
                                     )
                                 }
@@ -610,13 +618,25 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                         }
-                        if (ytTv != null && ytVideo != null) {
-                            Box(
-                                Modifier.align(Alignment.BottomEnd).padding(16.dp).width(240.dp)
-                                    .shadow(22.dp, RoundedCornerShape(14.dp), ambientColor = Q.Glow, spotColor = Q.Glow)
+                        // Other pages: a small framed player in the corner (YouTube requires it to stay visible),
+                        // labelled, with ✕ to switch headphone sound off.
+                        if (ytWeb != null && ytVideo != null && ytTv != null && target != "casting") {
+                            Column(
+                                Modifier.align(Alignment.BottomEnd).padding(16.dp).width(IntrinsicSize.Max)
+                                    .background(Q.Card, RoundedCornerShape(14.dp))
+                                    .border(1.dp, Q.BorderAccent, RoundedCornerShape(14.dp))
+                                    .padding(6.dp)
                                     .testTag("yt_mini_player"),
                             ) {
-                                YouTubeHeadphonesPlayer(ytVideo, { session.youTubeTarget(ytTv) }, session::onYouTubeHeadphonesReport)
+                                Row(Modifier.fillMaxWidth().padding(start = 6.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(stringResource(R.string.yt_mini_label), color = Q.TextMuted, style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f), maxLines = 1)
+                                    Text(
+                                        "✕", color = Q.Primary, style = MaterialTheme.typography.titleMedium,
+                                        modifier = Modifier.clickable(onClickLabel = stringResource(R.string.yt_mini_close)) { session.setYouTubeHeadphones(ytTv, false) }
+                                            .padding(horizontal = 10.dp, vertical = 4.dp).testTag("yt_mini_close"),
+                                    )
+                                }
+                                YouTubeHeadphonesView(ytWeb, ytVideo, compact = true)
                             }
                         }
                     }
@@ -627,10 +647,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
-        // Opened again after being away (other apps, home screen) for more than 30 s: the opening plays.
-        // Not after the phone just went idle with TheatreSync open, a quick app switch, the notification
-        // or a share: then it carries on where you left off.
-        if (openingGate.started(android.os.SystemClock.elapsedRealtime()) && !runningUnderTest) openingRequest.intValue++
+        // Keep running in the background for as long as needed (owner). Started now, while on screen,
+        // because Android doesn't allow it from the background.
+        if (!runningUnderTest) HostService.start(this, movie = false)
+        askToRunInBackgroundOnce()
         refreshCrashes()
         AppUpdates.check(this)        // quietly, at most every 10 minutes
         GitHubLink.keepAlive(this)    // renew the crash-report sign-in before it runs out
@@ -643,11 +663,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onStop() {
         // Left for other apps (screen still on) — not the phone going idle, a rotation or picture-in-picture.
-        openingGate.stopped(
-            android.os.SystemClock.elapsedRealtime(),
-            screenOn = getSystemService(android.os.PowerManager::class.java)?.isInteractive != false,
-            rotating = isChangingConfigurations, pictureInPicture = isInPictureInPictureMode,
-        )
         session.stopTvSearch()
         audioManager.unregisterAudioDeviceCallback(deviceCallback)
         super.onStop()
@@ -667,7 +682,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        openingGate.newIntent(fromNotificationOrShare(intent))
         handleShare(intent)
         if (intent.getStringExtra(EXTRA_OPEN) == OPEN_REMOTE) openRemote.intValue++
         if (intent.getStringExtra(EXTRA_OPEN) == OPEN_PIP) window.decorView.post { enterPip() }
@@ -710,7 +724,27 @@ class MainActivity : ComponentActivity() {
 
     /** Each increase shows the Quantari opening once. */
     private val openingRequest = androidx.compose.runtime.mutableIntStateOf(0)
-    private val openingGate = OpeningGate(OPENING_AFTER_AWAY_MS)
+    private val openingGate = OpeningGate()
+
+    /**
+     * Once: ask Android to let TheatreSync always run in the background (its own "Let app always run in
+     * background?" dialog). Phones like Motorola otherwise close background apps to save battery.
+     * Asked a few seconds after start, so it never covers the opening.
+     */
+    private fun askToRunInBackgroundOnce() {
+        if (runningUnderTest) return
+        val prefs = getSharedPreferences("ui", MODE_PRIVATE)
+        if (prefs.getBoolean("askedBattery", false)) return
+        val pm = getSystemService(android.os.PowerManager::class.java) ?: return
+        if (pm.isIgnoringBatteryOptimizations(packageName)) return
+        window.decorView.postDelayed({
+            if (isFinishing || prefs.getBoolean("askedBattery", false)) return@postDelayed
+            prefs.edit().putBoolean("askedBattery", true).apply()
+            @android.annotation.SuppressLint("BatteryLife")
+            val ask = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, "package:$packageName".toUri())
+            runCatching { startActivity(ask) }
+        }, 8_000)
+    }
 
     private fun fromNotificationOrShare(i: Intent?) =
         i?.getStringExtra(EXTRA_OPEN) != null || i?.action == Intent.ACTION_SEND || i?.action == Intent.ACTION_VIEW
@@ -901,9 +935,6 @@ class MainActivity : ComponentActivity() {
     }.toTypedArray()
 
     companion object {
-        /** Away from TheatreSync at least this long, and opening it again plays the Quantari opening. */
-        const val OPENING_AFTER_AWAY_MS = 30_000L
-
         const val EXTRA_OPEN = "open"
         const val OPEN_REMOTE = "remote"
         const val OPEN_PIP = "pip"
@@ -1727,8 +1758,9 @@ internal fun NowCastingScreen(
     ytHeadphonesDriftMs: Long? = null,
     ytHeadphonesProblem: String? = null,
     onYtHeadphones: (Boolean) -> Unit = {},
-    ytTarget: () -> YouTubeHeadphones.Target? = { null },
-    onYtReport: (YouTubeHeadphones.Report) -> Unit = {},
+    /** The YouTube headphones player, shown inside its card while sound in headphones is on. */
+    ytPlayer: (@Composable () -> Unit)? = null,
+    headphoneName: String? = null,
     onListenAlong: (String) -> Unit = {},
 ) = Screen {
     val a = item.activity
@@ -1761,7 +1793,7 @@ internal fun NowCastingScreen(
                 Text(stringResource(R.string.yt_headphones), style = MaterialTheme.typography.titleLarge, color = Q.Text)
                 Hint(
                     when {
-                        !ytHeadphonesOn -> stringResource(R.string.yt_headphones_off)
+                        !ytHeadphonesOn -> stringResource(R.string.yt_headphones_off, item.tvName)
                         ytHeadphonesProblem != null -> stringResource(R.string.yt_headphones_problem)
                         ytHeadphonesDriftMs != null -> syncText(ytHeadphonesDriftMs)
                         else -> stringResource(R.string.yt_headphones_starting)
@@ -1773,7 +1805,24 @@ internal fun NowCastingScreen(
                 colors = SwitchDefaults.colors(checkedThumbColor = Color.Black, checkedTrackColor = Q.Primary),
             )
         }
-        if (ytHeadphonesOn) Hint(stringResource(R.string.yt_headphones_note))
+        if (ytHeadphonesOn) {
+            // The TV's sound, going to your headphones.
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "📺  " + item.tvName + "   →   🎧  " + (headphoneName ?: stringResource(R.string.yt_your_headphones)),
+                color = Q.Primary, style = MaterialTheme.typography.titleSmall, maxLines = 2,
+                modifier = Modifier.testTag("yt_route"),
+            )
+            ytPlayer?.let {
+                Spacer(Modifier.height(12.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    it()
+                    Spacer(Modifier.width(12.dp))
+                    Hint(stringResource(R.string.yt_sound_link_label))
+                }
+            }
+            Hint(stringResource(R.string.yt_headphones_note))
+        }
     }
 
     // A movie another phone is casting with TheatreSync: listen along in this phone's headphones (TapIn page).
@@ -1835,7 +1884,8 @@ internal fun NowCastingScreen(
     if (a.sessionId != null) {
         GhostButton("■  " + stringResource(R.string.stop_casting), onStop, Modifier.fillMaxWidth().testTag("stop_casting"), height = 52.dp, description = stringResource(R.string.stop_casting))
     }
-    QCard {
+    // YouTube has its own "Sound in headphones" card above; this note is for mirroring and other apps.
+    if (a.kind != CastActivity.Kind.YOUTUBE) QCard {
         Text(stringResource(R.string.cast_sound_title), style = MaterialTheme.typography.titleMedium, color = Q.Text)
         Hint(stringResource(R.string.cast_sound_hint))
         GhostButton("🎧  " + stringResource(R.string.hp_settings), onHeadphoneOptions, Modifier.fillMaxWidth().testTag("cast_hp_settings"), height = 48.dp)
@@ -2257,8 +2307,12 @@ internal fun RemoteScreen(
     onBack: () -> Unit,
     onDismissMessage: () -> Unit = {},
     onWake: (String) -> Unit = {},
+    onPower: (String, Boolean) -> Unit = { id, on -> if (on) onWake(id) },
+    onFindPower: (Boolean) -> Unit = {},
 ) = Screen {
     TopBar(stringResource(R.string.remote), onBack)
+    // Look for projectors / receivers that can be switched on and off (quietly, at most every 10 minutes).
+    LaunchedEffect(Unit) { onFindPower(false) }
     Message(ui.message, onDismissMessage)
     if (ui.tvs.isEmpty()) {
         QCard { StatusPill(stringResource(R.string.searching), Q.Primary, pulsing = true) }
@@ -2271,8 +2325,17 @@ internal fun RemoteScreen(
     val activity = ui.nowCasting.firstOrNull { it.tvId == tv.id }?.activity
     if (!tv.isSpeaker && !tv.youTubeOnly) QCard {
         Text(stringResource(R.string.power), style = MaterialTheme.typography.titleMedium, color = Q.Text)
-        GoldButton(stringResource(R.string.wake_devices), { onWake(tv.id) }, Modifier.fillMaxWidth().testTag("wake"), height = 52.dp)
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            GoldButton(stringResource(R.string.power_on), { onPower(tv.id, true) }, Modifier.weight(1f).testTag("wake"), height = 52.dp)
+            GhostButton(stringResource(R.string.power_off), { onPower(tv.id, false) }, Modifier.weight(1f).testTag("power_off"), height = 52.dp)
+        }
+        when {
+            ui.powerSearching -> Hint(stringResource(R.string.power_searching))
+            ui.powerDevices.isNotEmpty() -> Hint(stringResource(R.string.power_found, ui.powerDevices.joinToString(", ")))
+            else -> Hint(stringResource(R.string.power_none))
+        }
         Hint(stringResource(R.string.power_hint))
+        if (!ui.powerSearching) GhostButton(stringResource(R.string.power_search), { onFindPower(true) }, Modifier.fillMaxWidth().testTag("power_search"), height = 44.dp)
     }
     QCard(highlighted = activity?.isPlaying == true) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {

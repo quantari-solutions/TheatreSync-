@@ -4,18 +4,22 @@ import android.annotation.SuppressLint
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebView
+import android.view.ViewGroup
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.delay
 import java.util.Locale
@@ -41,7 +45,7 @@ object YouTubeHeadphones {
 
     internal fun page(videoId: String) = """
 <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
-<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}#p{width:100%;height:100%}</style></head>
+<style>html,body{margin:0;height:100%;background:transparent;overflow:hidden}#p{width:100%;height:100%}</style></head>
 <body><div id="p"></div>
 <script>
 var player=null, ready=false, vid='$videoId', lead=0.15, calibrated=false, justSeeked=false, lastSeek=0, settleUntil=0, ctx=null;
@@ -77,19 +81,26 @@ window.tsTarget=function(t,playing,v){
         String.format(Locale.US, "window.tsTarget&&tsTarget(%.3f,%b,'%s')", t.positionSec, t.playing, t.videoId.filter { it.isLetterOrDigit() || it == '-' || it == '_' })
 }
 
-/** The visible phone player, kept in step with [target] (polled 4×/s). Reports drift or problems. */
+/**
+ * The one phone player for YouTube sound in the headphones, created once while it's switched on and kept
+ * in step with [target] (polled 4×/s). The app shows it wherever it fits ([YouTubeHeadphonesView]): inside
+ * the Now casting card, as a small framed player on other pages, or as the picture-in-picture window.
+ * Moving it between them never reloads it, so the sound doesn't restart.
+ */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-fun YouTubeHeadphonesPlayer(videoId: String, target: () -> YouTubeHeadphones.Target?, onReport: (YouTubeHeadphones.Report) -> Unit, modifier: Modifier = Modifier) {
+fun rememberYouTubeHeadphonesWeb(key: String, videoId: String, target: () -> YouTubeHeadphones.Target?, onReport: (YouTubeHeadphones.Report) -> Unit): WebView {
     val context = LocalContext.current
     val report = rememberUpdatedState(onReport)
-    // One player for the whole time; a new video on the TV is loaded into it (no reload, no gap).
-    val web = remember {
+    val currentTarget = rememberUpdatedState(target)
+    val web = remember(key) {
         WebView(context).apply {
             settings.javaScriptEnabled = true
             settings.mediaPlaybackRequiresUserGesture = false // the owner switched this on: sound may start by itself
             settings.domStorageEnabled = true
             webChromeClient = WebChromeClient()
+            // Transparent until YouTube draws: the video's thumbnail shows underneath, never a black square.
+            setBackgroundColor(android.graphics.Color.TRANSPARENT)
             addJavascriptInterface(object {
                 @JavascriptInterface fun report(drift: String, problem: String) {
                     post { report.value(YouTubeHeadphones.Report(drift.toLongOrNull(), problem.ifBlank { null })) }
@@ -98,12 +109,34 @@ fun YouTubeHeadphonesPlayer(videoId: String, target: () -> YouTubeHeadphones.Tar
             loadDataWithBaseURL("https://quantari-solutions.vercel.app/", YouTubeHeadphones.page(videoId), "text/html", "utf-8", null)
         }
     }
-    DisposableEffect(web) { onDispose { web.stopLoading(); web.destroy() } }
+    DisposableEffect(web) { onDispose { (web.parent as? ViewGroup)?.removeView(web); web.stopLoading(); web.destroy() } }
     LaunchedEffect(web) {
         while (true) {
-            target()?.let { web.evaluateJavascript(YouTubeHeadphones.js(it), null) }
+            currentTarget.value()?.let { web.evaluateJavascript(YouTubeHeadphones.js(it), null) }
             delay(250)
         }
     }
-    AndroidView(factory = { web }, modifier = modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(14.dp)))
+    return web
+}
+
+/**
+ * Shows the shared player (16:9) with the video's thumbnail underneath while it loads. Not clipped or
+ * shadowed: Android can draw a WebView's video as a separate layer that turns black when the view is
+ * clipped or transformed.
+ */
+@Composable
+fun YouTubeHeadphonesView(web: WebView, videoId: String, modifier: Modifier = Modifier, compact: Boolean = false) {
+    // Compact: a small "sound link" tile. YouTube requires its player to stay visible and at least
+    // 200 × 200 pixels, so it's never smaller than that on any phone.
+    val size = if (compact) {
+        val minDp = with(androidx.compose.ui.platform.LocalDensity.current) { 200.toDp() }
+        Modifier.height(maxOf(90.dp, minDp)).aspectRatio(16f / 9f)
+    } else Modifier.fillMaxWidth().aspectRatio(16f / 9f)
+    Box(modifier.then(size).background(Color.Black)) {
+        RemoteImage("https://i.ytimg.com/vi/$videoId/hqdefault.jpg", null, Modifier.fillMaxSize()) {}
+        AndroidView(
+            factory = { (web.parent as? ViewGroup)?.removeView(web); web },
+            modifier = Modifier.fillMaxSize(),
+        )
+    }
 }

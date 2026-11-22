@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Simulates the owner opening TheatreSync on a phone (emulator, installed app, no test framework) and checks
+# Simulates the owner opening TheatreSync on a phone. Owner's rule: the opening plays only on a fresh start,
+# never when returning to the app while it runs in the background.
+# (emulator, installed app, no test framework) and checks
 # the Quantari opening: shown, and for its full length (~6.6 s), in each situation. Run by CI after the
 # release APK is installed. Uses the app's own log lines "Opening: shown" / "Opening: finished after N ms".
 set -u
@@ -24,14 +26,15 @@ expect() { # $1 = name, $2 = yes|no
 run_suite() { # $1 = label
   adb shell am force-stop $PKG; adb logcat -c
   tap_icon;                                   expect "$1 · first open from the icon" yes
-  adb shell input keyevent HOME; sleep 36; tap_icon;              expect "$1 · back from the home screen after 36 s (icon)" yes
+  adb shell input keyevent HOME; sleep 36; tap_icon;              expect "$1 · back from the home screen after 36 s (still running: no intro)" no
   adb shell input keyevent HOME; sleep 5;  tap_icon;              expect "$1 · quick switch, 5 s" no
   adb shell input keyevent KEYCODE_APP_SWITCH; sleep 2; adb shell input keyevent HOME; sleep 36
-  adb shell am start -n $PKG/.MainActivity >/dev/null;            expect "$1 · back after 36 s (recent apps / reopen)" yes
+  adb shell am start -n $PKG/.MainActivity >/dev/null;            expect "$1 · back after 36 s from recent apps (still running: no intro)" no
   adb shell input keyevent KEYCODE_SLEEP; sleep 40; adb shell input keyevent KEYCODE_WAKEUP; adb shell wm dismiss-keyguard; sleep 1
   expect "$1 · phone went idle with the app open, then woke" no
   adb shell input keyevent HOME; sleep 2; adb shell am kill $PKG >/dev/null 2>&1; sleep 34
-  tap_icon;                                                       expect "$1 · after Android closed it in the background" yes
+  tap_icon;                                                       expect "$1 · Android closed it in the background, reopened (no intro)" no
+  adb shell am force-stop $PKG; sleep 2; tap_icon;                expect "$1 · closed / swiped away, then opened again (fresh start)" yes
 }
 echo "== Animations OFF (like battery saver / Remove animations) =="
 adb shell settings put global window_animation_scale 0; adb shell settings put global transition_animation_scale 0; adb shell settings put global animator_duration_scale 0

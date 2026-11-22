@@ -1,8 +1,8 @@
 {
-  "versionCode": 29,
-  "versionName": "0.6.4",
-  "apkUrl": "https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases/TheatreSync-0.6.4.apk",
-  "sha256": "2ba712da65166ec68661832434db7875339e08665ff886d5a990e3fb6f40b7df",
-  "sizeBytes": 26970270,
-  "notes": "The Quantari opening and the refresh arrow now always play in full, even if your phone has animations turned down or off (battery saver, Remove animations)."
+  "versionCode": 33,
+  "versionName": "0.6.8",
+  "apkUrl": "https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases/TheatreSync-0.6.8.apk",
+  "sha256": "f48ea96a41c27326802eb2b28146bad786efd8756b552d92b933d79f0e4a95a3",
+  "sizeBytes": 19059478,
+  "notes": "Runs in the background for as long as you need (quiet notification with Remote and Quit). The Remote has Turn on and Turn off for the projector and receiver. The TV intro and screensaver are a still Quantari card with no progress bar. The phone's opening plays only on a fresh start. YouTube in your headphones shows as the TV's sound."
 }

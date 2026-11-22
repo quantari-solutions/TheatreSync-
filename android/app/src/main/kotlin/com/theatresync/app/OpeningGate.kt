@@ -1,37 +1,16 @@
 package com.theatresync.app
 
 /**
- * When the Quantari opening plays on the phone (owner: each time TheatreSync is opened, then it carries on
- * where you left off; not when the phone just went idle with it open).
- *
- *  - the screen is built (app opened, or rebuilt after Android closed it in the background): plays;
- *  - opened again after being away in other apps / the home screen for [awayMs] or more: plays;
- *  - the phone went idle (screen off / locked) with TheatreSync open, a quick switch, a rotation,
- *    picture-in-picture, the notification or a share: doesn't.
+ * When the Quantari opening plays on the phone (owner, 2026-11-22): **only when TheatreSync starts fresh**
+ * (opened after it was closed / swiped away). Coming back to it while it's running in the background,
+ * from the notification or a share, after the phone was idle, or when Android rebuilds its screen in the
+ * background: never. (It always plays in full when shown, whatever the phone's animation setting.)
  */
-class OpeningGate(private val awayMs: Long = 30_000L) {
-    private var startedJustNow = false
-    private var skipOnce = false
-    private var leftAtMs = 0L
-
+class OpeningGate {
     /** The screen was built. True if the opening should play. */
-    fun created(fromNotificationOrShare: Boolean): Boolean {
-        startedJustNow = true
-        return !fromNotificationOrShare
-    }
+    fun created(fromNotificationOrShare: Boolean, restoredFromBackground: Boolean): Boolean =
+        !fromNotificationOrShare && !restoredFromBackground
 
-    /** Brought back by the notification or a share (an existing screen). */
-    fun newIntent(fromNotificationOrShare: Boolean) { if (fromNotificationOrShare) skipOnce = true }
-
-    /** The app went out of view. */
-    fun stopped(nowMs: Long, screenOn: Boolean, rotating: Boolean, pictureInPicture: Boolean) {
-        leftAtMs = if (screenOn && !rotating && !pictureInPicture) nowMs else 0L
-    }
-
-    /** The app came into view. True if the opening should play. */
-    fun started(nowMs: Long): Boolean {
-        val show = !startedJustNow && !skipOnce && leftAtMs > 0 && nowMs - leftAtMs >= awayMs
-        startedJustNow = false; skipOnce = false; leftAtMs = 0L
-        return show
-    }
+    /** The app came back into view: never the opening. */
+    fun started(): Boolean = false
 }

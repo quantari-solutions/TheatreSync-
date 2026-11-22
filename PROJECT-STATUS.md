@@ -1,6 +1,36 @@
 # Project status
 
-_Last updated: 2026-11-22. 0.6.4 (published to the in-app updater): opening and refresh spinner play in full even with Android animations off; proven by an emulator simulation in CI_
+_Last updated: 2026-11-22. 0.6.8 (published to the in-app updater): runs in the background for as long as needed; Remote has Turn on / Turn off for the projector and receiver; phone opening only on a fresh start; TV card as a still picture; YouTube headphones as TV sound_
+
+## 0.6.8: background and power
+
+| Request | Done | Verified |
+|---|---|---|
+| "Let the app run in the background, no issues, for however long I need it" | A quiet notification keeps TheatreSync running whenever it's been opened (not only during movies), with **Remote** and **Quit** (movie controls during a movie). TVs keep being watched in the background with no time limit (was 10 minutes). Asks Android once to let it always run in the background (Motorola otherwise closes background apps) | Compiles; emulator crash/monkey tests; needs a day of normal use |
+| On / off button on the remote | Remote → Projector & receiver: **Turn on** (Chromecast HDMI-CEC wake + network) and **Turn off** (network standby). Finds them on the Wi-Fi with no model numbers needed if they speak PJLink (most projectors), Denon/Marantz, Onkyo/Pioneer/Integra or Yamaha; remembered. If none is found it says how to switch on network control in their menus | `NetworkPowerTest` (7, fake projector and receivers); screenshot `remote2_power`; needs the real projector / receiver |
+
+
+## 0.6.7: phone opening only on a fresh start
+
+| Request | Done | Verified |
+|---|---|---|
+| "The intro when we open the app needs to be displayed only the first time. If the app is running in the background and I return it shouldn't show up" | `OpeningGate`: plays only when TheatreSync starts fresh (after it was closed / swiped away). Never when returning while it runs in the background (home screen, recent apps, after idle), from the notification or a share, or when Android rebuilds the screen of a background app. Still plays in full whatever the animation setting | `OpeningGateTest` (4); emulator simulation updated: fresh start shows it; returns after 36 s, quick switch, idle, background-killed reopen don't |
+
+
+## 0.6.6: owner feedback on the TV card and YouTube headphones
+
+| Report | Cause | Fix | Verified |
+|---|---|---|---|
+| Progress bar with "LIVE" on the TV; after ~31 s the screen blanks and the video starts again; wants the logo and words static, continuous | The Chromecast's own player draws a bar (and "LIVE") over any video, and the screensaver scenes each faded to black and replayed | Intro **and** screensaver are now the Signature **title card as a still picture** (1920×1080 PNG of the intro at its fullest glow). The TV shows pictures full-screen with no player bar, "LIVE" or time, and it just stays: no fade, no replay. Intro shows for 4.5 s before the film / YouTube / mirroring. The glow doesn't move in this mode (a moving glow with no bar needs our own Cast receiver, which needs a one-time Google Cast developer registration by the owner). Old video/stream files removed | `CastIntroTest`; needs a look on the TV |
+| YouTube in headphones should feel like the TV's sound in the headphones, not the phone playing the video | The phone player was big and labelled as the phone playing | Card renamed **TV sound in your headphones**, shows **📺 TV → 🎧 headphones** and the sync; the YouTube player is a small **sound link** tile (YouTube requires it visible and at least 200×200 pixels); the corner chip on other pages is labelled 🎧 TV sound | Screenshot `casting4_youtubeHeadphones` |
+
+
+## 0.6.5: "remove the black square void in the corner"
+
+| Report | Cause | Fix | Verified |
+|---|---|---|---|
+| Black square floating in the bottom corner of Now casting | The YouTube headphones player (YouTube requires it to be visible) floated over every page, with a black page behind it, clipped and shadowed (Android can draw WebView video as a separate layer that goes black when clipped). It was also rebuilt on each page change and removed while the opening played | **One shared player** for as long as Sound in headphones is on (never reloaded; the opening no longer interrupts the sound). On **Now casting** it sits **inside the Sound in headphones card**, full width, not over the page. On other pages: a small framed, labelled player with **✕** to switch it off. The video's thumbnail shows underneath until YouTube draws (never a black void); no clipping or shadow on the video. Out-of-date notes fixed ("YouTube sound can't go to your headphones", "Want this in your headphones?" on YouTube) | Screenshot `casting4_youtubeHeadphones`; compiles. Whether the phone's YouTube video itself draws (not black) needs a look on the phone |
+
 
 ## 0.6.4: opening still not showing on 0.6.3 → simulated
 

@@ -1,5 +1,10 @@
 package com.theatresync.app
 
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.dp
@@ -89,6 +94,13 @@ class ScreenshotTest {
             {}, { _, _ -> }, { _, _ -> }, { _, _ -> }, {}, {}, { _, _ -> }, {}, {}, {},
         )
     }
+    /** Projector and receiver found on the Wi-Fi: On / Off. */
+    @Test fun remote2_power() = shot {
+        RemoteScreen(
+            Ui(tvs = listOf(Tv("1", "Media Room TV")), connectedTv = "Media Room TV", powerDevices = listOf("Projector (PJLink) · 192.168.1.30", "Denon / Marantz receiver · 192.168.1.31")),
+            {}, { _, _ -> }, { _, _ -> }, { _, _ -> }, {}, {}, { _, _ -> }, {}, {}, {},
+        )
+    }
     /** Long and many TV names must never overflow or wrap letter by letter. */
     @Test fun youtube3_smartTvLongNames() = shot {
         YouTubeScreen(
@@ -165,6 +177,17 @@ class ScreenshotTest {
     @Test fun casting1_youtube() = shot { NowCastingScreen(youtube, {}, {}, {}) }
     @Test fun casting3_youtubeVolume() = shot { NowCastingScreen(youtube.copy(activity = youtube.activity.copy(volumeLevel = 0.6, muted = false)), {}, {}, {}) }
     @Test fun casting2_mirroring() = shot { NowCastingScreen(mirroring, {}, {}, {}) }
+    /** Sound in headphones on: the phone player sits inside its card (a stand-in here; WebViews don't render in tests). */
+    @Test fun casting4_youtubeHeadphones() = shot {
+        NowCastingScreen(
+            youtube, {}, {}, {}, ytHeadphonesOn = true, ytHeadphonesDriftMs = 12, headphoneName = "MOMENTUM 4",
+            ytPlayer = {
+                androidx.compose.foundation.layout.Box(
+                    androidx.compose.ui.Modifier.size(160.dp, 90.dp).background(androidx.compose.ui.graphics.Color(0xFF1B1B22)),
+                )
+            },
+        )
+    }
     @Test fun headphones1_connected() = shot {
         HeadphonesScreen(
             listOf(DiagnosticsReport.Output("WH-1000XM4", DiagnosticsReport.Kind.BLUETOOTH), DiagnosticsReport.Output("Phone speaker", DiagnosticsReport.Kind.SPEAKER)),
