@@ -15,7 +15,7 @@ class CastIntro(private val connect: () -> Socket) {
      * @param maxMs give up waiting after this long (the clip is ~4 s)
      * @return true if the TV played it to the end (or at least started it before [maxMs])
      */
-    fun play(url: String, maxMs: Long = 15_000, liveMs: Long? = null): Boolean {
+    fun play(url: String, maxMs: Long = 15_000, imageMs: Long? = null): Boolean {
         connect().use { s ->
             s.soTimeout = 500
             val out = s.getOutputStream()
@@ -28,7 +28,10 @@ class CastIntro(private val connect: () -> Socket) {
             var loaded = false
             var started = false
             val heard = ArrayList<String>() // what the TV said, for the problem report if it never plays
+            var loadedAt = 0L
             while (System.currentTimeMillis() < deadline) {
+                // A picture never "finishes": keep it up for its time from the load, then hand over.
+                if (imageMs != null && loaded && System.currentTimeMillis() - loadedAt >= imageMs) return true
                 val m = try { CastMessage.read(input) } catch (_: SocketTimeoutException) { continue }
                 val payload = m.payloadUtf8
                 when {
@@ -39,18 +42,13 @@ class CastIntro(private val connect: () -> Socket) {
                         if (app?.appId == CastStatus.APP_DEFAULT_MEDIA_RECEIVER && app.transportId != null) {
                             transport = app.transportId
                             send(app.transportId, CastMessage.NS_CONNECTION, """{"type":"CONNECT"}""")
-                            send(app.transportId, CastMessage.NS_MEDIA, loadRequest(url, live = liveMs != null))
-                            loaded = true
+                            send(app.transportId, CastMessage.NS_MEDIA, loadRequest(url, image = imageMs != null))
+                            loaded = true; loadedAt = System.currentTimeMillis()
                         }
                     }
                     m.namespace == CastMessage.NS_MEDIA && loaded -> when (playerState(payload).also { st -> if (heard.size < 12) heard += (st ?: CastStatus.type(payload) ?: "?") + idleReason(payload) }) {
-                        "PLAYING" -> {
-                            started = true
-                            // A live intro never "finishes": let it play for its length, then hand over.
-                            if (liveMs != null) { Thread.sleep(liveMs); return true }
-                        }
-                        "BUFFERING" -> started = true
-                        "IDLE" -> if (started || payload.contains("\"FINISHED\"")) return true
+                        "PLAYING", "BUFFERING" -> started = true
+                        "IDLE" -> if (imageMs == null && (started || payload.contains("\"FINISHED\""))) return true
                         "ERROR" -> throw IOException("TV couldn't play the intro")
                     }
                     m.namespace == CastMessage.NS_MEDIA && payload.contains("LOAD_FAILED") ->
@@ -66,18 +64,16 @@ class CastIntro(private val connect: () -> Socket) {
         private const val SENDER = "sender-ts-intro"
 
         /**
-         * [live]: the intro video marked as live, so the TV shows no progress bar or time over it (a normal
-         * video gets those and looks like an advert). Same MP4 the TV plays fine as a normal video; HLS and
-         * animated pictures are unproven on the owner's Chromecast (0.5.9 / 0.6.0 showed nothing).
+         * [image]: the Signature title card as a still picture (PNG). The TV shows pictures full-screen with no
+         * player bar, "LIVE" label or time; the video and live-stream versions got those (0.5.8–0.6.5).
          */
-        fun loadRequest(url: String, live: Boolean = false): String =
-            if (live) """{"type":"LOAD","requestId":2,"autoplay":true,""" +
-                """"media":{"contentId":"$url","contentType":"video/mp4","streamType":"LIVE","metadata":{"metadataType":0}}}"""
+        fun loadRequest(url: String, image: Boolean = false): String =
+            if (image) """{"type":"LOAD","requestId":2,"autoplay":true,""" +
+                """"media":{"contentId":"$url","contentType":"image/png","streamType":"NONE","metadata":{"metadataType":4}}}"""
             else """{"type":"LOAD","requestId":2,"autoplay":true,"currentTime":0,""" +
                 """"media":{"contentId":"$url","contentType":"video/mp4","streamType":"BUFFERED",""" +
                 """"metadata":{"metadataType":0,"title":"TheatreSync"}}}"""
 
-        /** "PLAYING", "IDLE"… from a MEDIA_STATUS message, or null. */
         private fun idleReason(payload: String): String =
             Regex(""""idleReason"\s*:\s*"([A-Z]+)"""").find(payload)?.groupValues?.get(1)?.let { "($it)" } ?: ""
 

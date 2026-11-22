@@ -40,6 +40,7 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.ColumnScope
@@ -549,7 +550,8 @@ class MainActivity : ComponentActivity() {
                                         ytHeadphonesProblem = ui.youTubeHeadphonesProblem,
                                         onYtHeadphones = { on -> session.setYouTubeHeadphones(c.tvId, on) },
                                         // On this page the headphones player sits inside its card (not floating over the page).
-                                        ytPlayer = if (ytWeb != null && ytVideo != null && ytTv == c.tvId) { { YouTubeHeadphonesView(ytWeb, ytVideo) } } else null,
+                                        ytPlayer = if (ytWeb != null && ytVideo != null && ytTv == c.tvId) { { YouTubeHeadphonesView(ytWeb, ytVideo, compact = true) } } else null,
+                                        headphoneName = ui.headphoneName,
                                         onListenAlong = { url -> runCatching { startActivity(Intent(Intent.ACTION_VIEW, url.toUri())) } },
                                     )
                                 }
@@ -618,7 +620,7 @@ class MainActivity : ComponentActivity() {
                         // labelled, with ✕ to switch headphone sound off.
                         if (ytWeb != null && ytVideo != null && ytTv != null && target != "casting") {
                             Column(
-                                Modifier.align(Alignment.BottomEnd).padding(16.dp).width(240.dp)
+                                Modifier.align(Alignment.BottomEnd).padding(16.dp).width(IntrinsicSize.Max)
                                     .background(Q.Card, RoundedCornerShape(14.dp))
                                     .border(1.dp, Q.BorderAccent, RoundedCornerShape(14.dp))
                                     .padding(6.dp)
@@ -632,7 +634,7 @@ class MainActivity : ComponentActivity() {
                                             .padding(horizontal = 10.dp, vertical = 4.dp).testTag("yt_mini_close"),
                                     )
                                 }
-                                YouTubeHeadphonesView(ytWeb, ytVideo)
+                                YouTubeHeadphonesView(ytWeb, ytVideo, compact = true)
                             }
                         }
                     }
@@ -1745,6 +1747,7 @@ internal fun NowCastingScreen(
     onYtHeadphones: (Boolean) -> Unit = {},
     /** The YouTube headphones player, shown inside its card while sound in headphones is on. */
     ytPlayer: (@Composable () -> Unit)? = null,
+    headphoneName: String? = null,
     onListenAlong: (String) -> Unit = {},
 ) = Screen {
     val a = item.activity
@@ -1777,7 +1780,7 @@ internal fun NowCastingScreen(
                 Text(stringResource(R.string.yt_headphones), style = MaterialTheme.typography.titleLarge, color = Q.Text)
                 Hint(
                     when {
-                        !ytHeadphonesOn -> stringResource(R.string.yt_headphones_off)
+                        !ytHeadphonesOn -> stringResource(R.string.yt_headphones_off, item.tvName)
                         ytHeadphonesProblem != null -> stringResource(R.string.yt_headphones_problem)
                         ytHeadphonesDriftMs != null -> syncText(ytHeadphonesDriftMs)
                         else -> stringResource(R.string.yt_headphones_starting)
@@ -1790,7 +1793,21 @@ internal fun NowCastingScreen(
             )
         }
         if (ytHeadphonesOn) {
-            ytPlayer?.let { Spacer(Modifier.height(12.dp)); it() }
+            // The TV's sound, going to your headphones.
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "📺  " + item.tvName + "   →   🎧  " + (headphoneName ?: stringResource(R.string.yt_your_headphones)),
+                color = Q.Primary, style = MaterialTheme.typography.titleSmall, maxLines = 2,
+                modifier = Modifier.testTag("yt_route"),
+            )
+            ytPlayer?.let {
+                Spacer(Modifier.height(12.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    it()
+                    Spacer(Modifier.width(12.dp))
+                    Hint(stringResource(R.string.yt_sound_link_label))
+                }
+            }
             Hint(stringResource(R.string.yt_headphones_note))
         }
     }

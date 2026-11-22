@@ -5,13 +5,16 @@
 so text is rendered at the phone's own resolution and laid out for a tall screen. The logo is
 `res/drawable-nodpi/quantari_wordmark.webp`: `card_wordmark.png` rebuilt at 2× (1904×930) by `upscale_wordmark.py` (letters re-drawn crisp, swooshes enlarged smoothly; run it, then downsample the 3× result to 1904×930), so the logo stays sharp on any phone or tablet. Screenshot tests: `opening1`, `opening_largeFont`, `opening_tablet`.
 
-**TV (Settings → Experimental → Signature intro):** `android/app/src/main/res/raw/signature_intro.mp4`
-(1920×1080, 30 fps, H.264, video only): the 6.6 s intro plus 2 s of black, sent to the Chromecast **marked as live**
-(`streamType LIVE`), so its player shows no progress bar or time (the owner saw "0:04" and a bar with the plain
-video in 0.5.8). The black tail covers the hand-over to the film.
+**TV (intro and screensaver):** `android/app/src/main/res/raw/signature_card.png`, a 1920×1080 still of
+`card.html` at 5.0 s (fullest glow). The Chromecast shows pictures full-screen with no player bar, "LIVE" label or time,
+and leaves them exactly as they are: the intro shows it for 4.5 s before the film, the screensaver keeps it up.
 
-History: 0.5.9 tried an animated WebP (the Default Media Receiver doesn't animate it: black still frame) and 0.6.0 a
-live HLS stream (nothing shown on the owner's TV). Both are gone; MP4 is the format this TV is known to play.
+History: 0.5.8 video (progress bar and time), 0.5.9 animated WebP (not animated: black), 0.6.0 live HLS (nothing),
+0.6.1–0.6.5 MP4 marked live (bar with "LIVE") and the HLS screensaver (scenes faded to black and replayed). A moving
+glow with no player UI needs a custom Cast receiver (one-time Google Cast developer registration).
+
+Re-make the still: render `card.html` at 1920×1080 with every animation paused at 5000 ms (Playwright, as
+`render.js` does per frame) and save the screenshot as PNG.
 
 Re-make from `card.html` (needs `card_wordmark_soft.png` next to it):
 

@@ -1,6 +1,14 @@
 # Project status
 
-_Last updated: 2026-11-22. 0.6.5 (published to the in-app updater): no more black square over the Now casting page; YouTube headphones player inside its card_
+_Last updated: 2026-11-22. 0.6.6 (published to the in-app updater): TV intro and screensaver are a still title card (no progress bar, no "LIVE", no blackouts or restarts); YouTube headphones reads as the TV's sound in your headphones_
+
+## 0.6.6: owner feedback on the TV card and YouTube headphones
+
+| Report | Cause | Fix | Verified |
+|---|---|---|---|
+| Progress bar with "LIVE" on the TV; after ~31 s the screen blanks and the video starts again; wants the logo and words static, continuous | The Chromecast's own player draws a bar (and "LIVE") over any video, and the screensaver scenes each faded to black and replayed | Intro **and** screensaver are now the Signature **title card as a still picture** (1920×1080 PNG of the intro at its fullest glow). The TV shows pictures full-screen with no player bar, "LIVE" or time, and it just stays: no fade, no replay. Intro shows for 4.5 s before the film / YouTube / mirroring. The glow doesn't move in this mode (a moving glow with no bar needs our own Cast receiver, which needs a one-time Google Cast developer registration by the owner). Old video/stream files removed | `CastIntroTest`; needs a look on the TV |
+| YouTube in headphones should feel like the TV's sound in the headphones, not the phone playing the video | The phone player was big and labelled as the phone playing | Card renamed **TV sound in your headphones**, shows **📺 TV → 🎧 headphones** and the sync; the YouTube player is a small **sound link** tile (YouTube requires it visible and at least 200×200 pixels); the corner chip on other pages is labelled 🎧 TV sound | Screenshot `casting4_youtubeHeadphones` |
+
 
 ## 0.6.5: "remove the black square void in the corner"
 

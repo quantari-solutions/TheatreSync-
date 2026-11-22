@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -123,8 +125,14 @@ fun rememberYouTubeHeadphonesWeb(key: String, videoId: String, target: () -> You
  * clipped or transformed.
  */
 @Composable
-fun YouTubeHeadphonesView(web: WebView, videoId: String, modifier: Modifier = Modifier) {
-    Box(modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color.Black)) {
+fun YouTubeHeadphonesView(web: WebView, videoId: String, modifier: Modifier = Modifier, compact: Boolean = false) {
+    // Compact: a small "sound link" tile. YouTube requires its player to stay visible and at least
+    // 200 × 200 pixels, so it's never smaller than that on any phone.
+    val size = if (compact) {
+        val minDp = with(androidx.compose.ui.platform.LocalDensity.current) { 200.toDp() }
+        Modifier.height(maxOf(90.dp, minDp)).aspectRatio(16f / 9f)
+    } else Modifier.fillMaxWidth().aspectRatio(16f / 9f)
+    Box(modifier.then(size).background(Color.Black)) {
         RemoteImage("https://i.ytimg.com/vi/$videoId/hqdefault.jpg", null, Modifier.fillMaxSize()) {}
         AndroidView(
             factory = { (web.parent as? ViewGroup)?.removeView(web); web },

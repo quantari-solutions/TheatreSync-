@@ -430,7 +430,7 @@ class MovieSession(private val app: Application) {
             val isOptimistic = it === optimistic
             (a.appId == CastStatus.APP_DEFAULT_MEDIA_RECEIVER && (server != null || screensaverServer != null)) ||
                 // Any phone's TheatreSync screensaver isn't "something playing".
-                (a.contentId?.endsWith("/live.m3u8") == true) ||
+                (a.contentId?.endsWith("/live.m3u8") == true || a.contentId?.endsWith("/intro?screensaver") == true) ||
                 (a.sessionId != null && a.sessionId in stoppedSessions) ||
                 // Connected but nothing playing (e.g. Google's player opened just by connecting,
                 // or YouTube left open on another TV): the TV row says "Connected" instead.
@@ -556,10 +556,10 @@ class MovieSession(private val app: Application) {
             stateProvider = { null },
             helloProvider = { Payload.Hello(Build.MODEL.take(64).ifBlank { "Android" }, Platform.ANDROID, Role.HOST, BuildConfig.VERSION_NAME, listOf(1)) },
         )
-        srv.intro = RawResourceSource(app, R.raw.signature_intro, "TheatreSync")
+        srv.intro = signatureCard()
         try {
             val port = srv.start()
-            CastIntro({ TvWatchers.openTls(tv.address, tv.port) }).play("http://$ip:$port/intro", liveMs = INTRO_MS)
+            CastIntro({ TvWatchers.openTls(tv.address, tv.port) }).play("http://$ip:$port/intro", imageMs = INTRO_MS)
         } catch (e: Exception) {
             CrashReporter.handled(app, "signature intro before cast", e) // never block the cast itself
         } finally {
@@ -814,29 +814,25 @@ class MovieSession(private val app: Application) {
             stateProvider = { null },
             helloProvider = { Payload.Hello(Build.MODEL.take(64).ifBlank { "Android" }, Platform.ANDROID, Role.HOST, BuildConfig.VERSION_NAME, listOf(1)) },
         )
-        srv.live = com.theatresync.core.EndlessHls(
-            SCREENSAVER_SCENES.size,
-            scene = { i -> app.resources.openRawResource(SCREENSAVER_SCENES[i]).use { it.readBytes() } },
-            segmentSec = 15,
-            clockMs = { SystemClock.elapsedRealtime() },
-        )
+        // The Signature title card as a still picture: the TV shows pictures full-screen with no player bar,
+        // "LIVE" label or time, and it stays exactly as it is (no fade to black, no restart like a video).
+        srv.intro = signatureCard()
         val port = try { srv.start() } catch (_: Exception) { return }
         screensaverServer = srv
-        val url = "http://$ip:$port/live.m3u8"
-        val info = MediaInfo.Builder(url).setContentUrl(url)
-            .setStreamType(MediaInfo.STREAM_TYPE_LIVE).setContentType("application/x-mpegURL")
-            .setHlsSegmentFormat(com.google.android.gms.cast.HlsSegmentFormat.TS)
-            .setHlsVideoSegmentFormat(com.google.android.gms.cast.HlsVideoSegmentFormat.MPEG2_TS)
-            .setMetadata(MediaMetadata(MediaMetadata.MEDIA_TYPE_GENERIC).apply { putString(MediaMetadata.KEY_TITLE, "TheatreSync") })
-            .build()
+        val url = "http://$ip:$port/intro?screensaver"
+        val info = signatureCardInfo(url)
         client.load(MediaLoadRequestData.Builder().setMediaInfo(info).setAutoplay(true).build())
             .setResultCallback { r -> if (!r.status.isSuccess) stopScreensaver() }
     }
 
-    private val SCREENSAVER_SCENES = listOf(
-        R.raw.ss01, R.raw.ss02, R.raw.ss03, R.raw.ss04, R.raw.ss05, R.raw.ss06,
-        R.raw.ss07, R.raw.ss08, R.raw.ss09, R.raw.ss10, R.raw.ss11, R.raw.ss12,
-    )
+    /** The Signature title card (Quantari logo, "Presented with TheatreSync"), 1920×1080 PNG. */
+    private fun signatureCard() = RawResourceSource(app, R.raw.signature_card, "TheatreSync", "image/png")
+
+    /** A picture for the TV: full-screen, no controls, no title, no progress bar. */
+    private fun signatureCardInfo(url: String) = MediaInfo.Builder(url).setContentUrl(url)
+        .setStreamType(MediaInfo.STREAM_TYPE_NONE).setContentType("image/png")
+        .setMetadata(MediaMetadata(MediaMetadata.MEDIA_TYPE_PHOTO))
+        .build()
 
     private fun stopScreensaver() {
         screensaverServer?.stop()
@@ -1098,16 +1094,12 @@ class MovieSession(private val app: Application) {
             client.load(movieRequest).setResultCallback { result -> if (!result.status.isSuccess) say(R.string.msg_tv_cant_play) }
         }
         if (_ui.value.signatureIntro && resumeAt == 0L) {
-            // Signature intro first: the intro video (the same file the TV has always played), marked as live
-            // so the TV shows no progress bar or time over it (a normal clip gets them and looks like an
-            // advert), with 2 s of black at the end so the film follows with no flash. Then the movie.
-            srv.intro = RawResourceSource(app, R.raw.signature_intro, "TheatreSync")
+            // Signature intro first: the title card as a still picture (no player bar, "LIVE" or time, which
+            // made the video versions look like an advert), for a few seconds. Then the movie.
+            srv.intro = signatureCard()
             val introAt = "http://$ip:$port/intro"
             introUrl = introAt
-            val introInfo = MediaInfo.Builder(introAt).setContentUrl(introAt)
-                .setStreamType(MediaInfo.STREAM_TYPE_LIVE).setContentType("video/mp4")
-                .setMetadata(MediaMetadata(MediaMetadata.MEDIA_TYPE_GENERIC))
-                .build()
+            val introInfo = signatureCardInfo(introAt)
             client.load(MediaLoadRequestData.Builder().setMediaInfo(introInfo).setAutoplay(true).build()).setResultCallback { r ->
                 if (r.status.isSuccess) main.postDelayed({ guard("movie after intro") { loadMovie() } }, INTRO_MS + 400)
                 else {
@@ -1628,8 +1620,8 @@ class MovieSession(private val app: Application) {
         private const val TICK_MS = 200L
         private const val KEY_MOVIE_URI = "movieUri"
         private const val TV_START_TIMEOUT_MS = 20_000L
-        /** Length of the Signature Intro itself (res/raw/signature_intro.mp4 adds 2 s of black after it). */
-        private const val INTRO_MS = 6_600L
+        /** How long the Signature title card stays on the TV before the movie / YouTube / mirroring. */
+        private const val INTRO_MS = 4_500L
         private const val SUBTITLE_TRACK = 1L
         private const val KEY_WE_MUTED = "weMutedTv"
     }

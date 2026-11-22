@@ -1,5 +1,7 @@
 package com.theatresync.app
 
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -171,10 +173,10 @@ class ScreenshotTest {
     /** Sound in headphones on: the phone player sits inside its card (a stand-in here; WebViews don't render in tests). */
     @Test fun casting4_youtubeHeadphones() = shot {
         NowCastingScreen(
-            youtube, {}, {}, {}, ytHeadphonesOn = true, ytHeadphonesDriftMs = 12,
+            youtube, {}, {}, {}, ytHeadphonesOn = true, ytHeadphonesDriftMs = 12, headphoneName = "MOMENTUM 4",
             ytPlayer = {
                 androidx.compose.foundation.layout.Box(
-                    androidx.compose.ui.Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(androidx.compose.ui.graphics.Color(0xFF1B1B22)),
+                    androidx.compose.ui.Modifier.size(160.dp, 90.dp).background(androidx.compose.ui.graphics.Color(0xFF1B1B22)),
                 )
             },
         )

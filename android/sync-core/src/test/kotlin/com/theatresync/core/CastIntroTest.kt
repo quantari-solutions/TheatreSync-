@@ -14,11 +14,12 @@ class CastIntroTest {
         assertTrue(json.contains("\"autoplay\":true"))
     }
 
-    @Test fun introAsALiveStreamHasNoProgressBarOrTitle() {
-        val r = CastIntro.loadRequest("http://192.168.1.82:40000/intro", live = true)
+    @Test fun introAsAPictureHasNoPlayerBarOrTitle() {
+        val r = CastIntro.loadRequest("http://192.168.1.82:40000/intro", image = true)
         val json = kotlinx.serialization.json.Json.parseToJsonElement(r).toString()
-        assertTrue(json.contains("\"streamType\":\"LIVE\""))
-        assertTrue(json.contains("\"contentType\":\"video/mp4\""))
+        assertTrue(json.contains("\"contentType\":\"image/png\""))
+        assertTrue(json.contains("\"streamType\":\"NONE\""))
+        assertTrue(json.contains("\"metadataType\":4"))
         assertTrue(!json.contains("title"))
     }
 

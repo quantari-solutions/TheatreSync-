@@ -1,8 +1,8 @@
 {
-  "versionCode": 30,
-  "versionName": "0.6.5",
-  "apkUrl": "https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases/TheatreSync-0.6.5.apk",
-  "sha256": "465333c85a9b0750ee3ff335faa82aeb3569492ca90846c2248aa1e407711cb8",
-  "sizeBytes": 26971862,
-  "notes": "No more black square in the corner: with YouTube sound in your headphones, the player now sits inside its card on Now casting (and as a small framed player with \u2715 on other pages), showing the video's picture while it loads."
+  "versionCode": 31,
+  "versionName": "0.6.6",
+  "apkUrl": "https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases/TheatreSync-0.6.6.apk",
+  "sha256": "c4ccb456b1129b18bdac7ac11ee3ff3a45a1df8a945721f785e74b1ed81d2c52",
+  "sizeBytes": 19038482,
+  "notes": "The TV intro and screensaver are now a still Quantari title card: no progress bar, no LIVE label, no blacking out or restarting. YouTube in your headphones now shows as the TV's sound going to your headphones."
 }
