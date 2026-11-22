@@ -19,21 +19,21 @@ struct RootView: View {
     @State private var opening = true
 
     var body: some View {
-        ZStack {
-            NavigationStack {
-                if session.status == .idle {
-                    HomeView(cast: cast, power: power, updates: updates, session: session, browser: browser)
-                } else {
-                    ListeningView(session: session)
-                }
-            }
+        // The opening alone first (nothing drawn over or under it), then the app. Once per fresh start.
+        Group {
             if opening {
                 OpeningView { opening = false }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .zIndex(1)
+            } else {
+                NavigationStack {
+                    if session.status == .idle {
+                        HomeView(cast: cast, power: power, updates: updates, session: session, browser: browser)
+                    } else {
+                        ListeningView(session: session)
+                    }
+                }
             }
         }
-        .onAppear { FileHandle.standardError.write(Data("Root: opening=\(opening)\n".utf8)) }
+        .background(Color.black.ignoresSafeArea())
         .preferredColorScheme(.dark)
         .tint(Q.primary)
     }
