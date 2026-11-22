@@ -208,6 +208,13 @@ class MainActivity : ComponentActivity() {
             if (on) emulation.setPreferredService(this, android.content.ComponentName(this, TapInService::class.java))
             else emulation.unsetPreferredService(this)
         }
+        // Two phones back to back both try to read each other; while sharing, this phone only answers
+        // (acts as the tag), so the guest's phone reads the page instead of this one reading theirs
+        // (the "choose TheatreSync" prompt with nothing on the other phone). Android 15+.
+        if (Build.VERSION.SDK_INT >= 35) runCatching {
+            if (on) adapter.setDiscoveryTechnology(this, android.nfc.NfcAdapter.FLAG_READER_DISABLE, android.nfc.NfcAdapter.FLAG_LISTEN_KEEP)
+            else adapter.resetDiscoveryTechnology(this)
+        }
     }
 
     override fun onPause() {
@@ -299,7 +306,7 @@ class MainActivity : ComponentActivity() {
                             onDismiss = { audioSheet.value = false },
                         )
                     }
-                    if (nfcSharing.value && listenUrl != null) NfcShareDialog(onDone = { setNfcSharing(false, null) })
+                    if (nfcSharing.value) NfcShareDialog(onDone = { setNfcSharing(false, null) })
                     if (smartTvInfo.value) {
                         androidx.compose.material3.AlertDialog(
                             onDismissRequest = { smartTvInfo.value = false },
@@ -554,6 +561,8 @@ class MainActivity : ComponentActivity() {
                                         // On this page the headphones player sits inside its card (not floating over the page).
                                         ytPlayer = if (ytWeb != null && ytVideo != null && ytTv == c.tvId) { { YouTubeHeadphonesView(ytWeb, ytVideo, compact = true) } } else null,
                                         headphoneName = ui.headphoneName,
+                                        ytTapInUrl = if (c.activity.kind == CastActivity.Kind.YOUTUBE) remember(c.tvId) { session.youTubeTapInUrl(c.tvId) } else null,
+                                        onShareNfc = { url -> setNfcSharing(true, url) },
                                         onListenAlong = { url -> runCatching { startActivity(Intent(Intent.ACTION_VIEW, url.toUri())) } },
                                     )
                                 }
@@ -615,6 +624,7 @@ class MainActivity : ComponentActivity() {
                                     onResync = session::resetHeadphoneSync,
                                     onAudio = { refreshAudio(); audioSheet.value = true },
                                     onRemote = { page = Page.REMOTE },
+                                    onShareNfc = { ui.joinAddress?.let { setNfcSharing(true, "http://$it/listen") } },
                                 )
                             }
                         }
@@ -1545,6 +1555,7 @@ internal fun PlayingScreen(
     onRemote: () -> Unit = {},
     onSubtitlesOn: (Boolean) -> Unit = {},
     onResync: () -> Unit = {},
+    onShareNfc: () -> Unit = {},
 ) = Screen {
     TopBar(stringResource(R.string.movie_player), onBack) { PlayerActions(onAudio, onRemote, onPip) }
     Eyebrow(
@@ -1594,20 +1605,33 @@ internal fun PlayingScreen(
                 Text(ui.friends.toString(), color = if (ui.friends > 0) Color.Black else Q.TextFaint, style = MaterialTheme.typography.titleMedium)
             }
         }
-        Hint(stringResource(R.string.friends_hint))
-        ui.joinAddress?.let {
-            Text(
-                stringResource(R.string.friends_address, it),
-                Modifier.clip(RoundedCornerShape(10.dp)).background(Q.Background).border(BorderStroke(1.dp, Q.BorderAccent), RoundedCornerShape(10.dp)).padding(horizontal = 12.dp, vertical = 8.dp),
-                fontFamily = FontFamily.Monospace, color = Q.PrimaryLight,
-            )
-        }
+        ui.joinAddress?.let { TapInCard("http://$it/listen", onShareNfc, stringResource(R.string.friends_hint)) }
     }
 
 
     HeadphoneOptionsButton(onHeadphoneOptions)
     GhostButton("■  " + stringResource(R.string.stop_movie), onStop, Modifier.fillMaxWidth(), height = 52.dp, description = stringResource(R.string.stop_movie))
     Footer()
+}
+
+/** TapIn, right on the movie screen: guests scan the QR code with their camera (no app) or tap NFC. */
+@Composable
+internal fun ColumnScope.TapInCard(url: String, onShareNfc: () -> Unit, footer: String? = null) {
+    Hint(stringResource(R.string.guests_hint))
+    val qr = remember(url) { qrBitmap(url, 512) }
+    if (qr != null) {
+        androidx.compose.foundation.Image(
+            qr, contentDescription = stringResource(R.string.tapin_qr_description),
+            modifier = Modifier.align(Alignment.CenterHorizontally).size(200.dp).clip(RoundedCornerShape(16.dp)).background(Color.White).padding(10.dp).testTag("tapin_qr_inline"),
+        )
+    }
+    Text(
+        url,
+        Modifier.align(Alignment.CenterHorizontally).clip(RoundedCornerShape(10.dp)).background(Q.Background).border(BorderStroke(1.dp, Q.BorderAccent), RoundedCornerShape(10.dp)).padding(horizontal = 12.dp, vertical = 8.dp),
+        fontFamily = FontFamily.Monospace, color = Q.PrimaryLight,
+    )
+    GoldButton(stringResource(R.string.share_nfc), onShareNfc, Modifier.fillMaxWidth().testTag("share_nfc_inline"), height = 52.dp)
+    footer?.let { Hint(it) }
 }
 
 @Composable
@@ -1760,6 +1784,9 @@ internal fun NowCastingScreen(
     onYtHeadphones: (Boolean) -> Unit = {},
     /** The YouTube headphones player, shown inside its card while sound in headphones is on. */
     ytPlayer: (@Composable () -> Unit)? = null,
+    /** TapIn for YouTube: guests' listening page (QR / NFC), or null. */
+    ytTapInUrl: String? = null,
+    onShareNfc: (String) -> Unit = {},
     headphoneName: String? = null,
     onListenAlong: (String) -> Unit = {},
 ) = Screen {
@@ -1823,6 +1850,12 @@ internal fun NowCastingScreen(
             }
             Hint(stringResource(R.string.yt_headphones_note))
         }
+    }
+
+    // TapIn for YouTube: guests hear the TV's YouTube in their own headphones (no app), whoever cast it.
+    if (a.kind == CastActivity.Kind.YOUTUBE && ytTapInUrl != null) QCard {
+        Text(stringResource(R.string.guests_title), style = MaterialTheme.typography.titleLarge, color = Q.Text)
+        TapInCard(ytTapInUrl, { onShareNfc(ytTapInUrl) }, stringResource(R.string.yt_tapin_note))
     }
 
     // A movie another phone is casting with TheatreSync: listen along in this phone's headphones (TapIn page).
@@ -2897,6 +2930,7 @@ private fun QrDialog(url: String, onDone: () -> Unit) {
                     )
                 }
                 Text(stringResource(R.string.qr_steps), color = Q.TextMuted)
+                Text(url, color = Q.PrimaryLight, fontFamily = FontFamily.Monospace)
             }
         },
         confirmButton = { GoldButton(stringResource(R.string.done), onDone, height = 48.dp) },

@@ -1,6 +1,16 @@
 # Project status
 
-_Last updated: 2026-11-22. iOS 0.7.0: full TheatreSync part 1 on iPhone / iPad (compiled with Xcode and run on simulated iPhone and iPad on GitHub). Android 0.6.9_
+_Last updated: 2026-11-22. Android 0.7.0: TapIn fixed and on the movie screen, TapIn for YouTube (any phone's cast). iOS 0.7.0: full TheatreSync part 1_
+
+## Android 0.7.0: TapIn
+
+| Report | Cause | Fix | Verified |
+|---|---|---|---|
+| Can't see TapIn / the QR code sometimes | TapIn lived only in the Audio sheet and only during a movie from this phone; with YouTube or before a movie it just said "Start a movie" | The movie screen's guests card now shows the **QR code**, the address (typeable) and **Share by NFC** directly. The Audio sheet explains when TapIn is available. The QR dialog shows the address too | Screenshot `tapInCard` (QR renders) |
+| NFC: "choose TheatreSync" pops up on my phone, nothing on the other | Two phones back to back both read each other; the host read the guest instead of being read | While sharing, the host stops reading (Android 15 `setDiscoveryTechnology`: reader off, card emulation kept), so the guest's phone reads the page | Compiles; needs two phones |
+| YouTube cast from a friend's phone: no TapIn on Now casting | TapIn shared the phone's own movie sound; YouTube's sound comes from the TV | **TapIn for YouTube**: Now casting (YouTube, whoever cast it) shows a TapIn QR / NFC. The guest's browser (no app) plays the same video with YouTube's player, kept in step with the TV by this phone's `/yt/state` (same method as TV sound in headphones) | `YouTubeTapInTest` (page + state served); needs phones |
+| "Keeps crashing" | No crash report reached GitHub; not reproduced | — (the crash reporter uploads the next one; if it happens again, please keep GitHub signed in under Settings → Crash reports) | — |
+
 
 ## iOS 0.7.0: "fix up the iOS app with the latest updates… setting → update for iOS as well"
 

@@ -1636,7 +1636,7 @@ class MovieSession(private val app: Application) {
     // ---------------------------------------------------------------- YouTube sound in the headphones
 
     private data class YtAnchor(val activity: CastActivity, val atMs: Long)
-    private val ytAnchors = HashMap<String, YtAnchor>()
+    private val ytAnchors = java.util.concurrent.ConcurrentHashMap<String, YtAnchor>() // also read by the TapIn server
 
     /** Remembers when each TV's YouTube status arrived, so its position can be followed between updates. */
     private fun noteYouTubePositions(list: List<TvWatchers.NowCasting>) {
@@ -1658,6 +1658,32 @@ class MovieSession(private val app: Application) {
         val playing = a.playerState == "PLAYING"
         val pos = (a.currentTimeSec ?: return null) + if (playing) (SystemClock.elapsedRealtime() - at) / 1000.0 else 0.0
         return YouTubeHeadphones.Target(id, pos, playing)
+    }
+
+    // ------------------------------------------------------------- TapIn for YouTube
+
+    @Volatile private var ytTapInTv: String? = null
+    private var ytTapInServer: MediaServer? = null
+
+    /**
+     * TapIn for YouTube on [tvId] (cast from any phone): guests open this page (QR / NFC) and hear the
+     * TV's YouTube in their own headphones, kept in step by their browser. Starts a small server on first
+     * use; null without Wi-Fi.
+     */
+    fun youTubeTapInUrl(tvId: String): String? {
+        ytTapInTv = tvId
+        val ip = NetworkInfo.localIpv4(app) ?: return null
+        val srv = ytTapInServer ?: MediaServer(
+            senderId = deviceId,
+            clockMs = { SystemClock.elapsedRealtime() },
+            stateProvider = { null },
+            helloProvider = { Payload.Hello(Build.MODEL.take(64).ifBlank { "Android" }, Platform.ANDROID, Role.HOST, BuildConfig.VERSION_NAME, listOf(1)) },
+        ).also { s ->
+            s.youTube = { ytTapInTv?.let { id -> youTubeTarget(id)?.let { t -> com.theatresync.core.YouTubeTapIn.State(t.videoId, t.positionSec, t.playing) } } }
+            runCatching { s.start() }.onFailure { return null }
+            ytTapInServer = s
+        }
+        return "http://$ip:${srv.port}/yt"
     }
 
     /** Headphones on for YouTube: the TV goes quiet and the phone plays the same video's sound in step. */

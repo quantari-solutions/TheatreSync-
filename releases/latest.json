@@ -1,8 +1,8 @@
 {
-  "versionCode": 34,
-  "versionName": "0.6.9",
-  "apkUrl": "https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases/TheatreSync-0.6.9.apk",
-  "sha256": "701ca36319c0c4602b8d78d0e482cc417af4725d8a51ab18089989e29e0a76ab",
-  "sizeBytes": 21180247,
-  "notes": "The TV title card is alive again, with no progress bar: the glow breathes and drifts, a shine sweeps the Quantari swooshes, a light runs along the line and particles float around, in an endless loop."
+  "versionCode": 35,
+  "versionName": "0.7.0",
+  "apkUrl": "https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases/TheatreSync-0.7.0.apk",
+  "sha256": "0dc816a4caa6742c62e63864df09d07b53161b046f09ac8dae551c3494550f8d",
+  "sizeBytes": 21191195,
+  "notes": "TapIn fixed: the QR code and Share by NFC are now right on the movie screen, and NFC works phone to phone. New: TapIn for YouTube, so guests hear the TV's YouTube in their own headphones, no app needed, whoever cast it."
 }
