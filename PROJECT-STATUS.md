@@ -1,6 +1,13 @@
 # Project status
 
-_Last updated: 2026-11-22. 0.6.3 (published to the in-app updater): the phone opening plays each time TheatreSync is opened again, not only when Android rebuilds the screen_
+_Last updated: 2026-11-22. 0.6.4 (published to the in-app updater): opening and refresh spinner play in full even with Android animations off; proven by an emulator simulation in CI_
+
+## 0.6.4: opening still not showing on 0.6.3 → simulated
+
+| Report | Cause | Fix | Verified |
+|---|---|---|---|
+| Opening still not showing (owner did everything) | Most likely the phone's animation setting: with battery saver, "Remove animations" or the animation scale at 0, Android makes animations finish instantly, so the opening ended in one frame and vanished. The same explains the refresh arrow not completing its turns. The CI emulator also runs with animations off, which is why nothing caught it | Opening and refresh spinner run on the screen's own frame clock: always the full 6.6 s / two turns, whatever the animation setting. The app logs "Opening: shown / finished after N ms" | **`scripts/opening-sim.sh` in the CI emulator job**: installs the real app and, with animations **off** and **on**, opens it from the icon, comes back after 36 s, a 5 s quick switch, reopening after 36 s, phone idle then woken, and after Android closed it; fails unless the opening shows for ≥ 6 s exactly when it should |
+
 
 ## 0.6.3: "still not showing up when I open the app" (on 0.6.2)
 

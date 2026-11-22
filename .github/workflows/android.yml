@@ -118,6 +118,8 @@ jobs:
             adb shell pidof com.theatresync.app || (adb logcat -d -s AndroidRuntime:E; exit 1)
             if adb logcat -d -s AndroidRuntime:E | grep -q "FATAL EXCEPTION"; then adb logcat -d -s AndroidRuntime:E; exit 1; fi
             echo "Release build launched without crashing"
+            # The owner's way of opening the app, simulated: is the Quantari opening shown, and for its full length?
+            ../scripts/opening-sim.sh
             # Monkey: thousands of random taps, swipes and rotations on the optimised app.
             # Stays inside TheatreSync (-p), no system keys. Fails on any TheatreSync crash or ANR, or if it
             # stops early. A freeze of another app (e.g. the keyboard on the slow emulator) is logged, not fatal.
