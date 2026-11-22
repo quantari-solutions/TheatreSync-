@@ -2,6 +2,13 @@
 
 _Last updated: 2026-11-22. Android 0.7.0: TapIn fixed and on the movie screen, TapIn for YouTube (any phone's cast). iOS 0.7.0: full TheatreSync part 1_
 
+## Also in 0.7.0 (owner, 2026-11-22 night)
+
+| Request | Done | Verified |
+|---|---|---|
+| Seek bar jumps back to the old spot while the TV buffers | The bar stays where you let go with "Loading…" until the TV reaches it (or 15 s) | Compiles; needs the TV |
+| Title card / screensaver at 60 fps; particles like gentle, very slow bonfire sparks | `loop.html`: warm embers rise slowly, sway, flicker and fade (cooling gold → orange); 12 s seamless loop; animated picture 1280×720 at 60 fps (8.7 MB), Android and iOS | Preview video sent; needs the TV |
+
 ## Android 0.7.0: TapIn
 
 | Report | Cause | Fix | Verified |

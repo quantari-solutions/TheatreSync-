@@ -2,7 +2,7 @@
   "versionCode": 35,
   "versionName": "0.7.0",
   "apkUrl": "https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases/TheatreSync-0.7.0.apk",
-  "sha256": "0dc816a4caa6742c62e63864df09d07b53161b046f09ac8dae551c3494550f8d",
-  "sizeBytes": 21191195,
-  "notes": "TapIn fixed: the QR code and Share by NFC are now right on the movie screen, and NFC works phone to phone. New: TapIn for YouTube, so guests hear the TV's YouTube in their own headphones, no app needed, whoever cast it."
+  "sha256": "b9b61c2b19d153086e85db52cc80fc43c927dc8c00709d09f62567bc0c3829c8",
+  "sizeBytes": 26864283,
+  "notes": "TapIn fixed and on the movie screen; TapIn for YouTube (whoever cast it); the seek bar stays where you drag it; the TV title card at 60 fps with gentle bonfire embers."
 }
