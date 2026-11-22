@@ -1,8 +1,8 @@
 {
-  "versionCode": 31,
-  "versionName": "0.6.6",
-  "apkUrl": "https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases/TheatreSync-0.6.6.apk",
-  "sha256": "c4ccb456b1129b18bdac7ac11ee3ff3a45a1df8a945721f785e74b1ed81d2c52",
-  "sizeBytes": 19038482,
-  "notes": "The TV intro and screensaver are now a still Quantari title card: no progress bar, no LIVE label, no blacking out or restarting. YouTube in your headphones now shows as the TV's sound going to your headphones."
+  "versionCode": 32,
+  "versionName": "0.6.7",
+  "apkUrl": "https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases/TheatreSync-0.6.7.apk",
+  "sha256": "e9f882cb180209e822992445deba9382bd67381deb149fa1c5462619fde5c9c8",
+  "sizeBytes": 19038070,
+  "notes": "The TV intro and screensaver are now a still Quantari title card: no progress bar, no LIVE label, no blacking out or restarting. The phone's opening plays only when the app starts fresh, not when you come back to it. YouTube in your headphones now shows as the TV's sound going to your headphones."
 }

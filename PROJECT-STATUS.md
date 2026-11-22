@@ -1,6 +1,13 @@
 # Project status
 
-_Last updated: 2026-11-22. 0.6.6 (published to the in-app updater): TV intro and screensaver are a still title card (no progress bar, no "LIVE", no blackouts or restarts); YouTube headphones reads as the TV's sound in your headphones_
+_Last updated: 2026-11-22. 0.6.7 (published to the in-app updater): phone opening only on a fresh start; TV intro and screensaver are a still title card (no progress bar, no "LIVE", no blackouts or restarts); YouTube headphones reads as the TV's sound in your headphones_
+
+## 0.6.7: phone opening only on a fresh start
+
+| Request | Done | Verified |
+|---|---|---|
+| "The intro when we open the app needs to be displayed only the first time. If the app is running in the background and I return it shouldn't show up" | `OpeningGate`: plays only when TheatreSync starts fresh (after it was closed / swiped away). Never when returning while it runs in the background (home screen, recent apps, after idle), from the notification or a share, or when Android rebuilds the screen of a background app. Still plays in full whatever the animation setting | `OpeningGateTest` (4); emulator simulation updated: fresh start shows it; returns after 36 s, quick switch, idle, background-killed reopen don't |
+
 
 ## 0.6.6: owner feedback on the TV card and YouTube headphones
 
