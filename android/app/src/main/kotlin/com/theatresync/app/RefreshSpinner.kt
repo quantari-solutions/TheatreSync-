@@ -1,8 +1,5 @@
 package com.theatresync.app
 
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -38,11 +35,18 @@ import kotlin.math.sin
 @Composable
 fun BoxScope.RefreshSpinner(state: PullToRefreshState, refreshing: Boolean, onSpun: () -> Unit) {
     val done = rememberUpdatedState(onSpun)
-    val turn = remember { Animatable(0f) }
+    // Own frame clock (not Android's animation settings, which can make animations end instantly):
+    // always the full turns.
+    val turn = remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
     LaunchedEffect(refreshing) {
         if (!refreshing) return@LaunchedEffect
-        turn.snapTo(0f)
-        turn.animateTo(360f * TURNS, tween(TURN_MS * TURNS, easing = LinearEasing))
+        val total = 360f * TURNS
+        turn.floatValue = 0f
+        val start = androidx.compose.runtime.withFrameNanos { it }
+        while (turn.floatValue < total) {
+            val ms = (androidx.compose.runtime.withFrameNanos { it } - start) / 1_000_000f
+            turn.floatValue = (ms / (TURN_MS * TURNS) * total).coerceAtMost(total)
+        }
         done.value()
     }
     val pull = state.distanceFraction.coerceIn(0f, 1.4f)
@@ -52,7 +56,7 @@ fun BoxScope.RefreshSpinner(state: PullToRefreshState, refreshing: Boolean, onSp
         Modifier.align(Alignment.TopCenter).offset(y = 72.dp * drop - 40.dp).size(40.dp)
             .graphicsLayer {
                 alpha = if (refreshing) 1f else pull.coerceAtMost(1f)
-                rotationZ = if (refreshing) turn.value else pull * 270f
+                rotationZ = if (refreshing) turn.floatValue else pull * 270f
             }
             .background(Q.Card, CircleShape).border(1.dp, Q.BorderAccent, CircleShape)
             .testTag("refreshSpinner"),

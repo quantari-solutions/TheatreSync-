@@ -1,11 +1,9 @@
 package com.theatresync.app
 
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -26,6 +24,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -62,13 +63,16 @@ import androidx.compose.ui.unit.min
  */
 @Composable
 fun OpeningAnimation(frameMs: Int? = null, onDone: () -> Unit) {
-    val clock = remember { Animatable((frameMs ?: 0).toFloat()) }
+    // Driven by the screen's own frame clock, not Android's animation settings: with "Remove animations",
+    // battery saver or the animation scale at 0, a normal animation finishes instantly and the opening
+    // vanished before it could be seen. It always plays its full 6.6 s.
+    var t by remember { androidx.compose.runtime.mutableFloatStateOf((frameMs ?: 0).toFloat()) }
     LaunchedEffect(frameMs) {
         if (frameMs != null) return@LaunchedEffect
-        clock.animateTo(TOTAL_MS.toFloat(), tween(TOTAL_MS, easing = LinearEasing))
+        val start = withFrameNanos { it }
+        while (t < TOTAL_MS) t = (withFrameNanos { it } - start) / 1_000_000f
         onDone()
     }
-    val t = clock.value
 
     // Timeline (ms). Slow on purpose: the glow builds, blooms around the title, swells once, then fades.
     val glowIn = seg(t, 0, 1800, GENTLE)

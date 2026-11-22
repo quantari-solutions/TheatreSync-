@@ -341,7 +341,12 @@ class MainActivity : ComponentActivity() {
                     // which stays exactly where it was underneath.
                     var openingDone by remember { androidx.compose.runtime.mutableIntStateOf(0) }
                     if (openingRequest.intValue > openingDone) {
-                        OpeningAnimation { openingDone = openingRequest.intValue }
+                        // Logged so the emulator check (CI) can prove it shows and for how long.
+                        val shownAt = remember(openingRequest.intValue) { android.os.SystemClock.elapsedRealtime().also { android.util.Log.i("TheatreSync", "Opening: shown") } }
+                        OpeningAnimation {
+                            android.util.Log.i("TheatreSync", "Opening: finished after ${android.os.SystemClock.elapsedRealtime() - shownAt} ms")
+                            openingDone = openingRequest.intValue
+                        }
                         return@GridBackground
                     }
                     // YouTube sound in the headphones: its (visible) phone player, wherever you are in the app.
