@@ -1,6 +1,13 @@
 # Project status
 
-_Last updated: 2026-11-22. 0.6.2 (published to the in-app updater): the phone's opening animation plays again whenever the app is opened fresh, with a sharper logo and text that always fits_
+_Last updated: 2026-11-22. 0.6.3 (published to the in-app updater): the phone opening plays each time TheatreSync is opened again, not only when Android rebuilds the screen_
+
+## 0.6.3: "still not showing up when I open the app" (on 0.6.2)
+
+| Report | Cause | Fix | Verified |
+|---|---|---|---|
+| Opening still doesn't show when opening TheatreSync | 0.6.2 played it only when the screen was built from scratch. Tapping the icon normally brings back the screen that's still running in the background (and after Android closes it, it's rebuilt "restored"), so it almost never played | `OpeningGate`: plays when the screen is built, **and every time TheatreSync comes back after you've been in other apps / the home screen for 30 s or more** (icon or recent apps), drawn over the app, which stays where you left it. Not when the phone just went idle (screen off/locked) with TheatreSync open, a quick switch under 30 s, rotation, picture-in-picture, the notification or a YouTube share | `OpeningGateTest` (7 cases: open, return after other apps, quick switch, idle screen, notification/share, rotation/PiP, every return). No emulator in the cloud box, so needs a look on the phone |
+
 
 ## 0.6.2: phone opening animation not showing
 
