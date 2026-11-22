@@ -226,6 +226,9 @@ class LargeFontScreenshotTest {
     @get:Rule
     val paparazzi = Paparazzi(deviceConfig = DeviceConfig.PIXEL_6.copy(fontScale = 2.0f), theme = "android:Theme.Material.NoActionBar", maxPercentDifference = 0.01)
 
+    /** The opening is sized from the screen width, so 200 % text changes nothing and nothing is cut off. */
+    @Test fun opening_largeFont() = paparazzi.snapshot { QuantariTheme { OpeningAnimation(frameMs = 5000) {} } }
+
     @Test fun setup_largeFont() = paparazzi.snapshot {
         QuantariTheme { GridBackground { SetupScreen(Ui(movieTitle = "Interstellar", connectedTv = "Theatre Room TV"), {}, {}, {}, {}, {}, {}) } }
     }
@@ -246,6 +249,8 @@ class LargeFontScreenshotTest {
 class TabletScreenshotTest {
     @get:Rule
     val paparazzi = Paparazzi(deviceConfig = DeviceConfig.PIXEL_C, theme = "android:Theme.Material.NoActionBar", maxPercentDifference = 0.01)
+
+    @Test fun opening_tablet() = paparazzi.snapshot { QuantariTheme { OpeningAnimation(frameMs = 5000) {} } }
 
     @Test fun setup_tablet() = paparazzi.snapshot {
         QuantariTheme { GridBackground { SetupScreen(Ui(movieTitle = "Interstellar", tvs = listOf(Tv("1", "Theatre Room TV"))), {}, {}, {}, {}, {}, {}) } }

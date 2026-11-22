@@ -1,12 +1,13 @@
 # Project status
 
-_Last updated: 2026-11-22. 0.6.2 (published to the in-app updater): the phone's opening animation plays again whenever the app is opened fresh_
+_Last updated: 2026-11-22. 0.6.2 (published to the in-app updater): the phone's opening animation plays again whenever the app is opened fresh, with a sharper logo and text that always fits_
 
 ## 0.6.2: phone opening animation not showing
 
 | Report | Cause | Fix | Verified |
 |---|---|---|---|
 | The Quantari opening on the phone no longer shows when the app is opened | It played once per app *process*. TheatreSync keeps running in the background (casting, notification, and since 0.5.9 watching the TVs for 10 minutes), so Android rarely ends it and the opening was skipped | Plays whenever the app is **opened fresh from its icon** (after closing / swiping it away). Coming back to it (recent apps, after idling, from the notification or a share) carries on where you left off. Not repeated on screen rotation | Compiles; needs a look on the phone |
+| Owner's earlier feedback on the opening: "high definition and high clarity… mobile compatible… looks compressed… needs to look legit" (and "I don't care about the app size") | The logo picture was 952 px wide (the website has no bigger original) and drawn at ~850 px on the phone: barely 1:1, with soft, compressed letter edges. Text sizes followed the phone's font-size setting, so large text or a narrow phone could cut off "TheatreSync" | Logo rebuilt at 2× (1904 px): "QUANTARI" and "SOLUTIONS" re-drawn with crisp, smooth edges (compression wobble removed, no outline), swooshes and the soft fade into black kept (`docs/intro/upscale_wordmark.py`). All opening text is now sized from the screen width, so it looks the same on every phone and never clips. The TV intro already draws the logo smaller than the original (520 px), so it was already sharp | Screenshot tests: normal phone, phone at 200 % text (identical), tablet |
 
 
 ## 0.6.1: "Still no signature intro" (on 0.6.0)

@@ -2,7 +2,7 @@
   "versionCode": 27,
   "versionName": "0.6.2",
   "apkUrl": "https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases/TheatreSync-0.6.2.apk",
-  "sha256": "b739573a8e9162db3995e1463738a29a580be5bc4511498b7eca3f2772deb899",
-  "sizeBytes": 26810866,
-  "notes": "The Quantari opening on the phone plays again whenever you open the app fresh. Coming back to the app still carries on where you left off."
+  "sha256": "b6edd97398dfb993f630d722223058ab4e5e2fb82ddb938a9f4393ac727c9179",
+  "sizeBytes": 26969330,
+  "notes": "The Quantari opening on the phone plays again whenever you open the app fresh, with a sharper, high-definition logo and text that fits every phone. Coming back to the app still carries on where you left off."
 }
