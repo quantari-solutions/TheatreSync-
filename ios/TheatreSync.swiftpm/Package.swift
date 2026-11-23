@@ -16,8 +16,8 @@ let package = Package(
             targets: ["AppModule"],
             bundleIdentifier: "com.theatresync.ios",
             teamIdentifier: "",
-            displayVersion: "0.7.1",
-            bundleVersion: "6",
+            displayVersion: "0.8.0",
+            bundleVersion: "7",
             appIcon: .placeholder(icon: .tv),
             accentColor: .presetColor(.yellow),
             supportedDeviceFamilies: [
@@ -33,7 +33,7 @@ let package = Package(
             capabilities: [
                 .localNetwork(
                     purposeString: "TheatreSync finds your Chromecast, projector and receiver, and the phone playing the movie, on your Wi-Fi.",
-                    bonjourServiceTypes: ["_theatresync._tcp", "_googlecast._tcp"]
+                    bonjourServiceTypes: ["_theatresync._tcp", "_googlecast._tcp", "_samsungmsf._tcp"]
                 )
             ]
         )

@@ -121,5 +121,21 @@ do {
     check(load.contains("\"streamType\":\"NONE\"") && load.contains("image/webp") && !load.contains("title"), "title card is a picture (no player bar)")
 }
 
+// 8. YouTube helpers (mirror of YouTube.kt / Dial.kt).
+check(YouTubeShared.videoId("https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=10") == "dQw4w9WgXcQ", "youtube watch link")
+check(YouTubeShared.videoId("https://youtu.be/dQw4w9WgXcQ?si=x") == "dQw4w9WgXcQ", "youtu.be link")
+check(YouTubeShared.videoId("https://youtube.com/shorts/dQw4w9WgXcQ") == "dQw4w9WgXcQ", "shorts link")
+check(YouTubeShared.videoId("hello world") == nil, "not a link")
+check(YouTubeShared.screenId(fromMdx: "{\"type\":\"mdxSessionStatus\",\"data\":{\"screenId\":\"abc123\"}}") == "abc123", "mdx screen id")
+check(YouTubeShared.dialTag("<service><state>running</state><additionalData><screenId>s9</screenId></additionalData></service>", "screenId") == "s9", "dial screen id")
+check(YouTubeShared.loungeToken(fromJson: "{\"screens\":[{\"loungeToken\":\"LT\"}]}") == "LT", "lounge token")
+check(YouTubeShared.sid(fromBind: "[[0,[\"c\",\"SID1\",\"\",8]],[1,[\"S\",\"GS1\"]]]") == "SID1" && YouTubeShared.gsessionId(fromBind: "[[1,[\"S\",\"GS1\"]]]") == "GS1", "lounge bind")
+check(YouTubeShared.formEncode([("a b", "c&d")]) == "a+b=c%26d", "form encoding")
+
+check(YouTubeListen.stateJson(videoId: "abc_DEF-123", position: 12.5, playing: true) == "{\"videoId\":\"abc_DEF-123\",\"position\":12.500,\"playing\":true}", "tapin state json")
+check(YouTubeListen.stateJson(videoId: nil, position: 0, playing: false) == "{\"videoId\":null}", "tapin no video")
+check(YouTubeListen.steer(videoId: "a'b<c", position: 1, playing: false) == "window.tsTarget&&tsTarget(1.000,false,'abc')", "steer js is safe")
+check(YouTubeListen.headphonesPage(videoId: "dQw4w9WgXcQ").contains("vid='dQw4w9WgXcQ'") && YouTubeListen.tapInPage.contains("/yt/state"), "listen pages")
+
 print("\(passed) passed, \(failures) failed")
 exit(failures == 0 ? 0 : 1)

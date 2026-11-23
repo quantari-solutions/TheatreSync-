@@ -2,6 +2,15 @@
 
 _Last updated: 2026-11-22. Android 0.7.0: TapIn fixed and on the movie screen, TapIn for YouTube (any phone's cast). iOS 0.7.0: full TheatreSync part 1_
 
+## iOS 0.8.0: "like a carbon copy to the Android one on the iOS"
+| Owner's ask (iPad, Swift Playgrounds) | Done | Checked |
+|---|---|---|
+| No back buttons / no settings / no menu bar | Android layout copied: brand bar + ☰ menu, Quick watch tiles, Your TVs, Movie night steps. Pages with back buttons: Now casting, Remote, YouTube, Settings, Listen along | iOS simulator CI screenshots of each page |
+| Doesn't connect to The Frame (Samsung) | Found through Samsung's own Bonjour announcement (`_samsungmsf._tcp`, the one route iOS allows without Apple's multicast permission), or by address typed in Settings. YouTube cast via DIAL (port 8080) + YouTube Lounge, with play/pause/skip/volume | Shared parsing tested (swiftc); needs HW test |
+| Everything else from Android | YouTube casting (Chromecast via mdx screen ID, Samsung via DIAL), Signature intro before YouTube, seek bar with "Loading…", TV sound in headphones for YouTube (WKWebView, same sync page as Android), TapIn for YouTube by QR code (served from the iPhone), projector/receiver power, screensaver | Needs HW test |
+| Local Network asked on every launch | Swift Playgrounds re-asks each run; an installed app asks once (see "A real app, for free" in docs/IOS-SWIFT-PLAYGROUNDS.md) | — |
+| Not possible on iOS | NFC TapIn, several Bluetooth headphones at once, self-installing updates | — |
+
 ## Also in 0.7.0 (owner, 2026-11-22 night)
 
 | Request | Done | Verified |

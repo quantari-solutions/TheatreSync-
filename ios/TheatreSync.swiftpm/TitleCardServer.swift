@@ -14,6 +14,18 @@ final class TitleCardServer {
         return d
     }()
 
+    /// TapIn for YouTube: what the TV's YouTube is doing now (set by the app 4×/s while TapIn is shown).
+    private var ytState = "{\"videoId\":null}"
+    private let lock = NSLock()
+    func setYouTubeState(_ json: String) { lock.lock(); ytState = json; lock.unlock() }
+
+    /// The TapIn for YouTube page's address for guests (nil without Wi-Fi).
+    func tapInURL() -> String? {
+        startIfNeeded()
+        guard let p = port, let ip = LocalAddress.wifiIPv4() else { return nil }
+        return "http://\(ip):\(p)/yt"
+    }
+
     /// The card's address for the TV, starting the little server if needed (nil if there's no Wi-Fi).
     func url() -> String? {
         startIfNeeded()
@@ -41,10 +53,16 @@ final class TitleCardServer {
             guard let self else { c.cancel(); return }
             let request = data.map { String(decoding: $0, as: UTF8.self) } ?? ""
             let head = request.hasPrefix("HEAD")
-            let ok = request.contains("/card.webp")
-            let body = ok ? self.card : Data()
+            let path = request.split(separator: " ").dropFirst().first.map(String.init) ?? "/"
+            let body: Data, type: String, ok: Bool
+            if path.hasPrefix("/card.webp") { body = self.card; type = "image/webp"; ok = true }
+            else if path.hasPrefix("/yt/state") {
+                self.lock.lock(); let j = self.ytState; self.lock.unlock()
+                body = Data(j.utf8); type = "application/json"; ok = true
+            } else if path == "/yt" || path.hasPrefix("/yt?") { body = Data(YouTubeListen.tapInPage.utf8); type = "text/html; charset=utf-8"; ok = true }
+            else { body = Data("not found".utf8); type = "text/plain"; ok = false }
             var h = ok ? "HTTP/1.1 200 OK\r\n" : "HTTP/1.1 404 Not Found\r\n"
-            h += "Content-Type: \(ok ? "image/webp" : "text/plain")\r\nContent-Length: \(body.count)\r\n"
+            h += "Content-Type: \(type)\r\nContent-Length: \(body.count)\r\n"
             h += "Access-Control-Allow-Origin: *\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n"
             var out = Data(h.utf8)
             if !head { out.append(body) }

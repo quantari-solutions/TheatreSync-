@@ -55,6 +55,16 @@ print(c[-1]['udid'] if c else '')")
   echo "App log ($KIND):"; grep -h "Opening:" "$OUT/$KIND-stdout.txt" "$OUT/$KIND-stderr.txt" 2>/dev/null || echo "  (no Opening lines)"
   sips -Z 420 -s format jpeg -s formatOptions 55 "$OUT/$KIND.png" --out "$OUT/$KIND-small.jpg" >/dev/null
   echo "SCREENSHOT-$KIND-BEGIN"; base64 -b 1000 -i "$OUT/$KIND-small.jpg"; echo "SCREENSHOT-$KIND-END"
+  # Each page (opened straight away with a launch argument), to check the layout and the back button.
+  for PAGE in youtube remote settings; do
+    xcrun simctl terminate "$UDID" "$BUNDLE" || true
+    xcrun simctl launch "$UDID" "$BUNDLE" -tsPage "$PAGE" >/dev/null
+    sleep 3
+    xcrun simctl io "$UDID" screenshot "$OUT/$KIND-$PAGE.png"
+    if ! xcrun simctl spawn "$UDID" launchctl list | grep -q "$BUNDLE"; then echo "FAIL  $KIND: crashed on the $PAGE page"; FAIL=1; fi
+    sips -Z 420 -s format jpeg -s formatOptions 55 "$OUT/$KIND-$PAGE.png" --out "$OUT/$KIND-$PAGE-small.jpg" >/dev/null
+    echo "SCREENSHOT-$KIND-$PAGE-BEGIN"; base64 -b 1000 -i "$OUT/$KIND-$PAGE-small.jpg"; echo "SCREENSHOT-$KIND-$PAGE-END"
+  done
   xcrun simctl shutdown "$UDID" || true
 done
 [ $FAIL = 0 ] && echo "iOS simulator check passed" || { echo "iOS simulator check FAILED"; exit 1; }
