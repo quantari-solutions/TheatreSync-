@@ -38,7 +38,7 @@ struct HeadphonesPage: View {
                 .buttonStyle(GhostButtonStyle())
         }
         .onAppear(perform: read)
-        .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.routeChangeNotification)) { _ in read() }
+        .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.routeChangeNotification).receive(on: DispatchQueue.main)) { _ in read() }
     }
 
     private func read() {

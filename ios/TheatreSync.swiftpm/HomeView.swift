@@ -52,8 +52,8 @@ struct HomeView: View {
         .toolbar(.hidden, for: .navigationBar)
         .refreshable { cast.refresh(); samsung.start(); power.search(force: true); updates.check() }
         .onAppear { cast.startBrowsing(); samsung.start(); power.search(); updates.check() }
-        .onChange(of: cast.connected) { _ in maybeScreensaver() }
-        .onChange(of: cast.activity) { _ in maybeScreensaver() }
+        .onChange(of: cast.connected) { maybeScreensaver() }
+        .onChange(of: cast.activity) { maybeScreensaver() }
     }
 
     /// Connected with nothing playing: the TV shows the living title card (when the screensaver is on).

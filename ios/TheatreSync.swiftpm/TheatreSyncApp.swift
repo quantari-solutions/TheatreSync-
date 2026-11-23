@@ -59,7 +59,7 @@ struct RootView: View {
         .environmentObject(session)
         .environmentObject(movie)
         // Joining a movie opens the Listening page (with a back button: home is always one tap away).
-        .onChange(of: session.status == .idle) { idle in
+        .onChange(of: session.status == .idle) { _, idle in
             if !idle, path.last != .listening { path = [.listening] }
             if idle, path.last == .listening { path.removeLast() }
         }
