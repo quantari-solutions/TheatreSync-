@@ -222,7 +222,25 @@ struct Problem: Error, LocalizedError {
 /// DIAL on port 8080 starts YouTube and gives it.
 @MainActor
 final class YouTubeCaster: ObservableObject {
-    enum Target: Hashable { case chromecast(String), samsung(SamsungTV) }
+    /// chromecast: the connected Chromecast (by id). samsung: a Samsung TV on this Wi-Fi. away: a TV YouTube
+    /// was cast to before, reached over the internet (you're not at home).
+    enum Target: Hashable { case chromecast(String), samsung(SamsungTV), away(String) }
+
+    /// TVs YouTube was cast to before (name → YouTube screen ID). YouTube's "link with TV" service works over
+    /// the internet, so these can be cast to from anywhere while the TV is on.
+    static var awayTVs: [String: String] {
+        get { UserDefaults.standard.dictionary(forKey: "ytAway") as? [String: String] ?? [:] }
+        set { UserDefaults.standard.set(newValue, forKey: "ytAway") }
+    }
+
+    /// The TV controlled through YouTube's remote service (Samsung on the Wi-Fi, or any TV from away).
+    var loungeTV: SamsungTV? {
+        switch target {
+        case .samsung(let tv)?: return tv
+        case .away(let name)?: return SamsungTV(id: "away:" + name, name: name, ip: nil)
+        default: return nil
+        }
+    }
 
     @Published private(set) var steps: [String] = []
     @Published private(set) var busy = false
@@ -256,10 +274,16 @@ final class YouTubeCaster: ObservableObject {
                 step("Opening YouTube on the TV…")
                 guard let s = await cast.youTubeScreenId() else { throw Problem("YouTube on the Chromecast didn't answer. Try again in a moment.") }
                 screenId = s
+                if let name = cast.selected?.name { Self.awayTVs[name] = s }
             case .samsung(let tv):
                 guard let ip = tv.ip else { throw Problem("Still finding \(tv.name)'s address on the Wi-Fi. Try again in a few seconds.") }
                 step("Opening YouTube on \(tv.name)…")
                 screenId = try await Self.samsungScreenId(ip: ip)
+                Self.awayTVs[tv.name] = screenId
+            case .away(let name):
+                guard let s = Self.awayTVs[name] else { throw Problem("Cast to \(name) once at home first.") }
+                step("Reaching \(name) over the internet…")
+                screenId = s
             }
             step("Connecting to YouTube…")
             try await lounge.connect(screenId: screenId)
@@ -268,9 +292,10 @@ final class YouTubeCaster: ObservableObject {
             castVideoId = id
             self.target = target
             step("Playing ✓")
-            if case .samsung = target { listen() } else { listening?.cancel(); samsungPosition = nil }
+            if loungeTV != nil { listen() } else { listening?.cancel(); samsungPosition = nil }
         } catch {
             problem = (error as? LocalizedError)?.errorDescription ?? "Couldn't reach the TV."
+            if case .away = target { problem = (problem ?? "") + " Over the internet the TV must be on (on a Chromecast, with YouTube open)." }
         }
     }
 

@@ -2,6 +2,11 @@
 
 _Last updated: 2026-11-22. Android 0.7.0: TapIn fixed and on the movie screen, TapIn for YouTube (any phone's cast). iOS 0.7.0: full TheatreSync part 1_
 
+## Android 0.7.2 / iOS 0.8.1: "cast something at my house while… at work"
+| Ask | Done | Checked |
+|---|---|---|
+| Cast to the home TV from anywhere | YouTube only (option 1): each TV's YouTube screen ID is remembered after a cast at home; away from that Wi-Fi the TV appears as "Away · YouTube over the internet" and YouTube's Lounge service (internet, not Wi-Fi) plays the link and gives play/pause/skip/volume. Movies/title card/power from away need a home hub (option 2, later; a Chromecast with Google TV could be the hub) | Builds + tests; needs an away test (TV on; a Chromecast may need YouTube open) |
+
 ## Android 0.7.1: "on the Android also I'm not able to see the frame"
 | Cause found | Fix | Checked |
 |---|---|---|

@@ -224,7 +224,7 @@ struct RemotePage: View {
                 }
                 VolumeCard()
             }
-            if case .samsung(let tv)? = youtube.target { SamsungRemote(tv: tv) }
+            if let tv = youtube.loungeTV { SamsungRemote(tv: tv) }
         }
     }
 
@@ -301,6 +301,11 @@ struct YouTubePage: View {
         var t: [Row] = []
         if let tv = cast.selected, cast.connected { t.append(Row(id: .chromecast(tv.id), name: tv.name)) }
         for s in samsung.tvs { t.append(Row(id: .samsung(s), name: s.name)) }
+        // Not on this Wi-Fi now (e.g. at work): YouTube over the internet to TVs cast to before.
+        let here = Set(t.map { $0.name.lowercased() })
+        for name in YouTubeCaster.awayTVs.keys.sorted() where !here.contains(name.lowercased()) {
+            t.append(Row(id: .away(name), name: name + " · away, over the internet"))
+        }
         return t
     }
 
@@ -348,7 +353,7 @@ struct YouTubePage: View {
                 }
                 if let p = youtube.problem { Text(p).font(.footnote.weight(.semibold)).foregroundStyle(.red) }
             }
-            if case .samsung(let tv)? = youtube.target {
+            if let tv = youtube.loungeTV {
                 SamsungRemote(tv: tv)
                 if headphones.on, headphones.videoId != nil {
                     HeadphonesWebView(player: headphones).aspectRatio(16 / 9, contentMode: .fit)

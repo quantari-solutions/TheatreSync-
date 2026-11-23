@@ -52,6 +52,9 @@ import java.util.UUID
  *  - lets friends' iPhones/iPads join over Wi-Fi.
  * All methods must be called on the main thread.
  */
+/** Ids of TVs reached over the internet (YouTube), e.g. "dial:away:Media Room TV"; "dial:" so the smart-TV paths apply. */
+private const val AWAY = "dial:away:"
+
 class MovieSession(private val app: Application) {
 
     enum class Phase { SETUP, STARTING, PLAYING, PAUSED, ENDED }
@@ -65,7 +68,7 @@ class MovieSession(private val app: Application) {
     }
 
     /** @param youTubeOnly a smart TV found via DIAL (e.g. Samsung The Frame): YouTube only, no movies. */
-    data class Tv(val id: String, val name: String, val isSpeaker: Boolean = false, val youTubeOnly: Boolean = false)
+    data class Tv(val id: String, val name: String, val isSpeaker: Boolean = false, val youTubeOnly: Boolean = false, val away: Boolean = false)
 
     data class Ui(
         val castAvailable: Boolean = true,
@@ -316,7 +319,27 @@ class MovieSession(private val app: Application) {
         val smart = dialTvs.map { (id, d) -> Tv(id, d.name.removePrefix("[TV] ").trim(), youTubeOnly = true) }
             .filter { it.name.lowercase() !in castNames }
             .sortedBy { it.name }
-        _ui.update { it.copy(tvs = castTvs + smart) }
+        // TVs YouTube was cast to before, not on this Wi-Fi now (e.g. you're at work): YouTube over the internet.
+        val here = (castTvs + smart).map { it.name.lowercase() }.toSet()
+        val away = awayTvs().keys.filter { it.lowercase() !in here }.sorted().map { Tv(AWAY + it, it, youTubeOnly = true, away = true) }
+        _ui.update { it.copy(tvs = castTvs + smart + away) }
+    }
+
+    /**
+     * Remote casting from anywhere (YouTube): YouTube's "link with TV" service works over the internet, so
+     * each TV's YouTube ID is remembered after a cast at home and reused when you're away.
+     */
+    private fun awayTvs(): Map<String, String> = prefs.getStringSet("ytAway", emptySet()).orEmpty()
+        .mapNotNull { e -> e.split('\t').takeIf { it.size == 2 }?.let { it[0] to it[1] } }.toMap()
+
+    private fun rememberAway(name: String, screenId: String) {
+        val m = awayTvs().toMutableMap().apply { put(name, screenId) }
+        prefs.edit { putStringSet("ytAway", m.map { (k, v) -> "$k\t$v" }.toSet()) }
+    }
+
+    fun forgetAwayTv(name: String) = guard("forgetAwayTv") {
+        prefs.edit { putStringSet("ytAway", (awayTvs() - name).map { (k, v) -> "$k\t$v" }.toSet()) }
+        publishTvs()
     }
 
     /** Looks for Samsung/LG/Sony… TVs on the Wi-Fi (at most once every 30 s). */
@@ -393,10 +416,11 @@ class MovieSession(private val app: Application) {
     private fun isDial(tvId: String) = tvId.startsWith("dial:")
 
     private fun tvName(tvId: String): String? =
-        dialTvs[tvId]?.name?.removePrefix("[TV] ")?.trim() ?: knownTvs.firstOrNull { it.id == tvId }?.name
+        tvId.removePrefix(AWAY).takeIf { tvId.startsWith(AWAY) } ?: dialTvs[tvId]?.name?.removePrefix("[TV] ")?.trim() ?: knownTvs.firstOrNull { it.id == tvId }?.name
 
     /** The YouTube "screen ID" of a Chromecast (Cast connection) or a smart TV (DIAL). Blocking. */
     private fun youTubeScreenId(tvId: String): String {
+        if (tvId.startsWith(AWAY)) return awayTvs()[tvId.removePrefix(AWAY)] ?: throw java.io.IOException("TV not remembered")
         dialTvs[tvId]?.let { return Dial.youTubeScreenId(it) }
         val tv = knownTvs.firstOrNull { it.id == tvId } ?: throw java.io.IOException("TV not found")
         return YouTubeScreenFinder({ TvWatchers.openTls(tv.address, tv.port) }).screenId()
@@ -737,6 +761,7 @@ class MovieSession(private val app: Application) {
                 show(R.string.yt_step_opening)
                 val screenId = youTubeScreenId(tvId)
                 prefs.edit { putString("ytScreen_$tvId", screenId) }
+                if (!tvId.startsWith(AWAY)) rememberAway(name, screenId)
                 step = "asking YouTube to play the video"
                 show(R.string.yt_step_video)
                 val prepared = if (screenId == known) runCatching { early?.get(8, java.util.concurrent.TimeUnit.SECONDS) }.getOrNull() else null

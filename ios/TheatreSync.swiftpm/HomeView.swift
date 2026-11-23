@@ -38,7 +38,7 @@ struct HomeView: View {
                     }.buttonStyle(.plain)
                 }
                 if cast.connected, let a = cast.activity, !cast.isShowingTitleCard { nowCastingRow(a) }
-                else if case .samsung(let tv)? = youtube.target { samsungRow(tv) }
+                else if let tv = youtube.loungeTV { samsungRow(tv) }
                 quickWatch
                 tvCard
                 movieNight
