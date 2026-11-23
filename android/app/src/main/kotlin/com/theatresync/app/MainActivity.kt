@@ -582,7 +582,7 @@ class MainActivity : ComponentActivity() {
                                     onClearMovie = session::clearMovie,
                                     onOpenMovie = { page = Page.MOVIE },
                                     onRoomSound = session::setRoomSoundToo,
-                                onSmartTv = { smartTvInfo.value = true },
+                                onSmartTv = { name -> ytTvName.value = name; page = Page.YOUTUBE },
                                 onSubtitles = SubtitleActions(
                                     supported = session.subtitlesSupported(),
                                     onLoad = { pickSubtitles.launch(arrayOf("application/x-subrip", "text/vtt", "text/*", "application/octet-stream")) },
@@ -1050,7 +1050,7 @@ internal fun SetupScreen(
     onClearMovie: () -> Unit = {},
     onOpenMovie: () -> Unit = {},
     onRoomSound: (Boolean) -> Unit = {},
-    onSmartTv: () -> Unit = {},
+    onSmartTv: (String) -> Unit = {},
     onSubtitles: SubtitleActions = SubtitleActions(),
     pendingCrash: CrashReporter.Entry? = null,
     onSendCrash: (CrashReporter.Entry) -> Unit = {},
@@ -1109,8 +1109,8 @@ internal fun SetupScreen(
             }
             else -> ui.tvs.forEach { tv ->
                 val busy = ui.nowCasting.firstOrNull { it.tvId == tv.id }?.activity
-                // Smart TVs (e.g. Samsung The Frame) are listed too; tapping explains they're YouTube-only.
-                TvRow(tv.name, busy?.label(), tv.isSpeaker, tv.youTubeOnly) { if (tv.youTubeOnly) onSmartTv() else onConnectTv(tv.id) }
+                // Smart TVs (e.g. Samsung The Frame) are in the same list; tapping one opens YouTube with that TV chosen.
+                TvRow(tv.name, busy?.label(), tv.isSpeaker, tv.youTubeOnly) { if (tv.youTubeOnly) onSmartTv(tv.name) else onConnectTv(tv.id) }
             }
         }
     }

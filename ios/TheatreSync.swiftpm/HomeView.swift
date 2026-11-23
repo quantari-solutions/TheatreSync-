@@ -166,7 +166,7 @@ struct HomeView: View {
                 }
             }
             ForEach(samsung.tvs) { tv in
-                Button { path.append(.youtube) } label: {
+                Button { youtube.chosen = .samsung(tv); path.append(.youtube) } label: {
                     HStack {
                         Image(systemName: "photo.artframe").foregroundStyle(Q.primary)
                         VStack(alignment: .leading, spacing: 2) {

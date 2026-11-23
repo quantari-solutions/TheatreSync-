@@ -229,6 +229,8 @@ final class YouTubeCaster: ObservableObject {
     @Published private(set) var problem: String?
     @Published private(set) var castVideoId: String?
     @Published private(set) var target: Target?
+    /// The TV picked on the YouTube page (tapping a TV in Your TVs picks it too).
+    @Published var chosen: Target?
     /// The TV's YouTube when it isn't a Chromecast (from YouTube's events): position, playing.
     @Published private(set) var samsungPosition: Double?
     @Published private(set) var samsungPlaying = false

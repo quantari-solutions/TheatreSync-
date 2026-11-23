@@ -7,6 +7,7 @@ _Last updated: 2026-11-22. Android 0.7.0: TapIn fixed and on the movie screen, T
 |---|---|---|
 | Samsung's Wi-Fi announcement was resolved several at a time (Android refuses overlapping resolves, so some were silently lost) | One at a time, in a queue | Build + unit tests |
 | A TV found that way was dropped unless its YouTube answered DIAL at once (The Frame in Art mode often doesn't) | Kept when the TV's own "who are you" reply (port 8001 /api/v2/) says it's a Samsung TV | `SamsungTvTest` |
+| "See the frame… in the sources list grouped with media room" | One TV list for Chromecasts and smart TVs (Samsung/LG/Sony via DIAL); tapping The Frame opens YouTube with it already chosen (Android and iOS) | Build |
 | Both routes rely on the router passing multicast | New: every minute while the app is open, each Wi-Fi address is asked on port 8001; plus a Samsung TV address box in Settings (same as iOS) | Settings screenshot re-recorded; needs HW test |
 
 ## iOS 0.8.0: "like a carbon copy to the Android one on the iOS"

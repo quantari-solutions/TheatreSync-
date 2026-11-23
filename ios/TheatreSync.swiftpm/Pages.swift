@@ -294,7 +294,6 @@ struct YouTubePage: View {
     @EnvironmentObject var youtube: YouTubeCaster
     @EnvironmentObject var headphones: HeadphonesPlayer
     @State private var link = ""
-    @State private var choice: YouTubeCaster.Target?
 
     private struct Row: Identifiable { let id: YouTubeCaster.Target; let name: String }
 
@@ -328,16 +327,16 @@ struct YouTubePage: View {
                     Text("No TV yet. Pick your Chromecast on the home page, or add a Samsung TV's address in Settings.").font(.footnote).foregroundStyle(Q.textFaint)
                 }
                 ForEach(targets) { t in
-                    Button { choice = t.id } label: {
+                    Button { youtube.chosen = t.id } label: {
                         HStack {
-                            Image(systemName: (choice ?? targets.first?.id) == t.id ? "largecircle.fill.circle" : "circle").foregroundStyle(Q.primary)
+                            Image(systemName: (youtube.chosen ?? targets.first?.id) == t.id ? "largecircle.fill.circle" : "circle").foregroundStyle(Q.primary)
                             Text(t.name).foregroundStyle(Q.text)
                             Spacer()
                         }.padding(.vertical, 4)
                     }
                 }
                 Button {
-                    guard let t = choice ?? targets.first?.id else { return }
+                    guard let t = youtube.chosen ?? targets.first?.id else { return }
                     Task { await youtube.cast(link: link, to: t, cast: cast) }
                 } label: {
                     Label(youtube.busy ? "Casting…" : "Cast to TV", systemImage: "play.tv.fill").frame(maxWidth: .infinity)
