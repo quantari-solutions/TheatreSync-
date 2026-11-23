@@ -436,4 +436,8 @@
     <string name="ad_skipper">Ad skipper</string>
     <string name="ad_skipper_short">YouTube on the TV: skip ads and sponsor segments</string>
     <string name="ad_skipper_text">Presses “Skip ad” the moment YouTube allows it, mutes ads that can\'t be skipped (sound returns when the video resumes), and skips sponsor, self-promotion and “like and subscribe” segments using SponsorBlock\'s community database. Works for YouTube on your TVs, cast from any phone.</string>
+    <string name="samsung_tv_title">Samsung TV (The Frame)</string>
+    <string name="samsung_tv_note">TheatreSync finds it by itself when it\'s on or in Art mode. If it isn\'t listed, type its address (on the TV: Settings → General → Network → Network Status → IP settings).</string>
+    <string name="samsung_tv_save">Save</string>
+    <string name="samsung_tv_saved">Saved · searching</string>
 </resources>

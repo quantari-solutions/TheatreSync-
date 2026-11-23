@@ -458,6 +458,8 @@ class MainActivity : ComponentActivity() {
                                     updates = updateState.value,
                                     onCheckUpdate = { AppUpdates.check(this@MainActivity, force = true) },
                                     onUpdate = { AppUpdates.update(this@MainActivity) },
+                                    samsungIp = session.samsungIp(),
+                                    onSamsungIp = session::setSamsungIp,
                                 )
                                 "experimental" -> ExperimentalScreen(
                                     ui = ui,
@@ -1186,6 +1188,8 @@ internal fun SettingsScreen(
     updates: AppUpdates.State = AppUpdates.State(),
     onCheckUpdate: () -> Unit = {},
     onUpdate: () -> Unit = {},
+    samsungIp: String = "",
+    onSamsungIp: (String) -> Unit = {},
 ) = Screen {
     TopBar(stringResource(R.string.settings), onBack)
     SettingsRow("🎛", stringResource(R.string.remote), null, onRemote, "settings_remote", status = stringResource(R.string.remote_status))
@@ -1200,8 +1204,27 @@ internal fun SettingsScreen(
     if (multiAudioOn) SettingsRow("🎶", stringResource(R.string.multi_audio), null, onMultiAudio, "settings_multi_audio", status = stringResource(R.string.multi_audio_status))
     SettingsRow("📤", stringResource(R.string.share_app), null, onShareApp, "settings_share", status = stringResource(R.string.share_app_status))
     SettingsRow("🧪", stringResource(R.string.experimental), null, onExperimental, "settings_experimental", status = stringResource(R.string.experimental_status))
+    SamsungTvCard(samsungIp, onSamsungIp)
     AboutCard(updates, onCheckUpdate, onUpdate)
     Footer()
+}
+
+/** The Frame / Samsung TV: found by itself; if not, its address typed here (also on iOS). */
+@Composable
+internal fun SamsungTvCard(saved: String, onSave: (String) -> Unit) {
+    var text by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(saved) }
+    var done by remember { mutableStateOf(false) }
+    QCard {
+        Text(stringResource(R.string.samsung_tv_title), style = MaterialTheme.typography.titleMedium, color = Q.Text)
+        Text(stringResource(R.string.samsung_tv_note), color = Q.TextMuted, style = MaterialTheme.typography.bodySmall)
+        androidx.compose.material3.OutlinedTextField(
+            value = text, onValueChange = { text = it; done = false }, singleLine = true,
+            placeholder = { Text("192.168.1.40") },
+            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
+            modifier = Modifier.fillMaxWidth().testTag("samsung_ip"),
+        )
+        GoldButton(stringResource(if (done) R.string.samsung_tv_saved else R.string.samsung_tv_save), onClick = { onSave(text); done = true }, modifier = Modifier.fillMaxWidth())
+    }
 }
 
 /** About: this version, and an update right under it when there is one (download + install in the app). */
