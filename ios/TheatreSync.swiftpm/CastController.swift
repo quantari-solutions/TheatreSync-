@@ -19,14 +19,18 @@ final class CastController: ObservableObject {
     @Published private(set) var volume: Double = 0.5
     @Published private(set) var muted = false
     @Published var message: String?
+    /// When the latest play position arrived (to work out where the TV is now).
+    private(set) var activityAt = Date()
+    /// YouTube's screen ID from the TV's YouTube app (for casting a link).
+    private var mdxScreenId: String?
 
     private var browser: NWBrowser?
     private var link: CastLink?
     private var requestId = 1
     private var transportConnected: String?
     private var poll: Timer?
-    /// Picture waiting for Google's player to open on the TV (title card).
-    private var pendingPictureURL: String?
+    /// What to LOAD once Google's player is open on the TV (title card picture or a movie).
+    private var pendingLoad: ((Int) -> String)?
     private let sender = "sender-ts-ios"
 
     // MARK: - Finding TVs
@@ -124,10 +128,10 @@ final class CastController: ObservableObject {
                     a.currentTimeSec = old.currentTimeSec; a.durationSec = old.durationSec; a.mediaSessionId = old.mediaSessionId; a.contentId = old.contentId
                 }
                 activity = a
-                if a.appId == CastStatus.appDefaultMediaReceiver, let t = a.transportId, let url = pendingPictureURL {
-                    pendingPictureURL = nil
+                if a.appId == CastStatus.appDefaultMediaReceiver, let t = a.transportId, let load = pendingLoad {
+                    pendingLoad = nil
                     send(CastMessage.nsConnection, to: t, "{\"type\":\"CONNECT\"}"); transportConnected = t
-                    send(CastMessage.nsMedia, to: t, CastStatus.loadPicture(url: url, requestId: nextId()))
+                    send(CastMessage.nsMedia, to: t, load(nextId()))
                 }
                 if a.hasMedia, transportConnected != a.transportId { refresh() }
             } else {
@@ -136,6 +140,9 @@ final class CastController: ObservableObject {
         case CastMessage.nsMedia:
             guard CastStatus.type(m.payload) == "MEDIA_STATUS", let a = activity else { return }
             activity = CastStatus.mergeMedia(a, m.payload)
+            activityAt = Date()
+        case YouTubeShared.nsMdx:
+            if let s = YouTubeShared.screenId(fromMdx: m.payload) { mdxScreenId = s }
         default: break
         }
     }
@@ -155,6 +162,12 @@ final class CastController: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.refresh() }
     }
 
+    func seek(to seconds: Double) {
+        guard let a = activity, let s = a.mediaSessionId, let t = a.transportId else { return }
+        send(CastMessage.nsMedia, to: t, CastStatus.media("SEEK", sessionId: s, requestId: nextId(), extra: ",\"currentTime\":\(max(0, seconds))"))
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.refresh() }
+    }
+
     func setVolume(_ level: Double) { volume = level; send(CastMessage.nsReceiver, CastStatus.setVolume(level, requestId: nextId())) }
     func setMuted(_ m: Bool) { muted = m; send(CastMessage.nsReceiver, CastStatus.setMuted(m, requestId: nextId())) }
 
@@ -168,14 +181,62 @@ final class CastController: ObservableObject {
     /// Shows the living Signature title card on the TV (also wakes the projector and receiver over HDMI-CEC).
     func showTitleCard() {
         guard connected, let url = TitleCardServer.shared.url() else { message = "Couldn't reach the TV over the Wi-Fi."; return }
-        pendingPictureURL = url
+        load { CastStatus.loadPicture(url: url, requestId: $0) }
+    }
+
+    /// Plays a movie served from this phone in Google's player on the TV.
+    func playVideo(url: String, contentType: String, title: String) {
+        load { CastStatus.loadVideo(url: url, contentType: contentType, title: title, requestId: $0) }
+    }
+
+    private func load(_ payload: @escaping (Int) -> String) {
         if let a = activity, a.appId == CastStatus.appDefaultMediaReceiver, let t = a.transportId {
-            pendingPictureURL = nil
             send(CastMessage.nsConnection, to: t, "{\"type\":\"CONNECT\"}"); transportConnected = t
-            send(CastMessage.nsMedia, to: t, CastStatus.loadPicture(url: url, requestId: nextId()))
+            send(CastMessage.nsMedia, to: t, payload(nextId()))
         } else {
+            pendingLoad = payload
             send(CastMessage.nsReceiver, CastStatus.launch(CastStatus.appDefaultMediaReceiver, requestId: nextId()))
         }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.refresh() }
+    }
+
+    /// Where the TV is in the movie playing from this phone (seconds, playing).
+    func mediaNow(contentPrefix: String) -> (position: Double, playing: Bool)? {
+        guard let a = activity, a.contentId?.hasPrefix(contentPrefix) == true, let t = a.currentTimeSec else { return nil }
+        let playing = a.playerState == "PLAYING"
+        return (t + (playing ? Date().timeIntervalSince(activityAt) : 0), playing)
+    }
+
+    // MARK: - YouTube
+
+    /// Opens YouTube on the Chromecast (if it isn't already) and asks it for its screen ID.
+    @MainActor
+    func youTubeScreenId() async -> String? {
+        guard connected else { return nil }
+        mdxScreenId = nil
+        if activity?.appId != CastStatus.appYouTube {
+            send(CastMessage.nsReceiver, CastStatus.launch(CastStatus.appYouTube, requestId: nextId()))
+        }
+        var asked: String?
+        for i in 0..<40 {            // up to 20 s
+            if let s = mdxScreenId { return s }
+            if let a = activity, a.appId == CastStatus.appYouTube, let t = a.transportId {
+                if asked != t || i % 4 == 0 {
+                    send(CastMessage.nsConnection, to: t, "{\"type\":\"CONNECT\"}")
+                    send(YouTubeShared.nsMdx, to: t, "{\"type\":\"getMdxSessionStatus\"}")
+                    asked = t
+                }
+            } else if i % 2 == 0 { refresh() }
+            try? await Task.sleep(nanoseconds: 500_000_000)
+        }
+        return mdxScreenId
+    }
+
+    /// Where the TV's YouTube video is now, for the phone's headphone player.
+    var youTubeNow: (videoId: String, position: Double, playing: Bool)? {
+        guard let a = activity, a.appId == CastStatus.appYouTube, let id = a.contentId, let t = a.currentTimeSec else { return nil }
+        let playing = a.playerState == "PLAYING"
+        return (id, t + (playing ? Date().timeIntervalSince(activityAt) : 0), playing)
     }
 
     /// Our own title card (screensaver) on the TV isn't "something playing".

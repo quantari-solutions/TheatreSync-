@@ -2,6 +2,27 @@
 
 _Last updated: 2026-11-22. Android 0.7.0: TapIn fixed and on the movie screen, TapIn for YouTube (any phone's cast). iOS 0.7.0: full TheatreSync part 1_
 
+## Android 0.7.1: "on the Android also I'm not able to see the frame"
+| Cause found | Fix | Checked |
+|---|---|---|
+| Samsung's Wi-Fi announcement was resolved several at a time (Android refuses overlapping resolves, so some were silently lost) | One at a time, in a queue | Build + unit tests |
+| A TV found that way was dropped unless its YouTube answered DIAL at once (The Frame in Art mode often doesn't) | Kept when the TV's own "who are you" reply (port 8001 /api/v2/) says it's a Samsung TV | `SamsungTvTest` |
+| "See the frame… in the sources list grouped with media room" | One TV list for Chromecasts and smart TVs (Samsung/LG/Sony via DIAL); tapping The Frame opens YouTube with it already chosen (Android and iOS) | Build |
+| Both routes rely on the router passing multicast | New: every minute while the app is open, each Wi-Fi address is asked on port 8001; plus a Samsung TV address box in Settings (same as iOS) | Settings screenshot re-recorded; needs HW test |
+
+## iOS 0.8.0: "like a carbon copy to the Android one on the iOS"
+| Owner's ask (iPad, Swift Playgrounds) | Done | Checked |
+|---|---|---|
+| No back buttons / no settings / no menu bar | Android layout copied: brand bar + ☰ menu, Quick watch tiles, Your TVs, Movie night steps. Pages with back buttons: Now casting, Remote, YouTube, Settings, Listen along | iOS simulator CI screenshots of each page |
+| Doesn't connect to The Frame (Samsung) | Found through Samsung's own Bonjour announcement (`_samsungmsf._tcp`, the one route iOS allows without Apple's multicast permission), or by address typed in Settings. YouTube cast via DIAL (port 8080) + YouTube Lounge, with play/pause/skip/volume | Shared parsing tested (swiftc); needs HW test |
+| Everything else from Android | YouTube casting (Chromecast via mdx screen ID, Samsung via DIAL), Signature intro before YouTube, seek bar with "Loading…", TV sound in headphones for YouTube (WKWebView, same sync page as Android), TapIn for YouTube by QR code (served from the iPhone), projector/receiver power, screensaver | Needs HW test |
+| Local Network asked on every launch | Swift Playgrounds re-asks each run; an installed app asks once (see "A real app, for free" in docs/IOS-SWIFT-PLAYGROUNDS.md) | — |
+| "Connect to Media Room… I'm not able to go back to the main screen" | Listen along and Listening were full screens with the back button hidden; now normal pages with a back button (the sound keeps playing; a Listening row on home leads back) | `scripts/ios-parity-check.py` fails if any page but Home hides its back button |
+| "More auditing… everything intact just the way I had planned" | New `scripts/ios-parity-check.py` (in run-tests.sh): every Android page must have an iOS page or a written reason, and 13 owner-asked features must stay present | Runs on every PR |
+| Rest of Android | Movie night from Files (picture on the TV, sound in headphones in step, signature intro first), Headphones page (output, delay, sound test, Apple's output picker), Two headsets (AirPods Share Audio), Mirror (AirPlay to The Frame; laptop Chrome cast), Experimental page. Manual "sound early/late" buttons removed: automatic like Android | Needs HW test |
+| GitHub projects looked at | OpenCastSwift (MIT, 2019): same Cast v2 method as ours, older. CastKit (2026, unproven). couch-remote/TVKit (MIT): Samsung key remote; Android doesn't have it, so not added (copy of Android) | — |
+| Not possible on iOS | NFC TapIn, several Bluetooth headphones at once, self-installing updates | — |
+
 ## Also in 0.7.0 (owner, 2026-11-22 night)
 
 | Request | Done | Verified |

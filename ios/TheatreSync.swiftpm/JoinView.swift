@@ -94,7 +94,10 @@ struct JoinView: View {
                 .padding(20)
             }
         }
-        .toolbar(.hidden, for: .navigationBar)
+        .navigationTitle("Listen along")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(Q.background, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
         .onAppear { browser.start() }
         .onDisappear { browser.stop() }
     }

@@ -1,0 +1,127 @@
+import SwiftUI
+import AVFoundation
+import AVKit
+
+// MARK: - Headphones (Android: Headphones + Headphone settings)
+
+struct HeadphonesPage: View {
+    @State private var outputs: [String] = []
+    @State private var latencyMs = 0
+    @State private var speech = AVSpeechSynthesizer()
+
+    var body: some View {
+        PageScaffold(title: "Headphones") {
+            QCard {
+                Text("Sound is going to").font(.headline).foregroundStyle(Q.text)
+                ForEach(outputs, id: \.self) { o in Label(o, systemImage: "headphones").foregroundStyle(Q.primary) }
+                Text("Their own delay: \(latencyMs) ms. TheatreSync allows for it automatically.").font(.footnote).foregroundStyle(Q.textMuted)
+                HStack {
+                    Text("Choose where the sound goes").foregroundStyle(Q.text)
+                    Spacer()
+                    RoutePicker().frame(width: 44, height: 44)
+                }
+                Text("New headphones: pair them once in iOS Settings → Bluetooth.").font(.footnote).foregroundStyle(Q.textFaint)
+            }
+            QCard {
+                Text("Headphone sound test").font(.headline).foregroundStyle(Q.text)
+                Text("Plays a short voice in your headphones.").font(.footnote).foregroundStyle(Q.textMuted)
+                Button {
+                    try? AVAudioSession.sharedInstance().setCategory(.playback)
+                    try? AVAudioSession.sharedInstance().setActive(true)
+                    speech.speak(AVSpeechUtterance(string: "TheatreSync sound test. You're all set."))
+                } label: { Label("Play the test", systemImage: "speaker.wave.2.fill").frame(maxWidth: .infinity) }
+                    .buttonStyle(GoldButtonStyle())
+            }
+            NavigationLink(value: Page.multiAudio) { Label("Two headsets?", systemImage: "person.2.fill").frame(maxWidth: .infinity) }
+                .buttonStyle(GhostButtonStyle())
+            NavigationLink { DiagnosticsView() } label: { Label("Headphone and network check", systemImage: "stethoscope").frame(maxWidth: .infinity) }
+                .buttonStyle(GhostButtonStyle())
+        }
+        .onAppear(perform: read)
+        .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.routeChangeNotification).receive(on: DispatchQueue.main)) { _ in read() }
+    }
+
+    private func read() {
+        let s = AVAudioSession.sharedInstance()
+        outputs = s.currentRoute.outputs.map { $0.portName }
+        latencyMs = Int((s.outputLatency * 1000).rounded())
+    }
+}
+
+/// Apple's own output picker (Bluetooth headphones, AirPlay).
+struct RoutePicker: UIViewRepresentable {
+    func makeUIView(context: Context) -> AVRoutePickerView {
+        let v = AVRoutePickerView()
+        v.tintColor = UIColor(red: 0.94, green: 0.77, blue: 0.30, alpha: 1)
+        v.activeTintColor = v.tintColor
+        return v
+    }
+    func updateUIView(_ uiView: AVRoutePickerView, context: Context) {}
+}
+
+// MARK: - Two headsets (Android: Multi audio)
+
+struct MultiAudioPage: View {
+    var body: some View {
+        PageScaffold(title: "Two headsets") {
+            QCard {
+                Text("AirPods or Beats").font(.headline).foregroundStyle(Q.text)
+                Text("iPhone and iPad can share sound with two pairs: connect yours, then Control Center → tap the AirPlay icon on the music tile → Share Audio, and hold the second pair near.").font(.footnote).foregroundStyle(Q.textMuted)
+            }
+            QCard {
+                Text("Any other headphones").font(.headline).foregroundStyle(Q.text)
+                Text("iOS plays to one Bluetooth headset at a time. Friends can listen on their own phone instead: TapIn's QR code on Now casting (YouTube), or Listen along to a movie on an Android phone running TheatreSync.").font(.footnote).foregroundStyle(Q.textMuted)
+            }
+        }
+    }
+}
+
+// MARK: - Mirror (Android: Show your phone on the TV)
+
+struct MirrorPage: View {
+    var body: some View {
+        PageScaffold(title: "Show your phone on the TV") {
+            QCard {
+                Text("To The Frame (Samsung)").font(.headline).foregroundStyle(Q.text)
+                Text("Samsung TVs take Apple's AirPlay: open Control Center → Screen Mirroring → pick the TV. The first time, type the code shown on the TV.").font(.footnote).foregroundStyle(Q.textMuted)
+                RoutePicker().frame(width: 44, height: 44)
+            }
+            QCard {
+                Text("To the Chromecast").font(.headline).foregroundStyle(Q.text)
+                Text("Apple doesn't let iPhone or iPad mirror the whole screen to a Chromecast. Cast instead: YouTube from the YouTube page, a movie from Movie night, or the Cast button inside apps.").font(.footnote).foregroundStyle(Q.textMuted)
+            }
+            QCard {
+                Text("From the laptop").font(.headline).foregroundStyle(Q.text)
+                Text("In Chrome: ⋮ menu → Cast… → pick Media Room TV → Sources → Cast tab or Cast screen.").font(.footnote).foregroundStyle(Q.textMuted)
+            }
+        }
+    }
+}
+
+// MARK: - Experimental (Android: Settings → Experimental)
+
+struct ExperimentalPage: View {
+    @EnvironmentObject var cast: CastController
+    @AppStorage("screensaver") private var screensaver = true
+    @AppStorage("signatureIntro") private var signatureIntro = true
+
+    var body: some View {
+        PageScaffold(title: "Experimental") {
+            QCard {
+                Toggle(isOn: $signatureIntro) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Signature intro").foregroundStyle(Q.text)
+                        Text("The living title card on the TV before a movie or YouTube video starts.").font(.footnote).foregroundStyle(Q.textMuted)
+                    }
+                }.tint(Q.primary)
+                Toggle(isOn: $screensaver) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("TV screensaver").foregroundStyle(Q.text)
+                        Text("The living title card when nothing's playing.").font(.footnote).foregroundStyle(Q.textMuted)
+                    }
+                }.tint(Q.primary)
+                if cast.connected { Button("Show the title card now") { cast.showTitleCard() }.buttonStyle(GhostButtonStyle()) }
+            }
+        }
+    }
+}

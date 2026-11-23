@@ -1,41 +1,59 @@
 import SwiftUI
 
-/// The iPhone / iPad home: your TV, what's playing on it with its controls (Now casting + remote),
-/// projector & receiver on / off, the living title card and screensaver, listen along, and About.
+/// The home page, laid out like the Android app: brand bar with the ☰ menu, Quick watch tiles, your TVs,
+/// what's on now (tap for its page), and Movie night. Every other page opens with a back button.
 struct HomeView: View {
-    @ObservedObject var cast: CastController
-    @ObservedObject var power: NetworkPower
-    @ObservedObject var updates: UpdateCheck
-    @ObservedObject var session: ListenerSession
-    @ObservedObject var browser: HostBrowser
+    @EnvironmentObject var cast: CastController
+    @EnvironmentObject var power: NetworkPower
+    @EnvironmentObject var updates: UpdateCheck
+    @EnvironmentObject var samsung: SamsungFinder
+    @EnvironmentObject var youtube: YouTubeCaster
+    @EnvironmentObject var session: ListenerSession
+    @EnvironmentObject var movie: MovieCaster
     @AppStorage("screensaver") private var screensaver = true
-    @State private var powerMessage: String?
+    @Binding var path: [Page]
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                Eyebrow(text: "Quantari · TheatreSync")
-                GradientTitle(text: "TheatreSync")
-                tvCard
-                if cast.connected { nowCasting; volumeCard }
-                powerCard
-                if cast.connected { titleCardCard }
-                NavigationLink { JoinView(session: session, browser: browser) } label: {
-                    Label("Listen along in headphones", systemImage: "headphones").frame(maxWidth: .infinity)
+            VStack(alignment: .leading, spacing: 18) {
+                topBar
+                if let u = updates.available {
+                    Button { path.append(.settings) } label: {
+                        Label("Update available · \(u.version)", systemImage: "arrow.down.circle.fill").frame(maxWidth: .infinity)
+                    }.buttonStyle(GoldButtonStyle())
                 }
-                .buttonStyle(GhostButtonStyle())
-                aboutCard
+                if session.status != .idle {
+                    Button { path.append(.listening) } label: {
+                        QCard(highlighted: true) {
+                            HStack {
+                                Image(systemName: "headphones").foregroundStyle(Q.primary)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("LISTENING IN YOUR HEADPHONES").font(.caption2.weight(.bold)).foregroundStyle(Q.success)
+                                    Text(session.movieTitle.isEmpty ? session.hostName : session.movieTitle).font(.headline).foregroundStyle(Q.text)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right").foregroundStyle(Q.primary)
+                            }
+                        }
+                    }.buttonStyle(.plain)
+                }
+                if cast.connected, let a = cast.activity, !cast.isShowingTitleCard { nowCastingRow(a) }
+                else if case .samsung(let tv)? = youtube.target { samsungRow(tv) }
+                quickWatch
+                tvCard
+                movieNight
                 Text("TheatreSync · by Quantari Solutions").font(.caption2).foregroundStyle(Q.textFaint).frame(maxWidth: .infinity)
             }
             .padding(20)
-            .frame(maxWidth: 640)
+            .frame(maxWidth: 680)
             .frame(maxWidth: .infinity)
         }
         .background(GridBackground())
-        .refreshable { cast.refresh(); power.search(force: true); updates.check() }
-        .onAppear { cast.startBrowsing(); power.search(); updates.check() }
-        .onChange(of: cast.connected) { _ in maybeScreensaver() }
-        .onChange(of: cast.activity) { _ in maybeScreensaver() }
+        .toolbar(.hidden, for: .navigationBar)
+        .refreshable { cast.refresh(); samsung.start(); power.search(force: true); updates.check() }
+        .onAppear { cast.startBrowsing(); samsung.start(); power.search(); updates.check() }
+        .onChange(of: cast.connected) { maybeScreensaver() }
+        .onChange(of: cast.activity) { maybeScreensaver() }
     }
 
     /// Connected with nothing playing: the TV shows the living title card (when the screensaver is on).
@@ -46,20 +64,99 @@ struct HomeView: View {
         }
     }
 
-    // MARK: - Cards
+    private var topBar: some View {
+        HStack(alignment: .center) {
+            VStack(alignment: .leading, spacing: 2) {
+                Eyebrow(text: "Quantari")
+                GradientTitle(text: "TheatreSync", size: 30)
+            }
+            Spacer()
+            Menu {
+                Button { path.append(.youtube) } label: { Label("YouTube", systemImage: "play.rectangle.fill") }
+                Button { path.append(.remote) } label: { Label("Remote", systemImage: "appletvremote.gen4") }
+                Button { path.append(.movie) } label: { Label("Play a movie", systemImage: "film") }
+                Button { path.append(.mirror) } label: { Label("Show your phone on the TV", systemImage: "rectangle.on.rectangle") }
+                Button { path.append(.headphones) } label: { Label("Headphones", systemImage: "headphones.circle") }
+                if cast.connected { Button { path.append(.nowCasting) } label: { Label("Now casting", systemImage: "tv") } }
+                Button { path.append(.listen) } label: { Label("Listen along", systemImage: "headphones") }
+                Divider()
+                Button { path.append(.settings) } label: { Label("Settings", systemImage: "gearshape") }
+            } label: {
+                Image(systemName: "line.3.horizontal").font(.title2.weight(.semibold)).foregroundStyle(Q.primary)
+                    .frame(width: 48, height: 48)
+                    .background(Q.card, in: Circle())
+                    .overlay(Circle().stroke(Q.borderAccent, lineWidth: 1))
+            }
+            .accessibilityLabel("Menu")
+        }
+    }
+
+    private func nowCastingRow(_ a: CastActivity) -> some View {
+        Button { path.append(.nowCasting) } label: {
+            QCard(highlighted: a.isPlaying) {
+                HStack(spacing: 14) {
+                    Thumb(url: a.imageUrl ?? (a.appId == CastStatus.appYouTube ? a.contentId.map { "https://i.ytimg.com/vi/\($0)/hqdefault.jpg" } : nil))
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("NOW CASTING · \(a.appName.uppercased())").font(.caption2.weight(.bold)).foregroundStyle(Q.success)
+                        Text(a.title ?? a.appName).font(.headline).foregroundStyle(Q.text).lineLimit(2)
+                        Text(cast.selected?.name ?? "TV").font(.caption).foregroundStyle(Q.textMuted)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right").foregroundStyle(Q.primary)
+                }
+            }
+        }.buttonStyle(.plain)
+    }
+
+    private func samsungRow(_ tv: SamsungTV) -> some View {
+        Button { path.append(.youtube) } label: {
+            QCard(highlighted: youtube.samsungPlaying) {
+                HStack(spacing: 14) {
+                    Thumb(url: youtube.castVideoId.map { "https://i.ytimg.com/vi/\($0)/hqdefault.jpg" })
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("NOW CASTING · YOUTUBE").font(.caption2.weight(.bold)).foregroundStyle(Q.success)
+                        Text(tv.name).font(.headline).foregroundStyle(Q.text)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right").foregroundStyle(Q.primary)
+                }
+            }
+        }.buttonStyle(.plain)
+    }
+
+    private var quickWatch: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Quick watch").font(.title3.weight(.bold)).foregroundStyle(Q.text)
+            HStack(spacing: 12) {
+                Tile(title: "YouTube", subtitle: "Cast a link", icon: "play.rectangle.fill") { path.append(.youtube) }
+                Tile(title: "Mirror", subtitle: "Phone or laptop on the TV", icon: "rectangle.on.rectangle") { path.append(.mirror) }
+            }
+            HStack(spacing: 12) {
+                Tile(title: "Now casting", subtitle: cast.connected ? (cast.selected?.name ?? "TV") : "Pick your TV below", icon: "tv") { path.append(.nowCasting) }
+                Tile(title: "Remote", subtitle: "TV, projector, receiver", icon: "appletvremote.gen4") { path.append(.remote) }
+            }
+            HStack(spacing: 12) {
+                Tile(title: "Headphones", subtitle: "Pair, test, sync", icon: "headphones") { path.append(.headphones) }
+                Tile(title: "Listen along", subtitle: "A movie on another phone", icon: "person.2.wave.2") { path.append(.listen) }
+            }
+        }
+    }
 
     private var tvCard: some View {
         QCard(highlighted: cast.connected) {
-            Text("Your TV").font(.title3.weight(.bold)).foregroundStyle(Q.text)
-            if cast.tvs.isEmpty {
-                StatusPill(text: "Looking for Chromecasts…", color: Q.primary, pulsing: true)
-                Text("Same Wi-Fi as the Chromecast, and allow Local Network when iOS asks.").font(.footnote).foregroundStyle(Q.textMuted)
+            Text("Your TVs").font(.title3.weight(.bold)).foregroundStyle(Q.text)
+            if cast.tvs.isEmpty && samsung.tvs.isEmpty {
+                StatusPill(text: "Looking on the Wi-Fi…", color: Q.primary, pulsing: true)
+                Text("Same Wi-Fi as your TV, and allow Local Network when iOS asks.").font(.footnote).foregroundStyle(Q.textMuted)
             }
             ForEach(cast.tvs) { tv in
                 Button { cast.select(tv) } label: {
                     HStack {
                         Image(systemName: "tv").foregroundStyle(Q.primary)
-                        Text(tv.name).foregroundStyle(Q.text).lineLimit(1)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(tv.name).foregroundStyle(Q.text).lineLimit(1)
+                            Text("Chromecast · everything").font(.caption).foregroundStyle(Q.textFaint)
+                        }
                         Spacer()
                         if cast.selected == tv {
                             StatusPill(text: cast.connected ? "Connected" : "Connecting…", color: cast.connected ? Q.success : Q.primary, pulsing: !cast.connected)
@@ -67,110 +164,111 @@ struct HomeView: View {
                     }
                     .padding(.vertical, 6)
                 }
-                .accessibilityHint("Connects to \(tv.name)")
             }
-        }
-    }
-
-    private var nowCasting: some View {
-        QCard(highlighted: cast.activity?.isPlaying == true) {
-            if let a = cast.activity, !cast.isShowingTitleCard {
-                if let img = a.imageUrl, let u = URL(string: img) {
-                    AsyncImage(url: u) { $0.resizable().scaledToFill() } placeholder: { Q.backgroundAlt }
-                        .frame(maxWidth: .infinity).aspectRatio(16 / 9, contentMode: .fit)
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                }
-                Text(a.appName).font(.caption.weight(.bold)).foregroundStyle(Q.success)
-                Text(a.title ?? a.appName).font(.title3.weight(.bold)).foregroundStyle(Q.primary).lineLimit(2)
-                if let s = a.subtitle { Text(s).font(.subheadline).foregroundStyle(Q.textMuted) }
-                if a.canControl {
-                    HStack(spacing: 14) {
-                        Button("−10s") { cast.seek(by: -10) }.buttonStyle(GhostButtonStyle())
-                        Button { cast.playPause() } label: { Image(systemName: a.isPlaying ? "pause.fill" : "play.fill").font(.title2).frame(maxWidth: .infinity) }
-                            .buttonStyle(GoldButtonStyle()).accessibilityLabel(a.isPlaying ? "Pause" : "Play")
-                        Button("+10s") { cast.seek(by: 10) }.buttonStyle(GhostButtonStyle())
-                    }
-                }
-                Button { cast.stopCasting() } label: { Label("Stop casting", systemImage: "stop.fill").frame(maxWidth: .infinity) }
-                    .buttonStyle(GhostButtonStyle())
-            } else {
-                Text(cast.selected?.name ?? "TV").font(.title3.weight(.bold)).foregroundStyle(Q.text)
-                Text(cast.isShowingTitleCard ? "Showing the TheatreSync title card." : "Ready to cast.").foregroundStyle(Q.textMuted)
-            }
-        }
-    }
-
-    private var volumeCard: some View {
-        QCard {
-            HStack {
-                Text("TV volume").font(.headline).foregroundStyle(Q.text)
-                Spacer()
-                Button(cast.muted ? "Unmute" : "Mute") { cast.setMuted(!cast.muted) }.buttonStyle(GhostButtonStyle())
-            }
-            Slider(value: Binding(get: { cast.volume }, set: { cast.setVolume($0) }), in: 0...1).tint(Q.primary)
-            Text("Controls the Chromecast's volume (room speakers).").font(.footnote).foregroundStyle(Q.textMuted)
-        }
-    }
-
-    private var powerCard: some View {
-        QCard {
-            Text("Projector & receiver").font(.headline).foregroundStyle(Q.text)
-            HStack(spacing: 12) {
-                Button("Turn on") {
-                    cast.showTitleCard() // wakes them through the Chromecast (HDMI-CEC)
-                    Task { _ = await power.setPower(on: true); await MainActor.run { powerMessage = "Turning on the projector and receiver…" } }
-                }.buttonStyle(GoldButtonStyle())
-                Button("Turn off") {
-                    Task {
-                        var accepted = false
-                        if !power.devices.isEmpty { accepted = await power.setPower(on: false) }
-                        let ok = accepted
-                        await MainActor.run {
-                            powerMessage = power.devices.isEmpty
-                                ? "No projector or receiver that can be switched off was found on the Wi-Fi. Switch on network control in their menus (Network Standby / PJLink / IP Control), then search again."
-                                : (ok ? "Projector and receiver going to standby." : "They didn't answer. Check they're on the same Wi-Fi with network control on.")
+            ForEach(samsung.tvs) { tv in
+                Button { youtube.chosen = .samsung(tv); path.append(.youtube) } label: {
+                    HStack {
+                        Image(systemName: "photo.artframe").foregroundStyle(Q.primary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(tv.name).foregroundStyle(Q.text).lineLimit(1)
+                            Text(tv.ip == nil ? "Samsung · finding its address…" : "Samsung · YouTube").font(.caption).foregroundStyle(Q.textFaint)
                         }
+                        Spacer()
+                        Image(systemName: "chevron.right").foregroundStyle(Q.textFaint)
                     }
-                }.buttonStyle(GhostButtonStyle())
+                    .padding(.vertical, 6)
+                }
             }
-            if let m = powerMessage { Text(m).font(.footnote).foregroundStyle(Q.primary) }
-            Group {
-                if power.searching { Text("Looking for your projector and receiver on the Wi-Fi…") }
-                else if !power.labels.isEmpty { Text("Controls: " + power.labels.joined(separator: ", ")) }
-                else { Text("None found on the Wi-Fi yet. In their own menus, switch on network control (Network Standby, Network Control, PJLink or IP Control), then search again.") }
-            }.font(.footnote).foregroundStyle(Q.textMuted)
-            Text("On wakes them through the Chromecast (HDMI-CEC). On and Off also work over the Wi-Fi with PJLink projectors and Denon/Marantz, Onkyo/Pioneer/Integra and Yamaha receivers.")
-                .font(.footnote).foregroundStyle(Q.textFaint)
-            if !power.searching { Button("Search again") { power.search(force: true) }.buttonStyle(GhostButtonStyle()) }
+            Text("Samsung TV missing? Add it by its address in Settings.").font(.caption).foregroundStyle(Q.textFaint)
         }
     }
 
-    private var titleCardCard: some View {
+    private var movieNight: some View {
         QCard {
-            Toggle(isOn: $screensaver) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("TV screensaver").font(.headline).foregroundStyle(Q.text)
-                    Text("The living TheatreSync title card when nothing's playing.").font(.footnote).foregroundStyle(Q.textMuted)
-                }
-            }.tint(Q.primary)
-            Button("Show the title card now") { cast.showTitleCard() }.buttonStyle(GhostButtonStyle())
+            Text("Movie night").font(.title3.weight(.bold)).foregroundStyle(Q.text)
+            Step(n: 1, text: "Pick your TV above.", done: cast.connected)
+            Step(n: 2, text: "Projector and receiver on (Remote).", done: false)
+            Step(n: 3, text: "Pick a movie: picture on the TV, sound in your headphones.", done: movie.playing != nil)
+            Button { path.append(.movie) } label: { Label("Play a movie", systemImage: "film").frame(maxWidth: .infinity) }
+                .buttonStyle(GoldButtonStyle())
+            Button { path.append(.remote) } label: { Label("Open the remote", systemImage: "power").frame(maxWidth: .infinity) }
+                .buttonStyle(GhostButtonStyle())
         }
     }
+}
 
-    private var aboutCard: some View {
-        QCard {
-            Text("About").font(.headline).foregroundStyle(Q.text)
-            Text("TheatreSync \(updates.currentVersion) (\(updates.currentBuild))").foregroundStyle(Q.textMuted)
-            if let u = updates.available {
-                Text("Update available · \(u.version)").font(.subheadline.weight(.bold)).foregroundStyle(Q.primary)
-                if let n = u.notes { Text(n).font(.footnote).foregroundStyle(Q.textMuted) }
-                if let z = u.zipUrl, let url = URL(string: z) {
-                    Link("Download the update", destination: url).buttonStyle(GoldButtonStyle())
-                }
-                Text("Unzip it in Files and replace TheatreSync.swiftpm in Playgrounds.").font(.footnote).foregroundStyle(Q.textFaint)
-            } else if updates.checked {
-                Text("Up to date.").font(.footnote).foregroundStyle(Q.success)
+/// The pages reached from home (each shows a back button).
+enum Page: Hashable {
+    case nowCasting, remote, youtube, settings, listen, listening, movie, headphones, mirror, experimental, multiAudio
+
+    init?(name: String) {
+        switch name {
+        case "nowCasting": self = .nowCasting
+        case "remote": self = .remote
+        case "youtube": self = .youtube
+        case "settings": self = .settings
+        case "listen": self = .listen
+        case "movie": self = .movie
+        case "headphones": self = .headphones
+        case "mirror": self = .mirror
+        case "experimental": self = .experimental
+        case "multiAudio": self = .multiAudio
+        default: return nil
+        }
+    }
+}
+
+struct Tile: View {
+    let title: String
+    let subtitle: String
+    let icon: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 8) {
+                Image(systemName: icon).font(.title2).foregroundStyle(Q.primary)
+                Text(title).font(.headline).foregroundStyle(Q.text)
+                Text(subtitle).font(.caption).foregroundStyle(Q.textMuted).lineLimit(1)
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, minHeight: 112, alignment: .topLeading)
+            .background(LinearGradient(colors: [Q.card, Q.backgroundAlt], startPoint: .top, endPoint: .bottom), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Q.borderAccent, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct Step: View {
+    let n: Int
+    let text: String
+    let done: Bool
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            ZStack {
+                Circle().fill(done ? Q.success.opacity(0.2) : Q.primary.opacity(0.12)).frame(width: 28, height: 28)
+                if done { Image(systemName: "checkmark").font(.caption.weight(.bold)).foregroundStyle(Q.success) }
+                else { Text("\(n)").font(.caption.weight(.bold)).foregroundStyle(Q.primary) }
+            }
+            Text(text).foregroundStyle(Q.textMuted)
+        }
+    }
+}
+
+struct Thumb: View {
+    let url: String?
+
+    var body: some View {
+        Group {
+            if let s = url, let u = URL(string: s) {
+                AsyncImage(url: u) { $0.resizable().scaledToFill() } placeholder: { Q.backgroundAlt }
+            } else {
+                ZStack { Q.backgroundAlt; Image(systemName: "tv").foregroundStyle(Q.primary) }
             }
         }
+        .frame(width: 96, height: 54)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 }

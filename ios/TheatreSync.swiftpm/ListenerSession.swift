@@ -21,7 +21,9 @@ final class ListenerSession: ObservableObject {
     @Published private(set) var status: Status = .idle
     @Published private(set) var movieTitle: String = ""
     @Published private(set) var hostName: String = ""
-    @Published private(set) var soundDelayMs: Int = UserDefaults.standard.integer(forKey: "soundDelayMs")
+    /// Automatic, like Android: the headphones' own delay as iOS reports it (Bluetooth adds ~150–250 ms),
+    /// so the sound is played that much earlier. No manual buttons.
+    var soundDelayMs: Int { -Int((AVAudioSession.sharedInstance().outputLatency * 1000).rounded()) }
     @Published private(set) var driftMs: Int64?
 
     private var base: URL?
@@ -48,11 +50,6 @@ final class ListenerSession: ObservableObject {
         http = URLSession(configuration: config)
     }
 
-    func adjustSoundDelay(by step: Int) {
-        soundDelayMs = min(1000, max(-1000, soundDelayMs + step))
-        UserDefaults.standard.set(soundDelayMs, forKey: "soundDelayMs")
-        corrector.forceCorrect()
-    }
 
     func join(address: String, name: String) {
         leave()

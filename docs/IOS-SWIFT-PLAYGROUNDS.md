@@ -52,3 +52,15 @@ the iPad; ask Claude to make changes in the repo instead, so GitHub stays the so
 | `Shared/SyncMessage.swift` | Protocol v1 models, a mirror of `contracts/` |
 | `Shared/ClockSync.swift` | Same clock algorithm as Android `sync-core` |
 | `Shared/Sync.swift` | Same drift-correction rules as Android |
+
+## A real app, for free (no Swift Playgrounds each time)
+
+Swift Playgrounds runs the app as a preview, so iOS asks for Local Network on every run. An installed
+app asks once. Free ways to install it (no Apple Developer Program, per the free-tier rule):
+
+1. **Xcode on a Mac + free Apple ID**: open `ios/TheatreSync.swiftpm` in Xcode, pick your iPhone/iPad,
+   Signing → your Apple ID (Personal Team), Run. The app stays on the home screen; a free Apple ID's
+   signature lasts 7 days, then plug in and Run again.
+2. **Swift Playgrounds "App Store Connect" upload** needs the paid program, so it's not used.
+3. **SideStore / AltStore** (free Apple ID, re-signs every 7 days by itself over Wi-Fi) need a computer
+   once for setup and an .ipa file.

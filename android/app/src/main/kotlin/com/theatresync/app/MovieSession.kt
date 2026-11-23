@@ -329,7 +329,7 @@ class MovieSession(private val app: Application) {
             val wifi = app.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
             val lock = runCatching { wifi.createMulticastLock("theatresync-dial").apply { setReferenceCounted(false); acquire() } }.getOrNull()
             try {
-                val found = Dial.discover(socketFactory = ::wifiSocket)
+                val found = runCatching { Dial.discover(socketFactory = ::wifiSocket) }.getOrDefault(emptyList()) + scanSamsung()
                 main.post {
                     found.forEach { addSmartTv(it) }
                     val now2 = SystemClock.elapsedRealtime()
@@ -343,6 +343,39 @@ class MovieSession(private val app: Application) {
                 dialScanning = false
             }
         }, "dial-scan").apply { isDaemon = true }.start()
+    }
+
+    /** The Samsung TV address typed in Settings (when The Frame isn't found by itself). */
+    fun samsungIp(): String = prefs.getString("samsungIp", "").orEmpty()
+
+    fun setSamsungIp(ip: String) = guard("setSamsungIp") {
+        prefs.edit().putString("samsungIp", ip.trim()).apply()
+        lastDialScanMs = 0L
+        scanDial()
+    }
+
+    /**
+     * Samsung TVs by asking each address on the Wi-Fi (port 8001, "who are you"): finds The Frame even
+     * when its Wi-Fi announcement and the DIAL search don't arrive (Art mode, mesh Wi-Fi, router settings).
+     */
+    private fun scanSamsung(): List<Dial.Device> {
+        val found = java.util.concurrent.ConcurrentLinkedQueue<Dial.Device>()
+        samsungIp().takeIf { it.isNotBlank() }?.let { ip ->
+            found.add(com.theatresync.core.SamsungTv.device(ip, com.theatresync.core.SamsungTv.query(ip)?.name ?: "Samsung TV ($ip)"))
+        }
+        val me = NetworkInfo.localIpv4(app) ?: return found.toList()
+        val prefix = me.substringBeforeLast('.')
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(48)
+        try {
+            (1..254).map { "$prefix.$it" }.filter { it != me && it != samsungIp() }.map { host ->
+                pool.submit {
+                    if (com.theatresync.core.NetworkPower.portOpen(host, com.theatresync.core.SamsungTv.INFO_PORT)) {
+                        com.theatresync.core.SamsungTv.query(host)?.let { found.add(com.theatresync.core.SamsungTv.device(host, it.name)) }
+                    }
+                }
+            }.forEach { runCatching { it.get(5, java.util.concurrent.TimeUnit.SECONDS) } }
+        } finally { pool.shutdownNow() }
+        return found.toList()
     }
 
     /** A UDP socket on the Wi-Fi network (not mobile data), for the smart-TV search. */
