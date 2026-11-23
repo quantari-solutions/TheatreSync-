@@ -113,8 +113,10 @@ enum LanHTTP {
                 default: break
                 }
             }
-            conn.start(queue: .global())
-            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { finish(parse(buffer.data)) }
+            // One serial queue for the connection and the timeout, so the reply buffer is never touched twice at once.
+            let q = DispatchQueue(label: "lan-http")
+            conn.start(queue: q)
+            q.asyncAfter(deadline: .now() + timeout) { finish(parse(buffer.data)) }
         }
     }
 
