@@ -18,6 +18,7 @@ struct RootView: View {
     @StateObject private var samsung = SamsungFinder()
     @StateObject private var youtube = YouTubeCaster()
     @StateObject private var headphones = HeadphonesPlayer()
+    @StateObject private var movie = MovieCaster()
     /// The opening plays once each time the app starts fresh (not when coming back from the background).
     @State private var opening = true
     @State private var path: [Page] = []
@@ -30,10 +31,7 @@ struct RootView: View {
                 OpeningView { opening = false }
             } else {
                 NavigationStack(path: $path) {
-                    Group {
-                        if session.status == .idle { HomeView(path: $path) }
-                        else { ListeningView(session: session) }
-                    }
+                    HomeView(path: $path)
                     .navigationDestination(for: Page.self) { page in
                         switch page {
                         case .nowCasting: NowCastingPage()
@@ -41,6 +39,12 @@ struct RootView: View {
                         case .youtube: YouTubePage()
                         case .settings: SettingsPage()
                         case .listen: JoinView(session: session, browser: browser)
+                        case .listening: ListeningView(session: session)
+                        case .movie: MoviePage()
+                        case .headphones: HeadphonesPage()
+                        case .mirror: MirrorPage()
+                        case .experimental: ExperimentalPage()
+                        case .multiAudio: MultiAudioPage()
                         }
                     }
                 }
@@ -52,6 +56,13 @@ struct RootView: View {
         .environmentObject(samsung)
         .environmentObject(youtube)
         .environmentObject(headphones)
+        .environmentObject(session)
+        .environmentObject(movie)
+        // Joining a movie opens the Listening page (with a back button: home is always one tap away).
+        .onChange(of: session.status == .idle) { idle in
+            if !idle, path.last != .listening { path = [.listening] }
+            if idle, path.last == .listening { path.removeLast() }
+        }
         .background(Color.black.ignoresSafeArea())
         .preferredColorScheme(.dark)
         .tint(Q.primary)

@@ -8,6 +8,8 @@ struct HomeView: View {
     @EnvironmentObject var updates: UpdateCheck
     @EnvironmentObject var samsung: SamsungFinder
     @EnvironmentObject var youtube: YouTubeCaster
+    @EnvironmentObject var session: ListenerSession
+    @EnvironmentObject var movie: MovieCaster
     @AppStorage("screensaver") private var screensaver = true
     @Binding var path: [Page]
 
@@ -19,6 +21,21 @@ struct HomeView: View {
                     Button { path.append(.settings) } label: {
                         Label("Update available · \(u.version)", systemImage: "arrow.down.circle.fill").frame(maxWidth: .infinity)
                     }.buttonStyle(GoldButtonStyle())
+                }
+                if session.status != .idle {
+                    Button { path.append(.listening) } label: {
+                        QCard(highlighted: true) {
+                            HStack {
+                                Image(systemName: "headphones").foregroundStyle(Q.primary)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("LISTENING IN YOUR HEADPHONES").font(.caption2.weight(.bold)).foregroundStyle(Q.success)
+                                    Text(session.movieTitle.isEmpty ? session.hostName : session.movieTitle).font(.headline).foregroundStyle(Q.text)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right").foregroundStyle(Q.primary)
+                            }
+                        }
+                    }.buttonStyle(.plain)
                 }
                 if cast.connected, let a = cast.activity, !cast.isShowingTitleCard { nowCastingRow(a) }
                 else if case .samsung(let tv)? = youtube.target { samsungRow(tv) }
@@ -57,6 +74,9 @@ struct HomeView: View {
             Menu {
                 Button { path.append(.youtube) } label: { Label("YouTube", systemImage: "play.rectangle.fill") }
                 Button { path.append(.remote) } label: { Label("Remote", systemImage: "appletvremote.gen4") }
+                Button { path.append(.movie) } label: { Label("Play a movie", systemImage: "film") }
+                Button { path.append(.mirror) } label: { Label("Show your phone on the TV", systemImage: "rectangle.on.rectangle") }
+                Button { path.append(.headphones) } label: { Label("Headphones", systemImage: "headphones.circle") }
                 if cast.connected { Button { path.append(.nowCasting) } label: { Label("Now casting", systemImage: "tv") } }
                 Button { path.append(.listen) } label: { Label("Listen along", systemImage: "headphones") }
                 Divider()
@@ -109,11 +129,15 @@ struct HomeView: View {
             Text("Quick watch").font(.title3.weight(.bold)).foregroundStyle(Q.text)
             HStack(spacing: 12) {
                 Tile(title: "YouTube", subtitle: "Cast a link", icon: "play.rectangle.fill") { path.append(.youtube) }
-                Tile(title: "Remote", subtitle: "TV, projector, receiver", icon: "appletvremote.gen4") { path.append(.remote) }
+                Tile(title: "Mirror", subtitle: "Phone or laptop on the TV", icon: "rectangle.on.rectangle") { path.append(.mirror) }
             }
             HStack(spacing: 12) {
                 Tile(title: "Now casting", subtitle: cast.connected ? (cast.selected?.name ?? "TV") : "Pick your TV below", icon: "tv") { path.append(.nowCasting) }
-                Tile(title: "Listen along", subtitle: "Headphones", icon: "headphones") { path.append(.listen) }
+                Tile(title: "Remote", subtitle: "TV, projector, receiver", icon: "appletvremote.gen4") { path.append(.remote) }
+            }
+            HStack(spacing: 12) {
+                Tile(title: "Headphones", subtitle: "Pair, test, sync", icon: "headphones") { path.append(.headphones) }
+                Tile(title: "Listen along", subtitle: "A movie on another phone", icon: "person.2.wave.2") { path.append(.listen) }
             }
         }
     }
@@ -164,7 +188,9 @@ struct HomeView: View {
             Text("Movie night").font(.title3.weight(.bold)).foregroundStyle(Q.text)
             Step(n: 1, text: "Pick your TV above.", done: cast.connected)
             Step(n: 2, text: "Projector and receiver on (Remote).", done: false)
-            Step(n: 3, text: "Cast from YouTube, or any app, and hear it in your headphones.", done: cast.activity != nil && !cast.isShowingTitleCard)
+            Step(n: 3, text: "Pick a movie: picture on the TV, sound in your headphones.", done: movie.playing != nil)
+            Button { path.append(.movie) } label: { Label("Play a movie", systemImage: "film").frame(maxWidth: .infinity) }
+                .buttonStyle(GoldButtonStyle())
             Button { path.append(.remote) } label: { Label("Open the remote", systemImage: "power").frame(maxWidth: .infinity) }
                 .buttonStyle(GhostButtonStyle())
         }
@@ -173,7 +199,7 @@ struct HomeView: View {
 
 /// The pages reached from home (each shows a back button).
 enum Page: Hashable {
-    case nowCasting, remote, youtube, settings, listen
+    case nowCasting, remote, youtube, settings, listen, listening, movie, headphones, mirror, experimental, multiAudio
 
     init?(name: String) {
         switch name {
@@ -182,6 +208,11 @@ enum Page: Hashable {
         case "youtube": self = .youtube
         case "settings": self = .settings
         case "listen": self = .listen
+        case "movie": self = .movie
+        case "headphones": self = .headphones
+        case "mirror": self = .mirror
+        case "experimental": self = .experimental
+        case "multiAudio": self = .multiAudio
         default: return nil
         }
     }

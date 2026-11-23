@@ -56,7 +56,7 @@ print(c[-1]['udid'] if c else '')")
   sips -Z 420 -s format jpeg -s formatOptions 55 "$OUT/$KIND.png" --out "$OUT/$KIND-small.jpg" >/dev/null
   echo "SCREENSHOT-$KIND-BEGIN"; base64 -b 1000 -i "$OUT/$KIND-small.jpg"; echo "SCREENSHOT-$KIND-END"
   # Each page (opened straight away with a launch argument), to check the layout and the back button.
-  for PAGE in youtube remote settings; do
+  for PAGE in youtube remote settings movie headphones listen; do
     xcrun simctl terminate "$UDID" "$BUNDLE" || true
     xcrun simctl launch "$UDID" "$BUNDLE" -tsPage "$PAGE" >/dev/null
     sleep 3

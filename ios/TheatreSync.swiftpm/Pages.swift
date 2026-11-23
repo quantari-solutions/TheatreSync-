@@ -372,8 +372,6 @@ struct SettingsPage: View {
     @EnvironmentObject var updates: UpdateCheck
     @EnvironmentObject var cast: CastController
     @EnvironmentObject var samsung: SamsungFinder
-    @AppStorage("screensaver") private var screensaver = true
-    @AppStorage("signatureIntro") private var signatureIntro = true
     @State private var samsungIp = SamsungFinder.manualIP ?? ""
 
     var body: some View {
@@ -394,16 +392,6 @@ struct SettingsPage: View {
                 Button("Check for updates") { updates.check() }.buttonStyle(GhostButtonStyle())
             }
             QCard {
-                Text("TV").font(.headline).foregroundStyle(Q.text)
-                Toggle(isOn: $screensaver) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("TV screensaver").foregroundStyle(Q.text)
-                        Text("The living TheatreSync title card when nothing's playing.").font(.footnote).foregroundStyle(Q.textMuted)
-                    }
-                }.tint(Q.primary)
-                if cast.connected { Button("Show the title card now") { cast.showTitleCard() }.buttonStyle(GhostButtonStyle()) }
-            }
-            QCard {
                 Text("Samsung TV (The Frame)").font(.headline).foregroundStyle(Q.text)
                 Text("Found by itself on the Wi-Fi when it's on. If it isn't listed, type its address (TV: Settings → General → Network → Network Status → IP settings).").font(.footnote).foregroundStyle(Q.textMuted)
                 HStack {
@@ -416,19 +404,10 @@ struct SettingsPage: View {
                 ForEach(samsung.tvs) { tv in Text("• \(tv.name)\(tv.ip.map { " · \($0)" } ?? "")").font(.footnote).foregroundStyle(Q.textMuted) }
             }
             QCard {
-                Text("Experimental").font(.headline).foregroundStyle(Q.text)
-                Toggle(isOn: $signatureIntro) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Signature intro").foregroundStyle(Q.text)
-                        Text("Shows the title card on the TV when casting starts from TheatreSync.").font(.footnote).foregroundStyle(Q.textMuted)
-                    }
-                }.tint(Q.primary)
-            }
-            QCard {
-                Text("Headphones").font(.headline).foregroundStyle(Q.text)
-                Text("iPhone and iPad play to one Bluetooth headphone at a time (pair it in iOS Settings → Bluetooth). For YouTube, switch on \"TV sound in your headphones\" on Now casting.").font(.footnote).foregroundStyle(Q.textMuted)
-                NavigationLink { DiagnosticsView() } label: { Label("Headphone and network check", systemImage: "stethoscope").frame(maxWidth: .infinity) }
-                    .buttonStyle(GhostButtonStyle())
+                Text("More").font(.headline).foregroundStyle(Q.text)
+                NavigationLink(value: Page.headphones) { Label("Headphones", systemImage: "headphones").frame(maxWidth: .infinity) }.buttonStyle(GhostButtonStyle())
+                NavigationLink(value: Page.experimental) { Label("Experimental (intro, screensaver)", systemImage: "sparkles").frame(maxWidth: .infinity) }.buttonStyle(GhostButtonStyle())
+                NavigationLink(value: Page.mirror) { Label("Show your phone on the TV", systemImage: "rectangle.on.rectangle").frame(maxWidth: .infinity) }.buttonStyle(GhostButtonStyle())
             }
             QCard {
                 Text("Not on iPhone / iPad").font(.headline).foregroundStyle(Q.text)

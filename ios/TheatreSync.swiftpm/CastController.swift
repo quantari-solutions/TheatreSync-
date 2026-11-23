@@ -29,8 +29,8 @@ final class CastController: ObservableObject {
     private var requestId = 1
     private var transportConnected: String?
     private var poll: Timer?
-    /// Picture waiting for Google's player to open on the TV (title card).
-    private var pendingPictureURL: String?
+    /// What to LOAD once Google's player is open on the TV (title card picture or a movie).
+    private var pendingLoad: ((Int) -> String)?
     private let sender = "sender-ts-ios"
 
     // MARK: - Finding TVs
@@ -128,10 +128,10 @@ final class CastController: ObservableObject {
                     a.currentTimeSec = old.currentTimeSec; a.durationSec = old.durationSec; a.mediaSessionId = old.mediaSessionId; a.contentId = old.contentId
                 }
                 activity = a
-                if a.appId == CastStatus.appDefaultMediaReceiver, let t = a.transportId, let url = pendingPictureURL {
-                    pendingPictureURL = nil
+                if a.appId == CastStatus.appDefaultMediaReceiver, let t = a.transportId, let load = pendingLoad {
+                    pendingLoad = nil
                     send(CastMessage.nsConnection, to: t, "{\"type\":\"CONNECT\"}"); transportConnected = t
-                    send(CastMessage.nsMedia, to: t, CastStatus.loadPicture(url: url, requestId: nextId()))
+                    send(CastMessage.nsMedia, to: t, load(nextId()))
                 }
                 if a.hasMedia, transportConnected != a.transportId { refresh() }
             } else {
@@ -181,14 +181,30 @@ final class CastController: ObservableObject {
     /// Shows the living Signature title card on the TV (also wakes the projector and receiver over HDMI-CEC).
     func showTitleCard() {
         guard connected, let url = TitleCardServer.shared.url() else { message = "Couldn't reach the TV over the Wi-Fi."; return }
-        pendingPictureURL = url
+        load { CastStatus.loadPicture(url: url, requestId: $0) }
+    }
+
+    /// Plays a movie served from this phone in Google's player on the TV.
+    func playVideo(url: String, contentType: String, title: String) {
+        load { CastStatus.loadVideo(url: url, contentType: contentType, title: title, requestId: $0) }
+    }
+
+    private func load(_ payload: @escaping (Int) -> String) {
         if let a = activity, a.appId == CastStatus.appDefaultMediaReceiver, let t = a.transportId {
-            pendingPictureURL = nil
             send(CastMessage.nsConnection, to: t, "{\"type\":\"CONNECT\"}"); transportConnected = t
-            send(CastMessage.nsMedia, to: t, CastStatus.loadPicture(url: url, requestId: nextId()))
+            send(CastMessage.nsMedia, to: t, payload(nextId()))
         } else {
+            pendingLoad = payload
             send(CastMessage.nsReceiver, CastStatus.launch(CastStatus.appDefaultMediaReceiver, requestId: nextId()))
         }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.refresh() }
+    }
+
+    /// Where the TV is in the movie playing from this phone (seconds, playing).
+    func mediaNow(contentPrefix: String) -> (position: Double, playing: Bool)? {
+        guard let a = activity, a.contentId?.hasPrefix(contentPrefix) == true, let t = a.currentTimeSec else { return nil }
+        let playing = a.playerState == "PLAYING"
+        return (t + (playing ? Date().timeIntervalSince(activityAt) : 0), playing)
     }
 
     // MARK: - YouTube

@@ -21,7 +21,7 @@ for rel in ["Package.swift", "TheatreSyncApp.swift", "JoinView.swift", "Listenin
 
 ALLOWED = {"SwiftUI", "Foundation", "Combine", "AVFoundation", "AVKit", "Network",
            "MediaPlayer", "UIKit", "PackageDescription", "AppleProductTypes", "os", "Observation",
-           "CryptoKit", "WebKit", "CoreImage"}
+           "CryptoKit", "WebKit", "CoreImage", "UniformTypeIdentifiers"}
 swift_files = sorted(pkg.rglob("*.swift"))
 for f in swift_files:
     src = f.read_text()

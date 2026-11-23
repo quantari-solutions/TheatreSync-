@@ -30,27 +30,12 @@ struct ListeningView: View {
                     syncPill
 
                     QCard {
-                        Text("Do voices match lips?")
-                            .font(.title3.bold())
-                            .foregroundStyle(Q.text)
-                        Text("If not, tap a button a few times until they do. It's remembered for next time.")
-                            .font(.subheadline)
-                            .foregroundStyle(Q.textFaint)
-                        HStack(spacing: 10) {
-                            Button("Sound is early") { session.adjustSoundDelay(by: 20) }
-                                .buttonStyle(GoldButtonStyle())
-                                .accessibilityHint("Delays the sound a little")
-                            Button("Sound is late") { session.adjustSoundDelay(by: -20) }
-                                .buttonStyle(GoldButtonStyle())
-                                .accessibilityHint("Plays the sound a little earlier")
-                        }
-                        Text("Sound delay: \(session.soundDelayMs) ms")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(Q.textFaint)
-                            .frame(maxWidth: .infinity)
+                        Text("Kept in step automatically").font(.headline).foregroundStyle(Q.text)
+                        Text("TheatreSync allows for your headphones' own delay (\(-session.soundDelayMs) ms now) and keeps correcting, so voices match lips.")
+                            .font(.subheadline).foregroundStyle(Q.textFaint)
                     }
 
-                    Text("Pause and skip on the Android phone. Keep this screen open during the movie.")
+                    Text("Pause and skip on the Android phone. You can go back to the home page; the sound keeps playing until you tap Leave.")
                         .font(.footnote)
                         .foregroundStyle(Q.textFaint)
                         .multilineTextAlignment(.center)
@@ -65,7 +50,10 @@ struct ListeningView: View {
                 .padding(20)
             }
         }
-        .toolbar(.hidden, for: .navigationBar)
+        .navigationTitle("Listening")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(Q.background, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
     }
 
     private var eyebrow: String {

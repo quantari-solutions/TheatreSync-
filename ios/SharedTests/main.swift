@@ -137,5 +137,12 @@ check(YouTubeListen.stateJson(videoId: nil, position: 0, playing: false) == "{\"
 check(YouTubeListen.steer(videoId: "a'b<c", position: 1, playing: false) == "window.tsTarget&&tsTarget(1.000,false,'abc')", "steer js is safe")
 check(YouTubeListen.headphonesPage(videoId: "dQw4w9WgXcQ").contains("vid='dQw4w9WgXcQ'") && YouTubeListen.tapInPage.contains("/yt/state"), "listen pages")
 
+// 9. Movie serving: byte ranges and the LOAD message.
+check(HTTPRange.parse("GET /movie/1.mp4 HTTP/1.1\r\nRange: bytes=100-\r\n\r\n", size: 1000)! == (100, 999), "range open end")
+check(HTTPRange.parse("GET / HTTP/1.1\r\nrange: bytes=0-1\r\n", size: 1000)! == (0, 1), "range small")
+check(HTTPRange.parse("GET / HTTP/1.1\r\nRange: bytes=-200\r\n", size: 1000)! == (800, 999), "range suffix")
+check(HTTPRange.parse("GET / HTTP/1.1\r\n\r\n", size: 1000) == nil && HTTPRange.parse("GET / HTTP/1.1\r\nRange: bytes=5000-\r\n", size: 1000) == nil, "no or bad range")
+check(CastStatus.loadVideo(url: "http://1.2.3.4:5/movie/1.mp4", contentType: "video/mp4", title: "A \"B\"", requestId: 3).contains("\"streamType\":\"BUFFERED\"") , "video load")
+
 print("\(passed) passed, \(failures) failed")
 exit(failures == 0 ? 0 : 1)

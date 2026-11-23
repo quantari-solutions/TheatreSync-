@@ -14,6 +14,19 @@ final class TitleCardServer {
         return d
     }()
 
+    /// The movie the TV plays from this phone (a file picked in Files), served with byte ranges so the
+    /// Chromecast can seek.
+    private var movieFile: URL?
+    private var movieType = "video/mp4"
+    func setMovie(_ url: URL?, contentType: String) { lock.lock(); movieFile = url; movieType = contentType; lock.unlock() }
+
+    /// The movie's address for the TV.
+    func movieURL(ext: String) -> String? {
+        startIfNeeded()
+        guard let p = port, let ip = LocalAddress.wifiIPv4() else { return nil }
+        return "http://\(ip):\(p)/movie/\(Int(Date().timeIntervalSince1970)).\(ext)"
+    }
+
     /// TapIn for YouTube: what the TV's YouTube is doing now (set by the app 4×/s while TapIn is shown).
     private var ytState = "{\"videoId\":null}"
     private let lock = NSLock()
@@ -54,6 +67,7 @@ final class TitleCardServer {
             let request = data.map { String(decoding: $0, as: UTF8.self) } ?? ""
             let head = request.hasPrefix("HEAD")
             let path = request.split(separator: " ").dropFirst().first.map(String.init) ?? "/"
+            if path.hasPrefix("/movie/") { self.serveMovie(c, request: request, head: head); return }
             let body: Data, type: String, ok: Bool
             if path.hasPrefix("/card.webp") { body = self.card; type = "image/webp"; ok = true }
             else if path.hasPrefix("/yt/state") {
@@ -68,6 +82,36 @@ final class TitleCardServer {
             if !head { out.append(body) }
             c.send(content: out, completion: .contentProcessed { _ in c.cancel() })
         }
+    }
+}
+
+extension TitleCardServer {
+    fileprivate func serveMovie(_ c: NWConnection, request: String, head: Bool) {
+        lock.lock(); let file = movieFile; let type = movieType; lock.unlock()
+        guard let file, let fh = try? FileHandle(forReadingFrom: file),
+              let size = (try? FileManager.default.attributesOfItem(atPath: file.path)[.size] as? NSNumber)?.int64Value else {
+            c.send(content: Data("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".utf8), completion: .contentProcessed { _ in c.cancel() })
+            return
+        }
+        let range = HTTPRange.parse(request, size: size)
+        let start = range?.start ?? 0, end = range?.end ?? (size - 1)
+        var h = range == nil ? "HTTP/1.1 200 OK\r\n" : "HTTP/1.1 206 Partial Content\r\nContent-Range: bytes \(start)-\(end)/\(size)\r\n"
+        h += "Content-Type: \(type)\r\nContent-Length: \(end - start + 1)\r\nAccept-Ranges: bytes\r\n"
+        h += "Access-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n"
+        c.send(content: Data(h.utf8), completion: .contentProcessed { _ in })
+        guard !head else { c.send(content: nil, isComplete: true, completion: .contentProcessed { _ in c.cancel() }); try? fh.close(); return }
+        try? fh.seek(toOffset: UInt64(start))
+        var left = end - start + 1
+        func pump() {
+            guard left > 0 else { try? fh.close(); c.send(content: nil, isComplete: true, completion: .contentProcessed { _ in c.cancel() }); return }
+            let n = Int(min(left, 256 * 1024))
+            guard let chunk = try? fh.read(upToCount: n), !chunk.isEmpty else { try? fh.close(); c.cancel(); return }
+            left -= Int64(chunk.count)
+            c.send(content: chunk, completion: .contentProcessed { err in
+                if err != nil { try? fh.close(); c.cancel() } else { pump() }
+            })
+        }
+        pump()
     }
 }
 

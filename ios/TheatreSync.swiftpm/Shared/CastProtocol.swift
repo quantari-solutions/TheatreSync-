@@ -191,3 +191,29 @@ enum CastStatus {
         "{\"type\":\"LOAD\",\"requestId\":\(requestId),\"autoplay\":true,\"media\":{\"contentId\":\"\(url)\",\"contentType\":\"\(contentType)\",\"streamType\":\"NONE\",\"metadata\":{\"metadataType\":4}}}"
     }
 }
+
+/// "Range: bytes=a-b" from an HTTP request (for serving a movie the TV can seek in).
+enum HTTPRange {
+    static func parse(_ request: String, size: Int64) -> (start: Int64, end: Int64)? {
+        guard size > 0 else { return nil }
+        for line in request.components(separatedBy: "\r\n") where line.lowercased().hasPrefix("range:") {
+            guard let eq = line.firstIndex(of: "=") else { return nil }
+            let spec = line[line.index(after: eq)...].split(separator: ",").first.map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
+            let parts = spec.split(separator: "-", omittingEmptySubsequences: false).map(String.init)
+            guard parts.count == 2 else { return nil }
+            if parts[0].isEmpty, let suffix = Int64(parts[1]) { return (max(0, size - suffix), size - 1) }
+            guard let a = Int64(parts[0]), a < size else { return nil }
+            let b = Int64(parts[1]).map { min($0, size - 1) } ?? (size - 1)
+            return b >= a ? (a, b) : nil
+        }
+        return nil
+    }
+}
+
+extension CastStatus {
+    /// LOAD a video for Google's player on the TV (the movie served from this phone).
+    static func loadVideo(url: String, contentType: String, title: String, requestId: Int) -> String {
+        let t = title.replacingOccurrences(of: "\\", with: "").replacingOccurrences(of: "\"", with: "'")
+        return "{\"type\":\"LOAD\",\"requestId\":\(requestId),\"autoplay\":true,\"currentTime\":0,\"media\":{\"contentId\":\"\(url)\",\"contentType\":\"\(contentType)\",\"streamType\":\"BUFFERED\",\"metadata\":{\"metadataType\":1,\"title\":\"\(t)\"}}}"
+    }
+}
