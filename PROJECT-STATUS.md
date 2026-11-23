@@ -6,6 +6,8 @@ _Last updated: 2026-11-22. Android 0.7.0: TapIn fixed and on the movie screen, T
 | Ask | Done | Checked |
 |---|---|---|
 | Cast to the home TV from anywhere | YouTube only (option 1): each TV's YouTube screen ID is remembered after a cast at home; away from that Wi-Fi the TV appears as "Away · YouTube over the internet" and YouTube's Lounge service (internet, not Wi-Fi) plays the link and gives play/pause/skip/volume. Movies/title card/power from away need a home hub (option 2, later; a Chromecast with Google TV could be the hub) | Builds + tests; needs an away test (TV on; a Chromecast may need YouTube open) |
+| "App support for both… automatically figure out which version" | Each Chromecast is checked once: Google's TV-remote service (ports 6466/6467) or a "Google TV" model name means Chromecast with Google TV (runs Android: can be the home hub, option 2); otherwise classic Chromecast (YouTube from away). Shown under the TV's name on Android and iOS | `CastModelTest`; needs HW check of the label |
+| Unlock a classic Chromecast / online VM | Not possible: no public unlock after the 2013 model; a cloud VM is outside the home network like the phone. No-extra-device options: Google TV Chromecast as hub, or the router's own VPN | — |
 
 ## Android 0.7.1: "on the Android also I'm not able to see the frame"
 | Cause found | Fix | Checked |

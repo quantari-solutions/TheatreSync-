@@ -155,7 +155,9 @@ struct HomeView: View {
                         Image(systemName: "tv").foregroundStyle(Q.primary)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(tv.name).foregroundStyle(Q.text).lineLimit(1)
-                            Text("Chromecast · everything").font(.caption).foregroundStyle(Q.textFaint)
+                            Text(cast.selected == tv && cast.isGoogleTV == true ? "Chromecast with Google TV · can be the home hub"
+                                 : (cast.selected == tv && cast.isGoogleTV == false ? "Chromecast · YouTube from away" : "Chromecast"))
+                                .font(.caption).foregroundStyle(Q.textFaint)
                         }
                         Spacer()
                         if cast.selected == tv {

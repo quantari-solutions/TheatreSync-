@@ -442,4 +442,6 @@
     <string name="samsung_tv_saved">Saved · searching</string>
     <string name="away_tv_youtube">Away · YouTube over the internet</string>
     <string name="away_tv_hint">You\'re not on this TV\'s Wi-Fi: YouTube goes there over the internet. The TV must be on (on a Chromecast, with YouTube open there).</string>
+    <string name="kind_google_tv">Chromecast with Google TV · can be the home hub</string>
+    <string name="kind_chromecast">Chromecast · YouTube from away</string>
 </resources>

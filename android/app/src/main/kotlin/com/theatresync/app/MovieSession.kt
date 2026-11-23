@@ -68,7 +68,7 @@ class MovieSession(private val app: Application) {
     }
 
     /** @param youTubeOnly a smart TV found via DIAL (e.g. Samsung The Frame): YouTube only, no movies. */
-    data class Tv(val id: String, val name: String, val isSpeaker: Boolean = false, val youTubeOnly: Boolean = false, val away: Boolean = false)
+    data class Tv(val id: String, val name: String, val isSpeaker: Boolean = false, val youTubeOnly: Boolean = false, val away: Boolean = false, val kind: com.theatresync.core.CastModel.Kind? = null)
 
     data class Ui(
         val castAvailable: Boolean = true,
@@ -453,13 +453,26 @@ class MovieSession(private val app: Application) {
 
     private val stopWatchers = Runnable { guard("stop watchers") { tvWatchers.stopAll() } }
 
+    private val castKinds = java.util.concurrent.ConcurrentHashMap<String, com.theatresync.core.CastModel.Kind>()
+    private val probingKinds = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
     private fun refreshTvs() {
         val routes = router.routes.filter { !it.isDefault && it.isEnabled && it.matchesSelector(selector) }
         val now = SystemClock.elapsedRealtime()
         routes.forEach { r ->
             val device = CastDevice.getFromBundle(r.extras)
             // Speakers (e.g. Nest Audio) can't show video: use a speaker icon for them.
-            val tv = Tv(r.id, r.name, isSpeaker = device != null && !device.hasCapability(CastDevice.CAPABILITY_VIDEO_OUT))
+            val speaker = device != null && !device.hasCapability(CastDevice.CAPABILITY_VIDEO_OUT)
+            val ip = device?.inetAddress?.hostAddress
+            // Which kind of Chromecast (Google TV can host TheatreSync; classic ones can't): checked once per address.
+            val kind = ip?.let { castKinds[it] } ?: run {
+                if (ip != null && probingKinds.add(ip)) Thread({
+                    castKinds[ip] = com.theatresync.core.CastModel.classify(device?.modelName, speaker, com.theatresync.core.CastModel.hasRemoteService(ip))
+                    main.post { guard("cast kind") { refreshTvs() } }
+                }, "cast-kind").apply { isDaemon = true }.start()
+                null
+            }
+            val tv = Tv(r.id, r.name, isSpeaker = speaker, kind = kind)
             val known = device?.inetAddress?.let { TvWatchers.Tv(r.id, r.name, it, device.servicePort.takeIf { p -> p > 0 } ?: 8009) }
             // Same TV under a new id (Android re-created its entry): forget the old one.
             seenTvs.entries.removeAll { (id, e) -> id != r.id && e.tv.name == r.name }

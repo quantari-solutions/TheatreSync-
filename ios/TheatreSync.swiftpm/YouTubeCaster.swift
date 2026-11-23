@@ -118,6 +118,25 @@ enum LanHTTP {
         }
     }
 
+    /// Whether something answers on host:port within the timeout.
+    static func portOpen(host: String, port: UInt16, timeout: Double = 0.8) async -> Bool {
+        guard let p = NWEndpoint.Port(rawValue: port) else { return false }
+        let conn = NWConnection(host: NWEndpoint.Host(host), port: p, using: .tcp)
+        let once = Gate()
+        return await withCheckedContinuation { (k: CheckedContinuation<Bool, Never>) in
+            func finish(_ ok: Bool) { if once.claim() { conn.cancel(); k.resume(returning: ok) } }
+            conn.stateUpdateHandler = { state in
+                switch state {
+                case .ready: finish(true)
+                case .failed, .waiting: finish(false)
+                default: break
+                }
+            }
+            conn.start(queue: .global())
+            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { finish(false) }
+        }
+    }
+
     private final class Buffer { var data = Data() }
     private final class Gate {
         private var done = false; private let lock = NSLock()
