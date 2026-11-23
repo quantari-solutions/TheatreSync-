@@ -1,8 +1,8 @@
 {
-  "versionCode": 35,
-  "versionName": "0.7.0",
-  "apkUrl": "https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases/TheatreSync-0.7.0.apk",
-  "sha256": "b9b61c2b19d153086e85db52cc80fc43c927dc8c00709d09f62567bc0c3829c8",
-  "sizeBytes": 26864283,
-  "notes": "TapIn fixed and on the movie screen; TapIn for YouTube (whoever cast it); the seek bar stays where you drag it; the TV title card at 60 fps with gentle bonfire embers."
+  "versionCode": 36,
+  "versionName": "0.7.1",
+  "apkUrl": "https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases/TheatreSync-0.7.1.apk",
+  "sha256": "ceacea7e59b262ac926bd2703b88cbda86db82247182d0875e00e9f8c5af44f2",
+  "sizeBytes": 26870675,
+  "notes": "The Frame (Samsung) now shows up in your TV list next to Media Room, even in Art mode. Tap it to cast YouTube. If it's missing, type its address in Settings \u2192 Samsung TV."
 }
