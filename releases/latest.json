@@ -1,8 +1,8 @@
 {
-  "versionCode": 37,
-  "versionName": "0.7.2",
-  "apkUrl": "https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases/TheatreSync-0.7.2.apk",
-  "sha256": "b55ea2ae38001b13fc6348a6a7082690141b227432637487330d541b5734a8fb",
-  "sizeBytes": 26877667,
-  "notes": "YouTube to your home TV from anywhere: TVs you've cast to at home show up as 'Away' when you're out; paste a link and it plays at home. Each Chromecast now shows its kind (Google TV or classic)."
+  "versionCode": 38,
+  "versionName": "0.7.3",
+  "apkUrl": "https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases/TheatreSync-0.7.3.apk",
+  "sha256": "8b7f827bf96c3438e62d65472e52a80b7f6acf5cb0acde511dcb1c4b17954b4b",
+  "sizeBytes": 26883363,
+  "notes": "Remote cast: away from home, the home screen offers 'Cast YouTube from here' to Media Room and other TVs you've used before. Switch it on or off in Settings \u2192 Experimental \u2192 Remote cast."
 }

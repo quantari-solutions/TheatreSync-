@@ -1,6 +1,6 @@
 {
-  "version": "0.8.1",
-  "build": 8,
-  "notes": "YouTube to your home TV from anywhere: TVs you've cast to at home appear as 'away' on the YouTube page when you're out. Shows whether your Chromecast is a Google TV model.",
+  "version": "0.8.2",
+  "build": 9,
+  "notes": "Remote cast: when you're away, the home page offers 'Cast YouTube from here' to TVs you've cast YouTube to. Switch: Experimental \u2192 Remote cast.",
   "zipUrl": "https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases/ios/TheatreSync-iOS.zip"
 }
