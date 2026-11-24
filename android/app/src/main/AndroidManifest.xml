@@ -27,6 +27,7 @@
         <package android:name="app.revanced.android.youtube" />
         <package android:name="app.rvx.android.youtube" />
         <package android:name="com.google.android.apps.chromecast.app" />
+        <package android:name="com.samsung.android.oneconnect" />
     </queries>
 
     <application

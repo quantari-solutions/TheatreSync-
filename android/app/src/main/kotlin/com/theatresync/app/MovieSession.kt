@@ -412,6 +412,10 @@ class MovieSession(private val app: Application) {
                 pool.submit {
                     if (com.theatresync.core.NetworkPower.portOpen(host, com.theatresync.core.SamsungTv.INFO_PORT)) {
                         com.theatresync.core.SamsungTv.query(host)?.let { found.add(com.theatresync.core.SamsungTv.device(host, it.name)) }
+                    } else if (com.theatresync.core.NetworkPower.portOpen(host, 8080)) {
+                        // Some Samsung firmware closes port 8001: its YouTube launcher (DIAL, port 8080) still answers.
+                        val d = com.theatresync.core.SamsungTv.device(host, "Samsung TV ($host)")
+                        if (runCatching { Dial.youTubeState(d) }.isSuccess) found.add(d)
                     }
                 }
             }.forEach { runCatching { it.get(5, java.util.concurrent.TimeUnit.SECONDS) } }

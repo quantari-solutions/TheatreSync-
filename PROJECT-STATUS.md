@@ -6,7 +6,8 @@ _Last updated: 2026-11-22. Android 0.7.0: TapIn fixed and on the movie screen, T
 | Finding | Change | Checked |
 |---|---|---|
 | No crash reports: YouTube accepted the request, but a Chromecast only listens over the internet while its YouTube app is open; idle (backdrop/screensaver) it can't be reached from outside | YouTube's bind reply says whether a TV is connected ("loungeStatus" → LOUNGE_SCREEN); when it isn't, the app says so at once instead of "connecting". Real fix = home hub (Google TV Chromecast) or router VPN | `YouTubeTest.knowsWhetherTheTvIsListening`; needs HW |
-| Screensaver ~20 fps with a pause at each loop | Cause: 720 full key-frames in an 8.7 MB animated WebP; the Chromecast's picture decoder can't keep up and restarts at the loop. True 60 fps + random sparks needs our own Cast receiver (one-time $5 Google Cast registration): owner to decide (free-tier rule) | — |
+| Screensaver ~20 fps with a pause at each loop; "keep everything 60fps"; random sparks | Owner chose free (no $5 receiver). New picture: 960×540, exactly 60 fps (17/17/16 ms), 24 s seamless loop, 110 random-looking embers, ~half the decode work per frame (6.1 MB). Same file on iOS | Frame timing verified from the file; smoothness needs the owner's TV |
+| The Frame not on Android; friend's iPhone casts to it | iPhone uses AirPlay (Apple only); Smart View needs Miracast (not on Motorola); Tap View is Samsung phones only. TheatreSync: Wi-Fi address search also tries Samsung's YouTube launcher (port 8080) when port 8001 is closed; Remote cast page has an "Open SmartThings" button (switch The Frame on / open YouTube from anywhere, then cast YouTube from TheatreSync) | Build; needs HW |
 
 ## Android 0.7.4 / iOS 0.8.3: remote cast feedback (owner tested from work)
 | Ask | Done | Checked |

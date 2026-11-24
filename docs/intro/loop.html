@@ -1,7 +1,7 @@
 <!doctype html><html><head><meta charset="utf-8"><style>
 /* Signature title card, alive and endless (1920×1080). The words stay still; the glow breathes and drifts,
    a shine crosses the Quantari swooshes, a light runs along the line, embers rise like a bonfire's, slowly.
-   ?render: time is set from outside (window.setTime) and every motion repeats exactly every 12 s, so the
+   ?render: time is set from outside (window.setTime) and every motion repeats exactly every 24 s, so the
    frames make a seamless loop (animated picture). Otherwise it runs live with a real clock (own Cast receiver). */
 html,body{margin:0;width:1920px;height:1080px;background:#000;overflow:hidden;font-family:"Inter","Helvetica Neue",Arial,sans-serif}
 #glow,#halo{position:absolute;inset:0;pointer-events:none}
@@ -28,7 +28,7 @@ html,body{margin:0;width:1920px;height:1080px;background:#000;overflow:hidden;fo
   <div class="tag">a Quantari Solutions module</div>
 </div>
 <script>
-const P = 12;                         // seconds: every motion repeats exactly (seamless loop)
+const P = 24;                         // seconds: every motion repeats exactly (seamless loop)
 const TAU = Math.PI * 2;
 const render = location.search.includes('render');
 let seed = 20261122;
@@ -36,12 +36,13 @@ const rnd = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
 const ri = (a, b) => a + Math.floor(rnd() * (b - a + 1));
 const gentle = x => 0.5 - 0.5 * Math.cos(Math.PI * Math.min(1, Math.max(0, x)));
 // Embers, like a bonfire's but very slow and gentle: they rise from below, sway, flicker warm orange-gold
-// and fade as they climb. Each lives P or P/2 seconds (so the loop is seamless) and is invisible when it
+// and fade as they climb. Each lives P, P/2 or P/3 seconds with its own random height, sway, size and
+// flicker, so over the 24 s loop they look random (and the loop stays seamless); each is invisible when it
 // starts again at the bottom.
-const N = 70, embers = [];
+const N = 110, embers = [];
 for (let i = 0; i < N; i++) embers.push({
-  x: 80 + rnd() * 1760, life: P / ri(1, 2), ph: rnd(), rise: 520 + rnd() * 620, start: 1080 + rnd() * 120,
-  sway: 14 + rnd() * 46, sm: ri(1, 2), sp: rnd() * TAU, r: 1.4 + rnd() * 2.2, fk: ri(2, 6), fp: rnd() * TAU, hue: rnd(),
+  x: 60 + rnd() * 1800, life: P / ri(1, 3), ph: rnd(), rise: 380 + rnd() * 820, start: 1060 + rnd() * 160,
+  sway: 10 + rnd() * 60, sm: ri(1, 3), sp: rnd() * TAU, r: 1.6 + rnd() * 3.2, fk: ri(3, 12), fp: rnd() * TAU, hue: rnd(),
 });
 const glow = document.getElementById('glow'), halo = document.getElementById('halo');
 const title = document.getElementById('title'), sheen = document.getElementById('sheen'), runner = document.getElementById('runner');
@@ -49,11 +50,11 @@ const ctx = document.getElementById('fx').getContext('2d');
 function frame(t) {
   const w = TAU * t / P;
   // Glow: breathes (6 s) and drifts slowly around the title (12 s), never fully off.
-  const breath = 0.5 + 0.5 * Math.sin(w * 2 - 1.2);
-  const gx = 50 + 4 * Math.sin(w), gy = 47 + 2.5 * Math.sin(w * 2 + 0.7);
+  const breath = 0.5 + 0.5 * Math.sin(w * 4 - 1.2);
+  const gx = 50 + 4 * Math.sin(w * 2), gy = 47 + 2.5 * Math.sin(w * 4 + 0.7);
   glow.style.background = `radial-gradient(ellipse 60% 50% at ${gx}% ${gy}%,rgba(232,184,74,${.16 + .14 * breath}),rgba(232,184,74,${.06 + .06 * breath}) 45%,transparent 75%)`;
-  const hb = 0.5 + 0.5 * Math.sin(w * 2 + 1.4);
-  halo.style.background = `radial-gradient(ellipse 760px 280px at ${50 + 2.5 * Math.sin(w + 2)}% 62%,rgba(232,184,74,${.08 + .10 * hb}),rgba(232,184,74,${.03 + .04 * hb}) 45%,transparent 75%)`;
+  const hb = 0.5 + 0.5 * Math.sin(w * 4 + 1.4);
+  halo.style.background = `radial-gradient(ellipse 760px 280px at ${50 + 2.5 * Math.sin(w * 2 + 2)}% 62%,rgba(232,184,74,${.08 + .10 * hb}),rgba(232,184,74,${.03 + .04 * hb}) 45%,transparent 75%)`;
   const bloom = 14 + 30 * breath;
   title.style.filter = `drop-shadow(0 0 ${bloom.toFixed(1)}px rgba(232,184,74,${(.45 + .4 * breath).toFixed(2)}))`;
   // Shine across the Quantari swooshes every 6 s, alternating direction (2.2 s each, unhurried).

@@ -1,6 +1,7 @@
 package com.theatresync.app
 
 import androidx.core.net.toUri
+import androidx.compose.ui.platform.LocalContext
 import android.Manifest
 import android.content.Intent
 import android.media.AudioDeviceCallback
@@ -1996,6 +1997,19 @@ internal fun NowCastingScreen(
 internal fun RemoteCastScreen(tvs: List<Pair<String, com.theatresync.core.CastModel.Kind?>>, onYouTube: () -> Unit, onBack: () -> Unit) = Screen {
     TopBar(stringResource(R.string.remote_cast), onBack)
     Hint(stringResource(R.string.remote_cast_intro))
+    // Samsung TVs (The Frame) can be switched on and have YouTube opened from anywhere with Samsung's free
+    // SmartThings app; then YouTube from here plays on it.
+    val context = LocalContext.current
+    QCard(highlighted = true) {
+        Text(stringResource(R.string.remote_samsung_title), style = MaterialTheme.typography.titleMedium, color = Q.Text)
+        Hint(stringResource(R.string.remote_samsung_text))
+        GhostButton(stringResource(R.string.remote_samsung_button), {
+            val pm = context.packageManager
+            val open = pm.getLaunchIntentForPackage("com.samsung.android.oneconnect")
+                ?: Intent(Intent.ACTION_VIEW, "https://play.google.com/store/apps/details?id=com.samsung.android.oneconnect".toUri())
+            runCatching { context.startActivity(open.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+        }, Modifier.fillMaxWidth().testTag("open_smartthings"), height = 48.dp)
+    }
     RemoteOption("▶", stringResource(R.string.youtube), stringResource(R.string.remote_opt_youtube), stringResource(R.string.remote_ready), true, onYouTube, "remote_opt_youtube")
     RemoteOption("🎬", stringResource(R.string.remote_opt_movie_title), stringResource(R.string.remote_opt_movie), stringResource(R.string.remote_needs_hub), false, {}, "remote_opt_movie")
     RemoteOption("⧉", stringResource(R.string.mirror_screen), stringResource(R.string.remote_opt_mirror), stringResource(R.string.remote_needs_hub), false, {}, "remote_opt_mirror")
