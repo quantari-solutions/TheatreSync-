@@ -1,6 +1,6 @@
 {
-  "version": "0.8.0",
-  "build": 7,
-  "notes": "TheatreSync on iPhone and iPad, laid out like Android: \u2630 menu and a Back button on every page. Cast YouTube to Media Room or The Frame (Samsung), play a movie from Files with the sound in your headphones, TV sound in headphones for YouTube, TapIn QR for friends, Headphones page, projector and receiver on/off.",
+  "version": "0.8.1",
+  "build": 8,
+  "notes": "YouTube to your home TV from anywhere: TVs you've cast to at home appear as 'away' on the YouTube page when you're out. Shows whether your Chromecast is a Google TV model.",
   "zipUrl": "https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases/ios/TheatreSync-iOS.zip"
 }

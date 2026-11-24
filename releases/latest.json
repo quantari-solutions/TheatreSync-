@@ -1,8 +1,8 @@
 {
-  "versionCode": 36,
-  "versionName": "0.7.1",
-  "apkUrl": "https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases/TheatreSync-0.7.1.apk",
-  "sha256": "ceacea7e59b262ac926bd2703b88cbda86db82247182d0875e00e9f8c5af44f2",
-  "sizeBytes": 26870675,
-  "notes": "The Frame (Samsung) now shows up in your TV list next to Media Room, even in Art mode. Tap it to cast YouTube. If it's missing, type its address in Settings \u2192 Samsung TV."
+  "versionCode": 37,
+  "versionName": "0.7.2",
+  "apkUrl": "https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases/TheatreSync-0.7.2.apk",
+  "sha256": "b55ea2ae38001b13fc6348a6a7082690141b227432637487330d541b5734a8fb",
+  "sizeBytes": 26877667,
+  "notes": "YouTube to your home TV from anywhere: TVs you've cast to at home show up as 'Away' when you're out; paste a link and it plays at home. Each Chromecast now shows its kind (Google TV or classic)."
 }
