@@ -499,6 +499,7 @@ class MainActivity : ComponentActivity() {
                                     onDismissMessage = session::dismissMessage,
                                     onWake = session::wakeTv,
                                     onPower = session::setRoomPower,
+                                    onSamsungKey = session::samsungKey,
                                     onFindPower = session::findPowerDevices,
                                 )
                                 "crashes" -> CrashReportsScreen(
@@ -2006,6 +2007,38 @@ internal fun NowCastingScreen(
     Footer()
 }
 
+@Composable
+private fun SamsungRemoteCard(name: String, onKey: (String) -> Unit) {
+    val k = com.theatresync.core.SamsungRemote.Keys
+    QCard(highlighted = true) {
+        Text(stringResource(R.string.samsung_remote_title, name), style = MaterialTheme.typography.titleMedium, color = Q.Text)
+        Hint(stringResource(R.string.samsung_remote_hint))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            GoldButton(stringResource(R.string.samsung_power), { onKey(k.POWER) }, Modifier.weight(1f).testTag("samsung_power"), height = 48.dp)
+            GhostButton("▶  YouTube", { onKey("YOUTUBE") }, Modifier.weight(1f).testTag("samsung_youtube"), height = 48.dp)
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            GhostButton("−", { onKey(k.VOL_DOWN) }, Modifier.weight(1f), height = 48.dp, description = stringResource(R.string.samsung_vol_down))
+            GhostButton(stringResource(R.string.mute), { onKey(k.MUTE) }, Modifier.weight(1f), height = 48.dp)
+            GhostButton("+", { onKey(k.VOL_UP) }, Modifier.weight(1f), height = 48.dp, description = stringResource(R.string.samsung_vol_up))
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            GhostButton("◀", { onKey(k.LEFT) }, Modifier.weight(1f), height = 48.dp)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                GhostButton("▲", { onKey(k.UP) }, Modifier.fillMaxWidth(), height = 48.dp)
+                GoldButton("OK", { onKey(k.ENTER) }, Modifier.fillMaxWidth(), height = 48.dp)
+                GhostButton("▼", { onKey(k.DOWN) }, Modifier.fillMaxWidth(), height = 48.dp)
+            }
+            GhostButton("▶", { onKey(k.RIGHT) }, Modifier.weight(1f), height = 48.dp)
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            GhostButton("↩  " + stringResource(R.string.samsung_back), { onKey(k.BACK) }, Modifier.weight(1f), height = 48.dp)
+            GhostButton("⌂  " + stringResource(R.string.samsung_home), { onKey(k.HOME) }, Modifier.weight(1f), height = 48.dp)
+            GhostButton("⏯", { onKey(k.PLAY_PAUSE) }, Modifier.weight(1f), height = 48.dp)
+        }
+    }
+}
+
 // ---------------------------------------------------------------- remote cast (away from home)
 
 /**
@@ -2018,6 +2051,19 @@ internal fun NowCastingScreen(
 internal fun RemoteCastScreen(tvs: List<Pair<String, com.theatresync.core.CastModel.Kind?>>, onYouTube: () -> Unit, onBack: () -> Unit) = Screen {
     TopBar(stringResource(R.string.remote_cast), onBack)
     Hint(stringResource(R.string.remote_cast_intro))
+    // Samsung TVs (The Frame) can be switched on and have YouTube opened from anywhere with Samsung's free
+    // SmartThings app; then YouTube from here plays on it.
+    val context = LocalContext.current
+    QCard(highlighted = true) {
+        Text(stringResource(R.string.remote_samsung_title), style = MaterialTheme.typography.titleMedium, color = Q.Text)
+        Hint(stringResource(R.string.remote_samsung_text))
+        GhostButton(stringResource(R.string.remote_samsung_button), {
+            val pm = context.packageManager
+            val open = pm.getLaunchIntentForPackage("com.samsung.android.oneconnect")
+                ?: Intent(Intent.ACTION_VIEW, "https://play.google.com/store/apps/details?id=com.samsung.android.oneconnect".toUri())
+            runCatching { context.startActivity(open.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+        }, Modifier.fillMaxWidth().testTag("open_smartthings"), height = 48.dp)
+    }
     RemoteOption("▶", stringResource(R.string.youtube), stringResource(R.string.remote_opt_youtube), stringResource(R.string.remote_ready), true, onYouTube, "remote_opt_youtube")
     RemoteOption("🎬", stringResource(R.string.remote_opt_movie_title), stringResource(R.string.remote_opt_movie), stringResource(R.string.remote_needs_hub), false, {}, "remote_opt_movie")
     RemoteOption("⧉", stringResource(R.string.mirror_screen), stringResource(R.string.remote_opt_mirror), stringResource(R.string.remote_needs_hub), false, {}, "remote_opt_mirror")
@@ -2465,8 +2511,11 @@ internal fun RemoteScreen(
     onWake: (String) -> Unit = {},
     onPower: (String, Boolean) -> Unit = { id, on -> if (on) onWake(id) },
     onFindPower: (Boolean) -> Unit = {},
+    onSamsungKey: (String, String) -> Unit = { _, _ -> },
 ) = Screen {
     TopBar(stringResource(R.string.remote), onBack)
+    // The Frame and other Samsung TVs on the Wi-Fi: their own remote, inside TheatreSync.
+    ui.tvs.filter { it.samsung && !it.away }.forEach { s -> SamsungRemoteCard(s.name) { key -> onSamsungKey(s.name, key) } }
     // Look for projectors / receivers that can be switched on and off (quietly, at most every 10 minutes).
     LaunchedEffect(Unit) { onFindPower(false) }
     Message(ui.message, onDismissMessage)

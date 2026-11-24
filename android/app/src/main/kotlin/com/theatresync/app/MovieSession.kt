@@ -68,7 +68,7 @@ class MovieSession(private val app: Application) {
     }
 
     /** @param youTubeOnly a smart TV found via DIAL (e.g. Samsung The Frame): YouTube only, no movies. */
-    data class Tv(val id: String, val name: String, val isSpeaker: Boolean = false, val youTubeOnly: Boolean = false, val away: Boolean = false, val kind: com.theatresync.core.CastModel.Kind? = null)
+    data class Tv(val id: String, val name: String, val isSpeaker: Boolean = false, val youTubeOnly: Boolean = false, val away: Boolean = false, val kind: com.theatresync.core.CastModel.Kind? = null, val samsung: Boolean = false)
 
     data class Ui(
         val castAvailable: Boolean = true,
@@ -320,7 +320,7 @@ class MovieSession(private val app: Application) {
 
     private fun publishTvs() {
         val castNames = castTvs.map { it.name.lowercase() }.toSet()
-        val smart = dialTvs.map { (id, d) -> Tv(id, d.name.removePrefix("[TV] ").trim(), youTubeOnly = true) }
+        val smart = dialTvs.map { (id, d) -> Tv(id, d.name.removePrefix("[TV] ").trim(), youTubeOnly = true, samsung = d.manufacturer?.contains("Samsung", true) == true) }
             .filter { it.name.lowercase() !in castNames }
             .sortedBy { it.name }
         // TVs YouTube was cast to before, not on this Wi-Fi now (e.g. you're at work): YouTube over the internet.
@@ -388,6 +388,31 @@ class MovieSession(private val app: Application) {
         }, "dial-scan").apply { isDaemon = true }.start()
     }
 
+    /**
+     * The Frame's own remote, from TheatreSync (home Wi-Fi). "YOUTUBE" opens YouTube on it (DIAL). Power on
+     * from standby uses Wake-on-LAN with the TV's address learned while it was on.
+     */
+    fun samsungKey(tvName: String, key: String) = guard("samsungKey") {
+        val d = dialTvs.values.firstOrNull { it.name.removePrefix("[TV] ").trim() == tvName } ?: return@guard say(R.string.yt_no_tv)
+        val ip = d.appsUrl.substringAfter("//").substringBefore(':')
+        Thread({
+            val result = when (key) {
+                "YOUTUBE" -> if (runCatching { Dial.youTubeScreenId(d) }.isSuccess) com.theatresync.core.SamsungRemote.Result.OK else com.theatresync.core.SamsungRemote.Result.FAILED
+                else -> com.theatresync.core.SamsungRemote.send(ip, key)
+            }
+            if (key == com.theatresync.core.SamsungRemote.Keys.POWER && result == com.theatresync.core.SamsungRemote.Result.FAILED) {
+                prefs.getString("samsungMac_$ip", null)?.let { com.theatresync.core.SamsungRemote.wake(it) }
+            }
+            main.post {
+                when (result) {
+                    com.theatresync.core.SamsungRemote.Result.ALLOW_ON_TV -> say(R.string.samsung_allow)
+                    com.theatresync.core.SamsungRemote.Result.FAILED -> if (key != com.theatresync.core.SamsungRemote.Keys.POWER) say(R.string.samsung_no_answer)
+                    else -> Unit
+                }
+            }
+        }, "samsung-key").apply { isDaemon = true }.start()
+    }
+
     /** The Samsung TV address typed in Settings (when The Frame isn't found by itself). */
     fun samsungIp(): String = prefs.getString("samsungIp", "").orEmpty()
 
@@ -435,7 +460,10 @@ class MovieSession(private val app: Application) {
                 pool.submit {
                     if (com.theatresync.core.NetworkPower.portOpen(host, com.theatresync.core.SamsungTv.INFO_PORT)) {
                         port8001 += host
-                        com.theatresync.core.SamsungTv.query(host)?.let { found.add(com.theatresync.core.SamsungTv.device(host, it.name)) }
+                        com.theatresync.core.SamsungTv.query(host)?.let { info ->
+                            info.mac?.let { prefs.edit { putString("samsungMac_$host", it) } }
+                            found.add(com.theatresync.core.SamsungTv.device(host, info.name))
+                        }
                     } else if (com.theatresync.core.NetworkPower.portOpen(host, 8080)) {
                         port8080 += host
                         // Some Samsung firmware closes port 8001: its YouTube launcher (DIAL, port 8080) still answers.

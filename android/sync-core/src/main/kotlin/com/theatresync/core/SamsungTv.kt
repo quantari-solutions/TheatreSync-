@@ -11,7 +11,7 @@ import java.net.URL
 object SamsungTv {
     const val INFO_PORT = 8001
 
-    data class Info(val name: String, val isFrame: Boolean)
+    data class Info(val name: String, val isFrame: Boolean, val mac: String? = null)
 
     /** The TV's name if the reply is from a Samsung TV (not a phone, soundbar or other Samsung device). */
     fun parse(json: String): Info? {
@@ -19,7 +19,7 @@ object SamsungTv {
         if (!type.contains("TV", ignoreCase = true)) return null
         val name = field(json, "name")?.removePrefix("[TV] ")?.trim()?.ifBlank { null } ?: "Samsung TV"
         val frame = field(json, "FrameTVSupport") == "true"
-        return Info(name, frame)
+        return Info(name, frame, field(json, "wifiMac")?.takeIf { it.count { c -> c == ':' } == 5 })
     }
 
     /** The DIAL device for the TV at [ip], for YouTube casting. */

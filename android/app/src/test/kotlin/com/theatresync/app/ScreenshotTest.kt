@@ -101,6 +101,13 @@ class ScreenshotTest {
             {}, { _, _ -> }, { _, _ -> }, { _, _ -> }, {}, {}, { _, _ -> }, {}, {}, {},
         )
     }
+    /** The Frame found on the Wi-Fi: its own remote inside TheatreSync. */
+    @Test fun remote3_frame() = shot {
+        RemoteScreen(
+            Ui(tvs = listOf(Tv("1", "Media Room TV"), Tv("dial:samsung:192.168.1.40", "Samsung The Frame 55", youTubeOnly = true, samsung = true)), connectedTv = "Media Room TV"),
+            {}, { _, _ -> }, { _, _ -> }, { _, _ -> }, {}, {}, { _, _ -> }, {}, {}, {},
+        )
+    }
     /** Long and many TV names must never overflow or wrap letter by letter. */
     @Test fun youtube3_smartTvLongNames() = shot {
         YouTubeScreen(
