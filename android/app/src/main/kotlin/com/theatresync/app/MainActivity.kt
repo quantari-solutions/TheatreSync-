@@ -1110,7 +1110,7 @@ internal fun SetupScreen(
             else -> ui.tvs.forEach { tv ->
                 val busy = ui.nowCasting.firstOrNull { it.tvId == tv.id }?.activity
                 // Smart TVs (e.g. Samsung The Frame) are in the same list; tapping one opens YouTube with that TV chosen.
-                TvRow(tv.name, busy?.label(), tv.isSpeaker, tv.youTubeOnly) { if (tv.youTubeOnly) onSmartTv(tv.name) else onConnectTv(tv.id) }
+                TvRow(tv.name, busy?.label(), tv.isSpeaker, tv.youTubeOnly, tv.away, tv.kind) { if (tv.youTubeOnly) onSmartTv(tv.name) else onConnectTv(tv.id) }
             }
         }
     }
@@ -1433,7 +1433,7 @@ internal fun YouTubeScreen(
                     RadioDot(selected)
                     Column(Modifier.padding(start = 12.dp).weight(1f)) {
                         Text(tv.name, color = Q.Text, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (tv.youTubeOnly) Hint(stringResource(R.string.smart_tv_youtube))
+                        if (tv.youTubeOnly) Hint(stringResource(if (tv.away) R.string.away_tv_hint else R.string.smart_tv_youtube))
                     }
                 }
             }
@@ -1526,7 +1526,7 @@ private fun DeviceIcon(res: Int, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun TvRow(name: String, busyWith: String? = null, isSpeaker: Boolean = false, youTubeOnly: Boolean = false, onClick: () -> Unit) {
+private fun TvRow(name: String, busyWith: String? = null, isSpeaker: Boolean = false, youTubeOnly: Boolean = false, away: Boolean = false, kind: com.theatresync.core.CastModel.Kind? = null, onClick: () -> Unit) {
     val shape = RoundedCornerShape(14.dp)
     Row(
         Modifier.fillMaxWidth().clip(shape).background(Q.Background.copy(alpha = 0.6f))
@@ -1539,7 +1539,12 @@ private fun TvRow(name: String, busyWith: String? = null, isSpeaker: Boolean = f
             Text(name, style = MaterialTheme.typography.titleMedium, color = Q.Text, maxLines = 2, overflow = TextOverflow.Ellipsis)
             // The TV is already showing something (e.g. YouTube from TheatreSync or another phone).
             busyWith?.let { Text(stringResource(R.string.tv_busy, it), style = MaterialTheme.typography.bodySmall, color = Q.Success) }
-            if (youTubeOnly) Text(stringResource(R.string.smart_tv_youtube), style = MaterialTheme.typography.bodySmall, color = Q.TextMuted)
+            if (youTubeOnly) Text(stringResource(if (away) R.string.away_tv_youtube else R.string.smart_tv_youtube), style = MaterialTheme.typography.bodySmall, color = if (away) Q.Primary else Q.TextMuted)
+            else when (kind) {
+                com.theatresync.core.CastModel.Kind.GOOGLE_TV -> Text(stringResource(R.string.kind_google_tv), style = MaterialTheme.typography.bodySmall, color = Q.TextMuted)
+                com.theatresync.core.CastModel.Kind.CHROMECAST -> Text(stringResource(R.string.kind_chromecast), style = MaterialTheme.typography.bodySmall, color = Q.TextMuted)
+                else -> Unit
+            }
         }
         Text(
             stringResource(when { youTubeOnly -> R.string.youtube; busyWith != null -> R.string.use_for_movie; else -> R.string.connect }),

@@ -82,7 +82,7 @@ struct RootView: View {
     @MainActor
     static func youTubeNow(_ cast: CastController?, _ youtube: YouTubeCaster?) -> (videoId: String, position: Double, playing: Bool)? {
         if let t = cast?.youTubeNow { return t }
-        if let y = youtube, case .samsung? = y.target, let v = y.castVideoId, let p = y.samsungNow { return (v, p, y.samsungPlaying) }
+        if let y = youtube, y.loungeTV != nil, let v = y.castVideoId, let p = y.samsungNow { return (v, p, y.samsungPlaying) }
         return nil
     }
 }

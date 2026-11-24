@@ -26,6 +26,9 @@ echo "iOS BUILD SUCCEEDED"
 APP=$(find "$DD/Build/Products" -maxdepth 3 -name "*.app" | head -1)
 echo "App: $APP"
 FAIL=0
+# Is the app running on this simulator? (Reads the whole list first: "launchctl list | grep -q" can report
+# "not running" by mistake when grep stops early and set -o pipefail sees the broken pipe.)
+running() { local l; l=$(xcrun simctl spawn "$1" launchctl list 2>/dev/null || true); grep -q "$BUNDLE" <<<"$l"; }
 for KIND in iPhone iPad; do
   UDID=$(xcrun simctl list devices available -j | python3 -c "
 import json,sys
@@ -49,7 +52,7 @@ print(c[-1]['udid'] if c else '')")
   echo "SCREENSHOT-$KIND-opening-BEGIN"; base64 -b 1000 -i "$OUT/$KIND-opening-small.jpg"; echo "SCREENSHOT-$KIND-opening-END"
   sleep 7
   xcrun simctl io "$UDID" screenshot "$OUT/$KIND.png"
-  if xcrun simctl spawn "$UDID" launchctl list | grep -q "$BUNDLE"; then echo "PASS  $KIND: launched and still running after 10 s"
+  if running "$UDID"; then echo "PASS  $KIND: launched and still running after 10 s"
   else echo "FAIL  $KIND: not running after 10 s (crashed?)"; FAIL=1
     xcrun simctl spawn "$UDID" log show --last 1m --predicate "process == \"TheatreSync\"" --style compact 2>/dev/null | tail -40 || true; fi
   echo "App log ($KIND):"; grep -h "Opening:" "$OUT/$KIND-stdout.txt" "$OUT/$KIND-stderr.txt" 2>/dev/null || echo "  (no Opening lines)"
@@ -61,9 +64,10 @@ print(c[-1]['udid'] if c else '')")
     xcrun simctl launch "$UDID" "$BUNDLE" -tsPage "$PAGE" >/dev/null
     sleep 3
     xcrun simctl io "$UDID" screenshot "$OUT/$KIND-$PAGE.png"
-    if ! xcrun simctl spawn "$UDID" launchctl list | grep -q "$BUNDLE"; then echo "FAIL  $KIND: crashed on the $PAGE page"; FAIL=1
-      xcrun simctl spawn "$UDID" log show --last 30s --predicate 'process == "TheatreSync"' --style compact 2>/dev/null | grep -iE "fault|error|crash|terminat|exception|fatal" | tail -25 || true
-      ls -t ~/Library/Logs/DiagnosticReports/ 2>/dev/null | grep -i theatre | head -1 | while read f; do echo "Crash report $f:"; grep -E "Exception|Termination|Crashed|^[0-9]+ +TheatreSync|AppModule" ~/Library/Logs/DiagnosticReports/"$f" | head -25; done
+    if ! running "$UDID"; then echo "FAIL  $KIND: crashed on the $PAGE page"; FAIL=1
+      xcrun simctl spawn "$UDID" log show --last 30s --predicate 'process == "TheatreSync"' --style compact 2>/dev/null | grep -iE "fatal|abort|EXC_|terminat|crash" | grep -v CFNetwork | tail -25 || true
+      f=$(ls -t ~/Library/Logs/DiagnosticReports/ 2>/dev/null | grep -i theatre | head -1 || true)
+      [ -n "$f" ] && { echo "Crash report $f:"; grep -E "Exception|Termination|Crashed|^[0-9]+ +TheatreSync|AppModule" ~/Library/Logs/DiagnosticReports/"$f" | head -25 || true; }
     fi
     sips -Z 420 -s format jpeg -s formatOptions 55 "$OUT/$KIND-$PAGE.png" --out "$OUT/$KIND-$PAGE-small.jpg" >/dev/null
     echo "SCREENSHOT-$KIND-$PAGE-BEGIN"; base64 -b 1000 -i "$OUT/$KIND-$PAGE-small.jpg"; echo "SCREENSHOT-$KIND-$PAGE-END"

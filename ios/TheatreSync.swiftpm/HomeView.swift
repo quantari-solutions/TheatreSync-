@@ -38,7 +38,7 @@ struct HomeView: View {
                     }.buttonStyle(.plain)
                 }
                 if cast.connected, let a = cast.activity, !cast.isShowingTitleCard { nowCastingRow(a) }
-                else if case .samsung(let tv)? = youtube.target { samsungRow(tv) }
+                else if let tv = youtube.loungeTV { samsungRow(tv) }
                 quickWatch
                 tvCard
                 movieNight
@@ -155,7 +155,9 @@ struct HomeView: View {
                         Image(systemName: "tv").foregroundStyle(Q.primary)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(tv.name).foregroundStyle(Q.text).lineLimit(1)
-                            Text("Chromecast · everything").font(.caption).foregroundStyle(Q.textFaint)
+                            Text(cast.selected == tv && cast.isGoogleTV == true ? "Chromecast with Google TV · can be the home hub"
+                                 : (cast.selected == tv && cast.isGoogleTV == false ? "Chromecast · YouTube from away" : "Chromecast"))
+                                .font(.caption).foregroundStyle(Q.textFaint)
                         }
                         Spacer()
                         if cast.selected == tv {

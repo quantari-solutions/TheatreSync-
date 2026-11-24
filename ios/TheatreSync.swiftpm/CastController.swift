@@ -10,7 +10,12 @@ final class CastController: ObservableObject {
         let id: String          // Bonjour service name
         let name: String        // friendly name ("Media Room TV")
         let endpoint: NWEndpoint
+        var model: String = ""   // TXT "md", e.g. "Chromecast", "Chromecast Ultra", "Google TV Streamer"
     }
+
+    /// The connected TV's kind: a Chromecast with Google TV (runs Android: can be the home hub) or a classic
+    /// Chromecast (YouTube from away only). Google TV runs Google's TV-remote service on port 6466/6467.
+    @Published private(set) var isGoogleTV: Bool?
 
     @Published private(set) var tvs: [TV] = []
     @Published private(set) var selected: TV?
@@ -43,8 +48,12 @@ final class CastController: ObservableObject {
             for r in results {
                 guard case let .service(name, _, _, _) = r.endpoint else { continue }
                 var friendly = name
-                if case let .bonjour(txt) = r.metadata, let fn = txt["fn"], !fn.isEmpty { friendly = fn }
-                found.append(TV(id: name, name: friendly, endpoint: r.endpoint))
+                var model = ""
+                if case let .bonjour(txt) = r.metadata {
+                    if let fn = txt["fn"], !fn.isEmpty { friendly = fn }
+                    model = txt["md"] ?? ""
+                }
+                found.append(TV(id: name, name: friendly, endpoint: r.endpoint, model: model))
             }
             found.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
             Task { @MainActor in self?.tvsFound(found) }
@@ -75,6 +84,18 @@ final class CastController: ObservableObject {
         l.start()
     }
 
+    private func detectKind() {
+        isGoogleTV = selected.map { $0.model.lowercased().contains("google tv") ? true : nil } ?? nil
+        guard isGoogleTV == nil, let host = link?.remoteHost else { return }
+        let tvId = selected?.id
+        Task { [weak self] in
+            var found = false
+            for port in [6466, 6467] where !found { found = await LanHTTP.portOpen(host: host, port: UInt16(port)) }
+            let g = found
+            await MainActor.run { if self?.selected?.id == tvId { self?.isGoogleTV = g } }
+        }
+    }
+
     func disconnect() {
         poll?.invalidate(); poll = nil
         link?.close(); link = nil
@@ -89,6 +110,7 @@ final class CastController: ObservableObject {
 
     private func linkReady() {
         connected = true
+        detectKind()
         send(CastMessage.nsConnection, "{\"type\":\"CONNECT\"}")
         refresh()
         poll?.invalidate()
@@ -274,6 +296,12 @@ final class CastLink {
     func send(_ m: CastMessage) { conn.send(content: m.frame(), completion: .contentProcessed { _ in }) }
 
     func close() { closed = true; conn.cancel() }
+
+    /// The TV's IP address once connected.
+    var remoteHost: String? {
+        guard case let .hostPort(host, _)? = conn.currentPath?.remoteEndpoint else { return nil }
+        return String("\(host)".split(separator: "%").first ?? "")
+    }
 
     private func finish() {
         guard !closed else { return }
