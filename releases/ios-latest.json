@@ -1,6 +1,6 @@
 {
-  "version": "0.8.2",
-  "build": 9,
-  "notes": "Remote cast: when you're away, the home page offers 'Cast YouTube from here' to TVs you've cast YouTube to. Switch: Experimental \u2192 Remote cast.",
+  "version": "0.8.3",
+  "build": 10,
+  "notes": "Remote cast: confirmed by the TV, Stop and Cast another, moving gold light while playing, and a Remote cast page listing YouTube, your movies and mirroring.",
   "zipUrl": "https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases/ios/TheatreSync-iOS.zip"
 }
