@@ -862,6 +862,12 @@ class MovieSession(private val app: Application) {
                     retrying { lounge.setPlaylist(session, videoId) }
                 }
                 synchronized(youTubeRemotes) { youTubeRemotes[tvId] = lounge to session }
+                // Away (over the internet): YouTube tells us whether the TV is connected to the link. If it
+                // isn't, nothing will play there, so say so plainly instead of "connecting" for ever.
+                if (tvId.startsWith(AWAY) && session.screenListening == false) {
+                    lastYouTubeError = "Remote cast: the TV's YouTube isn't connected (loungeStatus has no LOUNGE_SCREEN)"
+                    main.post { say(R.string.remote_not_listening) }
+                }
                 // Sound in headphones was on last time: switch it on again for this video.
                 if (prefs.getBoolean("ytHeadphones", true) && currentHeadphones() != null) main.postDelayed({ setYouTubeHeadphones(tvId, true) }, 2_500)
                 lastYouTubeError = null

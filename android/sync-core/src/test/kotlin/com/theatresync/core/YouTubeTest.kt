@@ -122,4 +122,12 @@ class YouTubeScreenFinderTest {
         assertEquals("abc", YouTubeScreenFinder.parseScreenId("""{"type":"mdxSessionStatus","data":{"screenId":"abc"}}"""))
         assertNull(YouTubeScreenFinder.parseScreenId("""{"type":"other","data":{"screenId":"abc"}}"""))
     }
+
+    @Test fun knowsWhetherTheTvIsListening() {
+        val on = """[[0,["c","SID","",8]],[1,["S","GS"]],[2,["loungeStatus",{"devices":"[{\\"type\\":\\"LOUNGE_SCREEN\\",\\"name\\":\\"Media Room TV\\"},{\\"type\\":\\"REMOTE_CONTROL\\"}]"}]]]"""
+        val off = """[[2,["loungeStatus",{"devices":"[{\\"type\\":\\"REMOTE_CONTROL\\"}]"}]]]"""
+        org.junit.Assert.assertEquals(true, YouTubeLounge.screenListening(on))
+        org.junit.Assert.assertEquals(false, YouTubeLounge.screenListening(off))
+        org.junit.Assert.assertNull(YouTubeLounge.screenListening("[[0,[\"c\",\"SID\"]]]"))
+    }
 }

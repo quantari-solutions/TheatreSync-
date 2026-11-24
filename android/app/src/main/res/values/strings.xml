@@ -471,4 +471,5 @@
     <string name="remote_tv_google">Chromecast with Google TV: can be the home hub itself, so movies and mirroring from away can work with no extra device.</string>
     <string name="remote_tv_classic">Classic Chromecast: YouTube from away now. Movies and mirroring from away need your router\'s VPN (many routers have one built in).</string>
     <string name="remote_tv_unknown">Kind not checked yet: open TheatreSync once at home on the same Wi-Fi.</string>
+    <string name="remote_not_listening">Media Room didn\'t pick up: YouTube isn\'t open on the Chromecast right now, and a Chromecast only listens over the internet while YouTube is open. The home hub (Remote cast page) fixes this.</string>
 </resources>

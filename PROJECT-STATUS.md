@@ -2,6 +2,12 @@
 
 _Last updated: 2026-11-22. Android 0.7.0: TapIn fixed and on the movie screen, TapIn for YouTube (any phone's cast). iOS 0.7.0: full TheatreSync part 1_
 
+## Android 0.7.5: "remote cast isn't working… it says connecting… doesn't cast"
+| Finding | Change | Checked |
+|---|---|---|
+| No crash reports: YouTube accepted the request, but a Chromecast only listens over the internet while its YouTube app is open; idle (backdrop/screensaver) it can't be reached from outside | YouTube's bind reply says whether a TV is connected ("loungeStatus" → LOUNGE_SCREEN); when it isn't, the app says so at once instead of "connecting". Real fix = home hub (Google TV Chromecast) or router VPN | `YouTubeTest.knowsWhetherTheTvIsListening`; needs HW |
+| Screensaver ~20 fps with a pause at each loop | Cause: 720 full key-frames in an 8.7 MB animated WebP; the Chromecast's picture decoder can't keep up and restarts at the loop. True 60 fps + random sparks needs our own Cast receiver (one-time $5 Google Cast registration): owner to decide (free-tier rule) | — |
+
 ## Android 0.7.4 / iOS 0.8.3: remote cast feedback (owner tested from work)
 | Ask | Done | Checked |
 |---|---|---|
