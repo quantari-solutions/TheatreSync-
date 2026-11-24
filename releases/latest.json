@@ -1,8 +1,8 @@
 {
-  "versionCode": 38,
-  "versionName": "0.7.3",
-  "apkUrl": "https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases/TheatreSync-0.7.3.apk",
-  "sha256": "8b7f827bf96c3438e62d65472e52a80b7f6acf5cb0acde511dcb1c4b17954b4b",
-  "sizeBytes": 26883363,
-  "notes": "Remote cast: away from home, the home screen offers 'Cast YouTube from here' to Media Room and other TVs you've used before. Switch it on or off in Settings \u2192 Experimental \u2192 Remote cast."
+  "versionCode": 39,
+  "versionName": "0.7.4",
+  "apkUrl": "https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases/TheatreSync-0.7.4.apk",
+  "sha256": "e8368de78822e2826de26d2dd5f5815ae125027d822ab659a7916c4b4563cc74",
+  "sizeBytes": 26903559,
+  "notes": "Remote cast: the Now casting card shows whether YouTube on the TV confirms it's playing, with play/pause, skip, stop and 'Cast another video'. The gold light now moves round the card while playing. New Remote cast page lists YouTube, your movies and mirroring."
 }
