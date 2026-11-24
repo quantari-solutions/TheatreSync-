@@ -16,8 +16,8 @@ let package = Package(
             targets: ["AppModule"],
             bundleIdentifier: "com.theatresync.ios",
             teamIdentifier: "",
-            displayVersion: "0.8.1",
-            bundleVersion: "8",
+            displayVersion: "0.8.2",
+            bundleVersion: "9",
             appIcon: .placeholder(icon: .tv),
             accentColor: .presetColor(.yellow),
             supportedDeviceFamilies: [

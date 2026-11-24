@@ -2,6 +2,13 @@
 
 _Last updated: 2026-11-22. Android 0.7.0: TapIn fixed and on the movie screen, TapIn for YouTube (any phone's cast). iOS 0.7.0: full TheatreSync part 1_
 
+## Android 0.7.3 / iOS 0.8.2: "I'm not able to see [remote cast]… make sure there is a remote cast toggle in experimental and it's enabled"
+| Problem | Fix | Checked |
+|---|---|---|
+| Media Room only became "Away" after a YouTube cast on 0.7.2 | Android also uses the YouTube IDs older versions saved per TV (`ytScreen_<id>` + `tvAddr_<id>` name), so TVs cast to before appear right away | Build + tests; needs the owner's check from outside |
+| Hard to find | Home shows "You're away from home → Cast YouTube from here" when no Chromecast is on the Wi-Fi but TVs are remembered; the YouTube page names the single TV and says it's over the internet | Screenshots re-recorded |
+| Toggle | Experimental → Remote cast (on by default), Android and iOS | Screenshot; parity check |
+
 ## Android 0.7.2 / iOS 0.8.1: "cast something at my house while… at work"
 | Ask | Done | Checked |
 |---|---|---|

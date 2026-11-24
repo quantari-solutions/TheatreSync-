@@ -47,6 +47,7 @@ FEATURES = {
     "line.3.horizontal": "☰ menu",
     "signatureIntro": "Signature intro toggle",
     "ytAway": "YouTube to a home TV from anywhere (remembered TVs)",
+    "remoteCast": "Remote cast switch in Experimental",
 }
 for sym, what in FEATURES.items():
     if sym not in all_ios: errors.append(f"iOS is missing: {what} ({sym})")
