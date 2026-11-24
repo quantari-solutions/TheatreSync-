@@ -46,6 +46,7 @@ struct RootView: View {
                         case .experimental: ExperimentalPage()
                         case .multiAudio: MultiAudioPage()
                         case .remoteCast: RemoteCastPage()
+                        case .youtubeBrowse: YouTubeBrowsePage()
                         }
                     }
                 }

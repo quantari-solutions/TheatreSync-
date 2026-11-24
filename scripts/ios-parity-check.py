@@ -19,6 +19,7 @@ PAGES = {
     "EXPERIMENTAL": "experimental", "MULTI_AUDIO": "multiAudio", "MIRROR": "mirror",
     "CRASHES": "n/a: iOS shows its own crash reports in Settings → Privacy → Analytics",
     "REMOTE_CAST": "remoteCast",
+    "YT_BROWSE": "youtubeBrowse",
     "GITHUB": "n/a: crash-report upload to GitHub needs a token stored on the phone; Android only",
 }
 m = re.search(r"enum class Page \{([^}]*)\}", android)

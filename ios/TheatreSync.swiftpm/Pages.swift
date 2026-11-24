@@ -332,6 +332,8 @@ struct YouTubePage: View {
                     Button { if let s = UIPasteboard.general.string { link = s } } label: { Image(systemName: "doc.on.clipboard") }
                         .buttonStyle(GhostButtonStyle()).accessibilityLabel("Paste")
                 }
+                NavigationLink(value: Page.youtubeBrowse) { Label("Find a video", systemImage: "magnifyingglass").frame(maxWidth: .infinity) }
+                    .buttonStyle(GoldButtonStyle())
                 if let id = YouTubeShared.videoId(link) {
                     AsyncImage(url: URL(string: "https://i.ytimg.com/vi/\(id)/hqdefault.jpg")) { $0.resizable().scaledToFill() } placeholder: { Q.backgroundAlt }
                         .frame(maxWidth: .infinity).aspectRatio(16 / 9, contentMode: .fit)
@@ -374,6 +376,11 @@ struct YouTubePage: View {
                 NavigationLink(value: Page.nowCasting) {
                     Label("Open Now casting", systemImage: "tv").frame(maxWidth: .infinity)
                 }.buttonStyle(GhostButtonStyle())
+            }
+        }
+        .onAppear {
+            if let p = youtube.pickedLink { link = p; youtube.pickedLink = nil
+                if let t = youtube.chosen ?? targets.first?.id { Task { await youtube.cast(link: p, to: t, cast: cast) } }
             }
         }
         .onAppear { samsung.start(); if link.isEmpty, let s = UIPasteboard.general.string, YouTubeShared.videoId(s) != nil, s.contains("you") { link = s } }

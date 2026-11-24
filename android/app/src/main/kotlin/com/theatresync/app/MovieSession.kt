@@ -123,6 +123,8 @@ class MovieSession(private val app: Application) {
         val signatureIntro: Boolean = false,
         /** Experimental: YouTube to remembered TVs over the internet when you're away from home. */
         val remoteCast: Boolean = true,
+        /** The last Samsung TV search, in plain words (Settings → Samsung TV), for when The Frame isn't listed. */
+        val samsungSearch: String? = null,
         /** Quantari screensaver on the TV while connected with nothing playing (Settings → Experimental). */
         val screensaver: Boolean = true,
         /** Projectors / receivers found on the Wi-Fi that can be switched on and off (labels). */
@@ -296,7 +298,7 @@ class MovieSession(private val app: Application) {
     /** When each smart TV last answered: one missed search doesn't drop it (kept 3 minutes). */
     private val dialSeen = java.util.concurrent.ConcurrentHashMap<String, Long>()
     private val samsungFinder by lazy {
-        SamsungTvFinder(app) { d -> main.post { addSmartTv(d) } }
+        SamsungTvFinder(app) { d -> samsungAnnounced += d.name; main.post { addSmartTv(d) } }
     }
     /** While the app is open: look for smart TVs again every minute. */
     private val dialRepeat = object : Runnable {
@@ -401,6 +403,27 @@ class MovieSession(private val app: Application) {
      */
     private fun scanSamsung(): List<Dial.Device> {
         val found = java.util.concurrent.ConcurrentLinkedQueue<Dial.Device>()
+        val port8001 = java.util.concurrent.ConcurrentLinkedQueue<String>()
+        val port8080 = java.util.concurrent.ConcurrentLinkedQueue<String>()
+        try { return scanSamsungInto(found, port8001, port8080) } finally {
+            val t = java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date())
+            val names = found.joinToString(", ") { "${it.name} (${it.appsUrl.substringAfter("//").substringBefore(':')})" }
+            val note = "Last search $t on ${NetworkInfo.localIpv4(app) ?: "no Wi-Fi"}: " +
+                (if (found.isEmpty()) "no Samsung TV found." else "found $names.") +
+                " Samsung TV answers: ${port8001.joinToString().ifEmpty { "none" }}. YouTube launchers: ${port8080.joinToString().ifEmpty { "none" }}." +
+                " Wi-Fi announcements: ${samsungAnnounced.joinToString().ifEmpty { "none" }}."
+            _ui.update { it.copy(samsungSearch = note) }
+        }
+    }
+
+    /** Samsung TVs heard through their Wi-Fi announcement (mDNS), for the search note. */
+    val samsungAnnounced: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+
+    private fun scanSamsungInto(
+        found: java.util.concurrent.ConcurrentLinkedQueue<Dial.Device>,
+        port8001: java.util.concurrent.ConcurrentLinkedQueue<String>,
+        port8080: java.util.concurrent.ConcurrentLinkedQueue<String>,
+    ): List<Dial.Device> {
         samsungIp().takeIf { it.isNotBlank() }?.let { ip ->
             found.add(com.theatresync.core.SamsungTv.device(ip, com.theatresync.core.SamsungTv.query(ip)?.name ?: "Samsung TV ($ip)"))
         }
@@ -411,8 +434,10 @@ class MovieSession(private val app: Application) {
             (1..254).map { "$prefix.$it" }.filter { it != me && it != samsungIp() }.map { host ->
                 pool.submit {
                     if (com.theatresync.core.NetworkPower.portOpen(host, com.theatresync.core.SamsungTv.INFO_PORT)) {
+                        port8001 += host
                         com.theatresync.core.SamsungTv.query(host)?.let { found.add(com.theatresync.core.SamsungTv.device(host, it.name)) }
                     } else if (com.theatresync.core.NetworkPower.portOpen(host, 8080)) {
+                        port8080 += host
                         // Some Samsung firmware closes port 8001: its YouTube launcher (DIAL, port 8080) still answers.
                         val d = com.theatresync.core.SamsungTv.device(host, "Samsung TV ($host)")
                         if (runCatching { Dial.youTubeState(d) }.isSuccess) found.add(d)
