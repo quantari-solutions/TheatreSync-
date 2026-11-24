@@ -303,7 +303,8 @@ struct YouTubePage: View {
         for s in samsung.tvs { t.append(Row(id: .samsung(s), name: s.name)) }
         // Not on this Wi-Fi now (e.g. at work): YouTube over the internet to TVs cast to before.
         let here = Set(t.map { $0.name.lowercased() })
-        for name in YouTubeCaster.awayTVs.keys.sorted() where !here.contains(name.lowercased()) {
+        let remoteCast = UserDefaults.standard.object(forKey: "remoteCast") as? Bool ?? true
+        for name in YouTubeCaster.awayTVs.keys.sorted() where remoteCast && !here.contains(name.lowercased()) {
             t.append(Row(id: .away(name), name: name + " · away, over the internet"))
         }
         return t

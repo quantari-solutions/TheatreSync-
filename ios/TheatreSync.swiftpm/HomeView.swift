@@ -39,6 +39,14 @@ struct HomeView: View {
                 }
                 if cast.connected, let a = cast.activity, !cast.isShowingTitleCard { nowCastingRow(a) }
                 else if let tv = youtube.loungeTV { samsungRow(tv) }
+                if remoteCastAway {
+                    QCard(highlighted: true) {
+                        Text("You're away from home").font(.headline).foregroundStyle(Q.text)
+                        Text("Cast YouTube to \(YouTubeCaster.awayTVs.keys.sorted().joined(separator: ", ")) over the internet.").font(.footnote).foregroundStyle(Q.textMuted)
+                        Button { path.append(.youtube) } label: { Label("Cast YouTube from here", systemImage: "globe").frame(maxWidth: .infinity) }
+                            .buttonStyle(GoldButtonStyle())
+                    }
+                }
                 quickWatch
                 tvCard
                 movieNight
@@ -54,6 +62,11 @@ struct HomeView: View {
         .onAppear { cast.startBrowsing(); samsung.start(); power.search(); updates.check() }
         .onChange(of: cast.connected) { maybeScreensaver() }
         .onChange(of: cast.activity) { maybeScreensaver() }
+    }
+
+    /// Out of the house: no Chromecast on this Wi-Fi, but TVs remembered for Remote cast.
+    private var remoteCastAway: Bool {
+        (UserDefaults.standard.object(forKey: "remoteCast") as? Bool ?? true) && cast.tvs.isEmpty && !YouTubeCaster.awayTVs.isEmpty
     }
 
     /// Connected with nothing playing: the TV shows the living title card (when the screensaver is on).

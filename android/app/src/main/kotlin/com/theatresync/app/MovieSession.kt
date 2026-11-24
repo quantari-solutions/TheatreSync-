@@ -121,6 +121,8 @@ class MovieSession(private val app: Application) {
         val roomSoundToo: Boolean = false,
         /** Experimental: Quantari + TheatreSync titles on the TV before each movie. */
         val signatureIntro: Boolean = false,
+        /** Experimental: YouTube to remembered TVs over the internet when you're away from home. */
+        val remoteCast: Boolean = true,
         /** Quantari screensaver on the TV while connected with nothing playing (Settings → Experimental). */
         val screensaver: Boolean = true,
         /** Projectors / receivers found on the Wi-Fi that can be switched on and off (labels). */
@@ -321,7 +323,7 @@ class MovieSession(private val app: Application) {
             .sortedBy { it.name }
         // TVs YouTube was cast to before, not on this Wi-Fi now (e.g. you're at work): YouTube over the internet.
         val here = (castTvs + smart).map { it.name.lowercase() }.toSet()
-        val away = awayTvs().keys.filter { it.lowercase() !in here }.sorted().map { Tv(AWAY + it, it, youTubeOnly = true, away = true) }
+        val away = (if (_ui.value.remoteCast) awayTvs().keys else emptySet()).filter { it.lowercase() !in here }.sorted().map { Tv(AWAY + it, it, youTubeOnly = true, away = true) }
         _ui.update { it.copy(tvs = castTvs + smart + away) }
     }
 
@@ -329,8 +331,20 @@ class MovieSession(private val app: Application) {
      * Remote casting from anywhere (YouTube): YouTube's "link with TV" service works over the internet, so
      * each TV's YouTube ID is remembered after a cast at home and reused when you're away.
      */
-    private fun awayTvs(): Map<String, String> = prefs.getStringSet("ytAway", emptySet()).orEmpty()
-        .mapNotNull { e -> e.split('\t').takeIf { it.size == 2 }?.let { it[0] to it[1] } }.toMap()
+    private fun awayTvs(): Map<String, String> {
+        val saved = prefs.getStringSet("ytAway", emptySet()).orEmpty()
+            .mapNotNull { e -> e.split('\t').takeIf { it.size == 2 }?.let { it[0] to it[1] } }.toMap()
+        // Older versions kept each Chromecast's YouTube ID by its id ("ytScreen_<id>") and its name in
+        // "tvAddr_<id>": use those too, so TVs cast to before this feature appear right away.
+        val legacy = prefs.all.keys.filter { it.startsWith("ytScreen_") }.mapNotNull { k ->
+            val id = k.removePrefix("ytScreen_")
+            val screen = prefs.getString(k, null) ?: return@mapNotNull null
+            val name = prefs.getString("tvAddr_$id", null)?.substringBefore('|')?.takeIf { it.isNotBlank() }
+                ?: knownTvs.firstOrNull { it.id == id }?.name ?: return@mapNotNull null
+            name to screen
+        }.toMap()
+        return legacy + saved
+    }
 
     private fun rememberAway(name: String, screenId: String) {
         val m = awayTvs().toMutableMap().apply { put(name, screenId) }
@@ -1407,6 +1421,12 @@ class MovieSession(private val app: Application) {
     @Volatile var adStats = 0 to 0
         private set
 
+    fun setRemoteCast(on: Boolean) = guard("setRemoteCast") {
+        prefs.edit { putBoolean("remoteCast", on) }
+        _ui.update { it.copy(remoteCast = on) }
+        publishTvs()
+    }
+
     fun setAdSkipper(on: Boolean) = guard("setAdSkipper") {
         prefs.edit { putBoolean("adSkipper", on) }
         _ui.update { it.copy(adSkipper = on) }
@@ -1914,7 +1934,7 @@ class MovieSession(private val app: Application) {
     // restarted the app while the file picker was open).
     init {
         main.post { guard("restore movie") { restoreMovie() } }
-        _ui.update { it.copy(autoSwitch = prefs.getBoolean("autoSwitch", false), signatureIntro = prefs.getBoolean("signatureIntro", true), screensaver = prefs.getBoolean("screensaver", true), multiAudio = prefs.getBoolean("multiAudio", false), adSkipper = prefs.getBoolean("adSkipper", true)) }
+        _ui.update { it.copy(autoSwitch = prefs.getBoolean("autoSwitch", false), signatureIntro = prefs.getBoolean("signatureIntro", true), screensaver = prefs.getBoolean("screensaver", true), multiAudio = prefs.getBoolean("multiAudio", false), adSkipper = prefs.getBoolean("adSkipper", true), remoteCast = prefs.getBoolean("remoteCast", true)) }
         prefs.getBoolean("roomSpeakers", false).let { on -> _ui.update { it.copy(muteTv = !on, roomSoundToo = on) } }
         deviceWatchStartedAt = SystemClock.elapsedRealtime()
         runCatching { audioManager?.registerAudioDeviceCallback(deviceCallback, main) }

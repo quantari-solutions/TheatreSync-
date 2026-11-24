@@ -467,6 +467,7 @@ class MainActivity : ComponentActivity() {
                                     onScreensaver = session::setScreensaver,
                                     onMultiAudio = session::setMultiAudio,
                                     onAdSkipper = session::setAdSkipper,
+                                    onRemoteCast = session::setRemoteCast,
                                     onBack = { page = Page.SETTINGS },
                                 )
                                 "multiaudio" -> MultiAudioScreen(
@@ -1067,6 +1068,13 @@ internal fun SetupScreen(
         NowCastingCard(item, onOpen = { onOpenCasting(item.tvId) }, onPlayPause = { onCastPlayPause(item.tvId) }, onStop = { onCastStop(item.tvId) })
     }
 
+    val awayTvs = ui.tvs.filter { it.away }
+    if (awayTvs.isNotEmpty() && ui.tvs.none { !it.away && !it.youTubeOnly }) QCard(highlighted = true) {
+        Text(stringResource(R.string.remote_cast_home_title), style = MaterialTheme.typography.titleMedium, color = Q.Text)
+        Hint(stringResource(R.string.remote_cast_home_text, awayTvs.joinToString(", ") { it.name }))
+        GoldButton(stringResource(R.string.remote_cast_home_button), onYouTube, modifier = Modifier.fillMaxWidth().testTag("remote_cast_home"))
+    }
+
     Eyebrow(stringResource(R.string.quick_watch))
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         WatchTile("▶", stringResource(R.string.youtube), stringResource(R.string.youtube_tile_hint), Modifier.weight(1f).testTag("tile_youtube"), Color(0xFFE62117), onYouTube)
@@ -1420,6 +1428,10 @@ internal fun YouTubeScreen(
         }
         when {
             ui.tvs.isEmpty() -> StatusPill(stringResource(R.string.searching), Q.Primary, pulsing = true)
+            ui.tvs.size == 1 -> Column {
+                Text(ui.tvs[0].name, color = Q.Text, style = MaterialTheme.typography.titleMedium)
+                if (ui.tvs[0].youTubeOnly) Hint(stringResource(if (ui.tvs[0].away) R.string.away_tv_hint else R.string.smart_tv_youtube))
+            }
             ui.tvs.size > 1 -> ui.tvs.forEach { tv ->
                 val selected = tv.id == chosenTv?.id
                 Row(
@@ -2674,8 +2686,21 @@ internal fun qrBitmap(text: String, size: Int): androidx.compose.ui.graphics.Ima
 
 /** Settings → Experimental: features that are fun but optional. */
 @Composable
-internal fun ExperimentalScreen(ui: MovieSession.Ui, onSignatureIntro: (Boolean) -> Unit, onBack: () -> Unit, onMultiAudio: (Boolean) -> Unit = {}, onAdSkipper: (Boolean) -> Unit = {}, onScreensaver: (Boolean) -> Unit = {}) = Screen {
+internal fun ExperimentalScreen(ui: MovieSession.Ui, onSignatureIntro: (Boolean) -> Unit, onBack: () -> Unit, onMultiAudio: (Boolean) -> Unit = {}, onAdSkipper: (Boolean) -> Unit = {}, onScreensaver: (Boolean) -> Unit = {}, onRemoteCast: (Boolean) -> Unit = {}) = Screen {
     TopBar(stringResource(R.string.experimental), onBack)
+    QCard(highlighted = ui.remoteCast) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                Text(stringResource(R.string.remote_cast), style = MaterialTheme.typography.titleLarge, color = Q.Text)
+                Hint(stringResource(R.string.remote_cast_short))
+            }
+            Switch(
+                checked = ui.remoteCast, onCheckedChange = onRemoteCast, modifier = Modifier.testTag("remote_cast"),
+                colors = SwitchDefaults.colors(checkedThumbColor = Color.Black, checkedTrackColor = Q.Primary),
+            )
+        }
+        Hint(stringResource(R.string.remote_cast_text))
+    }
     QCard(highlighted = ui.adSkipper) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f).padding(end = 12.dp)) {

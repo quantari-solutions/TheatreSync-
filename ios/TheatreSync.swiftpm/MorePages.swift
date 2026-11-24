@@ -104,9 +104,18 @@ struct ExperimentalPage: View {
     @EnvironmentObject var cast: CastController
     @AppStorage("screensaver") private var screensaver = true
     @AppStorage("signatureIntro") private var signatureIntro = true
+    @AppStorage("remoteCast") private var remoteCast = true
 
     var body: some View {
         PageScaffold(title: "Experimental") {
+            QCard(highlighted: remoteCast) {
+                Toggle(isOn: $remoteCast) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Remote cast").foregroundStyle(Q.text)
+                        Text("YouTube to your home TV from anywhere. TVs you've cast YouTube to appear as \"away\" on the YouTube page when you're out. The TV must be on; on a Chromecast, YouTube may need to be open there.").font(.footnote).foregroundStyle(Q.textMuted)
+                    }
+                }.tint(Q.primary)
+            }
             QCard {
                 Toggle(isOn: $signatureIntro) {
                     VStack(alignment: .leading, spacing: 4) {
