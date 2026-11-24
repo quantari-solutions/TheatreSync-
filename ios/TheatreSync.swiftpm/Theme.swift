@@ -119,6 +119,31 @@ struct QCard<Content: View>: View {
     }
 }
 
+/// A card with a soft gold glint that travels around its border while something is playing (Android's
+/// "now playing" light). Timeline-driven, so it moves even with Reduce Motion animations off.
+struct OrbitCard<Content: View>: View {
+    let playing: Bool
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        QCard(highlighted: playing, content: content)
+            .overlay {
+                if playing {
+                    TimelineView(.animation) { ctx in
+                        let a = ctx.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 5) / 5 * 360
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .strokeBorder(AngularGradient(gradient: Gradient(stops: [
+                                .init(color: .clear, location: 0), .init(color: .clear, location: 0.70),
+                                .init(color: Q.primary.opacity(0.55), location: 0.86), .init(color: Color(hex: 0xFFF0C2), location: 0.95),
+                                .init(color: .clear, location: 1),
+                            ]), center: .center, angle: .degrees(a)), lineWidth: 2)
+                    }
+                    .allowsHitTesting(false)
+                }
+            }
+    }
+}
+
 struct Eyebrow: View {
     let text: String
 

@@ -197,12 +197,18 @@ fun QCard(modifier: Modifier = Modifier, highlighted: Boolean = false, orbit: Bo
  */
 @Composable
 fun Modifier.orbitGlow(corner: androidx.compose.ui.unit.Dp): Modifier {
-    val transition = androidx.compose.animation.core.rememberInfiniteTransition(label = "orbit")
-    val angle by transition.animateFloat(
-        0f, 360f,
-        androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(5_000, easing = androidx.compose.animation.core.LinearEasing)),
-        label = "orbit",
-    )
+    // Driven by the frame clock, not Android's animation system, so it keeps moving when "Remove
+    // animations" is on in Accessibility (the owner's phone): it froze as a static corner glint before.
+    val angleState = androidx.compose.runtime.remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    val still = androidx.compose.ui.platform.LocalInspectionMode.current
+    if (!still) androidx.compose.runtime.LaunchedEffect(Unit) {
+        val start = androidx.compose.runtime.withFrameNanos { it }
+        while (true) {
+            val t = androidx.compose.runtime.withFrameNanos { it } - start
+            angleState.floatValue = ((t / 1_000_000L) % 5_000L) / 5_000f * 360f
+        }
+    }
+    val angle = angleState.floatValue
     return this.drawWithContent {
         drawContent()
         val stroke = 2.dp.toPx()

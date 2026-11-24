@@ -98,6 +98,40 @@ struct MirrorPage: View {
     }
 }
 
+// MARK: - Remote cast (Android: Remote cast page)
+
+/// Away from home: YouTube goes to the home TV over YouTube's own link (works now). A movie from this phone
+/// and mirroring need something at home to receive them (a Chromecast only takes those from its Wi-Fi).
+struct RemoteCastPage: View {
+    var body: some View {
+        PageScaffold(title: "Remote cast") {
+            Text("Away from home, send something to your TV over the internet.").font(.footnote).foregroundStyle(Q.textMuted)
+            NavigationLink(value: Page.youtube) { option("play.rectangle.fill", "YouTube", "Paste a link: it plays on the TV at home, with play, pause, skip and stop here.", "Ready", true) }
+                .buttonStyle(.plain)
+            option("film", "A movie from this phone", "Your own video files on the TV at home.", "Needs the home hub (coming)", false)
+            option("rectangle.on.rectangle", "Mirror screen", "Show this phone's screen on the TV at home.", "Needs the home hub (coming)", false)
+            QCard {
+                Text("Your TVs").font(.headline).foregroundStyle(Q.text)
+                ForEach(YouTubeCaster.awayTVs.keys.sorted(), id: \.self) { Text($0).foregroundStyle(Q.text) }
+                Text("A Chromecast with Google TV can be the home hub itself; with a classic Chromecast, movies and mirroring from away need your router's VPN.").font(.footnote).foregroundStyle(Q.textMuted)
+            }
+        }
+    }
+
+    private func option(_ icon: String, _ title: String, _ text: String, _ status: String, _ ready: Bool) -> some View {
+        QCard(highlighted: ready) {
+            HStack(spacing: 14) {
+                Image(systemName: icon).font(.title2).foregroundStyle(ready ? Q.primary : Q.textFaint)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title).font(.headline).foregroundStyle(ready ? Q.text : Q.textMuted)
+                    Text(text).font(.footnote).foregroundStyle(Q.textMuted)
+                }
+            }
+            StatusPill(text: status, color: ready ? Q.success : Q.textFaint)
+        }
+    }
+}
+
 // MARK: - Experimental (Android: Settings → Experimental)
 
 struct ExperimentalPage: View {

@@ -18,6 +18,7 @@ PAGES = {
     "SETTINGS": "settings", "MOVIE": "movie", "HEADPHONES": "headphones", "HEADPHONE_SETTINGS": "headphones",
     "EXPERIMENTAL": "experimental", "MULTI_AUDIO": "multiAudio", "MIRROR": "mirror",
     "CRASHES": "n/a: iOS shows its own crash reports in Settings → Privacy → Analytics",
+    "REMOTE_CAST": "remoteCast",
     "GITHUB": "n/a: crash-report upload to GitHub needs a token stored on the phone; Android only",
 }
 m = re.search(r"enum class Page \{([^}]*)\}", android)
@@ -48,6 +49,8 @@ FEATURES = {
     "signatureIntro": "Signature intro toggle",
     "ytAway": "YouTube to a home TV from anywhere (remembered TVs)",
     "remoteCast": "Remote cast switch in Experimental",
+    "struct OrbitCard": "moving gold glow on the Now casting card while playing",
+    "func stop()": "Stop for remote / Samsung YouTube casts",
 }
 for sym, what in FEATURES.items():
     if sym not in all_ios: errors.append(f"iOS is missing: {what} ({sym})")

@@ -2,6 +2,14 @@
 
 _Last updated: 2026-11-22. Android 0.7.0: TapIn fixed and on the movie screen, TapIn for YouTube (any phone's cast). iOS 0.7.0: full TheatreSync part 1_
 
+## Android 0.7.4 / iOS 0.8.3: remote cast feedback (owner tested from work)
+| Ask | Done | Checked |
+|---|---|---|
+| "I have no way of figuring out [if it's casting]" | YouTube's remote-control events are read every few seconds; the TV itself reports playing/paused/loading and its position (`LoungeState`). Card + page say "Playing at home ✓ (confirmed by YouTube on the TV)" or "Not confirmed yet: is it on, with YouTube open?" | `LoungeStateTest`; needs HW |
+| Golden glow should travel round the card while playing | It existed but used Android's animation system, frozen by "Remove animations"; now frame-clock driven (Android), TimelineView (iOS `OrbitCard`) | Screenshots; needs phone check |
+| No "You're away from home" card while remote casting; stop + cast another | Card hidden during a remote cast; Now casting card and page show play/pause, skip, stop and "Cast another video" for remote/smart-TV casts | `remoteCast2_playing` screenshot |
+| Remote cast page with YouTube, phone media and mirroring | New Remote cast page: YouTube (ready); a movie from this phone and Mirror screen listed as "Needs the home hub (coming)", with each TV's kind (Google TV can be the hub; classic Chromecast needs the router's VPN) | `remoteCast1` screenshot |
+
 ## Android 0.7.3 / iOS 0.8.2: "I'm not able to see [remote cast]… make sure there is a remote cast toggle in experimental and it's enabled"
 | Problem | Fix | Checked |
 |---|---|---|
