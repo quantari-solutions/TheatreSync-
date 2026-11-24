@@ -450,4 +450,25 @@
     <string name="remote_cast_home_title">You\'re away from home</string>
     <string name="remote_cast_home_text">Cast YouTube to %1$s over the internet.</string>
     <string name="remote_cast_home_button">Cast YouTube from here</string>
+    <string name="remote_playing_away">Playing at home ✓ (confirmed by YouTube on the TV)</string>
+    <string name="remote_playing">Playing on the TV ✓ (confirmed by YouTube)</string>
+    <string name="remote_paused">Paused on the TV</string>
+    <string name="remote_buffering">Loading on the TV…</string>
+    <string name="remote_stopped">Stopped on the TV</string>
+    <string name="remote_unconfirmed_away">Not confirmed yet: the TV hasn\'t answered. Is it on, with YouTube open?</string>
+    <string name="remote_unconfirmed">Not confirmed yet: the TV hasn\'t answered.</string>
+    <string name="remote_waiting">Waiting for the TV to confirm…</string>
+    <string name="remote_status_hint">This comes from YouTube on the TV itself, so you know it\'s really playing even when you can\'t see it.</string>
+    <string name="remote_cast_another">Cast another video</string>
+    <string name="remote_cast_intro">Away from home, send something to your TV over the internet.</string>
+    <string name="remote_opt_youtube">Paste a YouTube link: it plays on the TV at home, with play, pause, skip and stop here.</string>
+    <string name="remote_ready">Ready</string>
+    <string name="remote_opt_movie_title">A movie from this phone</string>
+    <string name="remote_opt_movie">Your own video files on the TV at home.</string>
+    <string name="remote_opt_mirror">Show this phone\'s screen on the TV at home.</string>
+    <string name="remote_needs_hub">Needs the home hub (coming)</string>
+    <string name="remote_your_tvs">Your TVs</string>
+    <string name="remote_tv_google">Chromecast with Google TV: can be the home hub itself, so movies and mirroring from away can work with no extra device.</string>
+    <string name="remote_tv_classic">Classic Chromecast: YouTube from away now. Movies and mirroring from away need your router\'s VPN (many routers have one built in).</string>
+    <string name="remote_tv_unknown">Kind not checked yet: open TheatreSync once at home on the same Wi-Fi.</string>
 </resources>

@@ -43,7 +43,7 @@ struct HomeView: View {
                     QCard(highlighted: true) {
                         Text("You're away from home").font(.headline).foregroundStyle(Q.text)
                         Text("Cast YouTube to \(YouTubeCaster.awayTVs.keys.sorted().joined(separator: ", ")) over the internet.").font(.footnote).foregroundStyle(Q.textMuted)
-                        Button { path.append(.youtube) } label: { Label("Cast YouTube from here", systemImage: "globe").frame(maxWidth: .infinity) }
+                        Button { path.append(.remoteCast) } label: { Label("Cast from here", systemImage: "globe").frame(maxWidth: .infinity) }
                             .buttonStyle(GoldButtonStyle())
                     }
                 }
@@ -66,7 +66,7 @@ struct HomeView: View {
 
     /// Out of the house: no Chromecast on this Wi-Fi, but TVs remembered for Remote cast.
     private var remoteCastAway: Bool {
-        (UserDefaults.standard.object(forKey: "remoteCast") as? Bool ?? true) && cast.tvs.isEmpty && !YouTubeCaster.awayTVs.isEmpty
+        (UserDefaults.standard.object(forKey: "remoteCast") as? Bool ?? true) && cast.tvs.isEmpty && !YouTubeCaster.awayTVs.isEmpty && youtube.loungeTV == nil
     }
 
     /// Connected with nothing playing: the TV shows the living title card (when the screensaver is on).
@@ -106,7 +106,7 @@ struct HomeView: View {
 
     private func nowCastingRow(_ a: CastActivity) -> some View {
         Button { path.append(.nowCasting) } label: {
-            QCard(highlighted: a.isPlaying) {
+            OrbitCard(playing: a.isPlaying) {
                 HStack(spacing: 14) {
                     Thumb(url: a.imageUrl ?? (a.appId == CastStatus.appYouTube ? a.contentId.map { "https://i.ytimg.com/vi/\($0)/hqdefault.jpg" } : nil))
                     VStack(alignment: .leading, spacing: 3) {
@@ -123,7 +123,7 @@ struct HomeView: View {
 
     private func samsungRow(_ tv: SamsungTV) -> some View {
         Button { path.append(.youtube) } label: {
-            QCard(highlighted: youtube.samsungPlaying) {
+            OrbitCard(playing: youtube.samsungPlaying) {
                 HStack(spacing: 14) {
                     Thumb(url: youtube.castVideoId.map { "https://i.ytimg.com/vi/\($0)/hqdefault.jpg" })
                     VStack(alignment: .leading, spacing: 3) {
@@ -214,7 +214,7 @@ struct HomeView: View {
 
 /// The pages reached from home (each shows a back button).
 enum Page: Hashable {
-    case nowCasting, remote, youtube, settings, listen, listening, movie, headphones, mirror, experimental, multiAudio
+    case nowCasting, remote, youtube, settings, listen, listening, movie, headphones, mirror, experimental, multiAudio, remoteCast
 
     init?(name: String) {
         switch name {
@@ -228,6 +228,7 @@ enum Page: Hashable {
         case "mirror": self = .mirror
         case "experimental": self = .experimental
         case "multiAudio": self = .multiAudio
+        case "remoteCast": self = .remoteCast
         default: return nil
         }
     }

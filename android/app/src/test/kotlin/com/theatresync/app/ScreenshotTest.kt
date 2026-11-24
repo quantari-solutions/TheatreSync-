@@ -126,6 +126,19 @@ class ScreenshotTest {
             moviePlan = CastCompat.Plan.SOUND_ONLY,
         ),
     )
+    @Test fun remoteCast1() = shot {
+        RemoteCastScreen(listOf("Media Room TV" to com.theatresync.core.CastModel.Kind.CHROMECAST), {}, {})
+    }
+    @Test fun remoteCast2_playing() = shot {
+        NowCastingScreen(
+            TvWatchers.NowCasting("dial:away:Media Room TV", "Media Room TV", CastActivity(
+                appId = "233637DE", appName = "YouTube", kind = CastActivity.Kind.YOUTUBE,
+                subtitle = "Playing at home ✓ (confirmed by YouTube on the TV)", imageUrl = null, playerState = "PLAYING",
+                currentTimeSec = 42.0, durationSec = 212.0, contentId = "dQw4w9WgXcQ",
+            )),
+            {}, {}, {},
+        )
+    }
     @Test fun experimental1() = shot { ExperimentalScreen(Ui(signatureIntro = true), {}, {}) }
     @Test fun multiAudio1_unsupported() = shot { MultiAudioScreen(AudioSharing.UNSUPPORTED, listOf("MOMENTUM 4", "WH-1000XM4"), {}, {}, {}) }
     @Test fun casting4_upNext() = shot {

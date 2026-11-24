@@ -114,7 +114,7 @@ import com.theatresync.core.CastActivity
 import com.theatresync.core.YouTubeLinks
 import kotlin.math.abs
 
-enum class Page { HOME, HEADPHONES, NOW_CASTING, YOUTUBE, MIRROR, SETTINGS, CRASHES, GITHUB, REMOTE, MOVIE, HEADPHONE_SETTINGS, EXPERIMENTAL, MULTI_AUDIO }
+enum class Page { HOME, HEADPHONES, NOW_CASTING, YOUTUBE, MIRROR, SETTINGS, CRASHES, GITHUB, REMOTE, MOVIE, HEADPHONE_SETTINGS, EXPERIMENTAL, MULTI_AUDIO, REMOTE_CAST }
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 class MainActivity : ComponentActivity() {
@@ -342,6 +342,7 @@ class MainActivity : ComponentActivity() {
                         page == Page.HEADPHONES -> "headphones"
                         page == Page.YOUTUBE -> "youtube"
                         page == Page.MIRROR -> "mirror"
+                        page == Page.REMOTE_CAST -> "remotecast"
                         page == Page.NOW_CASTING && casting != null -> "casting"
                         page == Page.MOVIE && ui.phase != Phase.SETUP -> "playing"
                         else -> "setup"
@@ -531,6 +532,11 @@ class MainActivity : ComponentActivity() {
                                     onOpenApp = { link -> openYouTubeApp(link) },
                                     onBack = { session.resetYouTube(); sharedLink.value = null; page = Page.HOME },
                                 )
+                                "remotecast" -> RemoteCastScreen(
+                                    tvs = ui.tvs.filter { it.away }.map { it.name to session.rememberedKind(it.name) },
+                                    onYouTube = { page = Page.YOUTUBE },
+                                    onBack = { page = Page.HOME },
+                                )
                                 "mirror" -> MirrorScreen(
                                     onStart = { session.playIntroThen(session.defaultTvId()) { startMirroring() } },
                                     onBack = { page = Page.HOME },
@@ -552,6 +558,7 @@ class MainActivity : ComponentActivity() {
                                         onPip = ::enterPip,
                                         onAudio = { refreshAudio(); audioSheet.value = true },
                                         onRemote = { page = Page.REMOTE },
+                                        onCastAnother = { page = Page.YOUTUBE },
                                         message = ui.message,
                                         onDismissMessage = session::dismissMessage,
                                         upNext = ui.upNext[c.tvId].orEmpty(),
@@ -605,6 +612,7 @@ class MainActivity : ComponentActivity() {
                                     onCastPlayPause = session::castPlayPause,
                                     onCastStop = session::castStop,
                                     onYouTube = { page = Page.YOUTUBE },
+                                    onRemoteCast = { page = Page.REMOTE_CAST },
                                     onMirror = { page = Page.MIRROR },
                                     pendingCrash = pendingCrash.value,
                                     onSendCrash = { e -> sendToGitHub(e) },
@@ -1044,6 +1052,7 @@ internal fun SetupScreen(
     onCastPlayPause: (String) -> Unit = {},
     onCastStop: (String) -> Unit = {},
     onYouTube: () -> Unit = {},
+    onRemoteCast: () -> Unit = onYouTube,
     onMirror: () -> Unit = {},
     onMenu: () -> Unit = {},
     onQuality: (Quality) -> Unit = {},
@@ -1069,10 +1078,11 @@ internal fun SetupScreen(
     }
 
     val awayTvs = ui.tvs.filter { it.away }
-    if (awayTvs.isNotEmpty() && ui.tvs.none { !it.away && !it.youTubeOnly }) QCard(highlighted = true) {
+    val remoteCasting = ui.nowCasting.any { it.tvId.startsWith("dial:away:") }
+    if (awayTvs.isNotEmpty() && !remoteCasting && ui.tvs.none { !it.away && !it.youTubeOnly }) QCard(highlighted = true) {
         Text(stringResource(R.string.remote_cast_home_title), style = MaterialTheme.typography.titleMedium, color = Q.Text)
         Hint(stringResource(R.string.remote_cast_home_text, awayTvs.joinToString(", ") { it.name }))
-        GoldButton(stringResource(R.string.remote_cast_home_button), onYouTube, modifier = Modifier.fillMaxWidth().testTag("remote_cast_home"))
+        GoldButton(stringResource(R.string.remote_cast_home_button), onRemoteCast, modifier = Modifier.fillMaxWidth().testTag("remote_cast_home"))
     }
 
     Eyebrow(stringResource(R.string.quick_watch))
@@ -1786,8 +1796,9 @@ private fun NowCastingCard(item: TvWatchers.NowCasting, onOpen: () -> Unit, onPl
                 )
             }
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (a.canControl) RoundIconButton(if (a.isPlaying) "❚❚" else "▶", stringResource(R.string.play_pause), onPlayPause)
-                if (a.sessionId != null) RoundIconButton("■", stringResource(R.string.stop_casting), onStop, Modifier.testTag("card_stop"))
+                val viaYouTube = item.tvId.startsWith("dial:") // smart TV or remote cast: YouTube's remote link
+                if (a.canControl || viaYouTube) RoundIconButton(if (a.isPlaying) "❚❚" else "▶", stringResource(R.string.play_pause), onPlayPause)
+                if (a.sessionId != null || viaYouTube) RoundIconButton("■", stringResource(R.string.stop_casting), onStop, Modifier.testTag("card_stop"))
             }
         }
         val d = a.durationSec
@@ -1813,6 +1824,7 @@ internal fun NowCastingScreen(
     onPip: () -> Unit = {},
     onAudio: () -> Unit = {},
     onRemote: () -> Unit = {},
+    onCastAnother: () -> Unit = {},
     message: String? = null,
     onDismissMessage: () -> Unit = {},
     upNext: List<MovieSession.UpNextVideo> = emptyList(),
@@ -1854,7 +1866,7 @@ internal fun NowCastingScreen(
     a.subtitle?.let { Body(it) }
 
     // YouTube sound in the headphones: the same video plays on the phone, in step with the TV.
-    if (a.kind == CastActivity.Kind.YOUTUBE && a.contentId != null) QCard(highlighted = ytHeadphonesOn) {
+    if (a.kind == CastActivity.Kind.YOUTUBE && a.contentId != null && !item.tvId.startsWith("dial:away:")) QCard(highlighted = ytHeadphonesOn) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f).padding(end = 12.dp)) {
                 Text(stringResource(R.string.yt_headphones), style = MaterialTheme.typography.titleLarge, color = Q.Text)
@@ -1893,7 +1905,7 @@ internal fun NowCastingScreen(
     }
 
     // TapIn for YouTube: guests hear the TV's YouTube in their own headphones (no app), whoever cast it.
-    if (a.kind == CastActivity.Kind.YOUTUBE && ytTapInUrl != null) QCard {
+    if (a.kind == CastActivity.Kind.YOUTUBE && ytTapInUrl != null && !item.tvId.startsWith("dial:away:")) QCard {
         Text(stringResource(R.string.guests_title), style = MaterialTheme.typography.titleLarge, color = Q.Text)
         TapInCard(ytTapInUrl, { onShareNfc(ytTapInUrl) }, stringResource(R.string.yt_tapin_note))
     }
@@ -1906,7 +1918,13 @@ internal fun NowCastingScreen(
         GoldButton(stringResource(R.string.listen_along), { onListenAlong(listenUrl) }, Modifier.fillMaxWidth().testTag("listen_along"), height = 52.dp)
     }
 
-    if (a.canControl) {
+    val viaYouTube = item.tvId.startsWith("dial:")
+    if (viaYouTube) QCard(highlighted = a.isPlaying) {
+        Text(a.subtitle ?: stringResource(R.string.remote_waiting), style = MaterialTheme.typography.titleMedium, color = Q.Primary, modifier = Modifier.testTag("remote_status"))
+        Hint(stringResource(R.string.remote_status_hint))
+        GoldButton(stringResource(R.string.remote_cast_another), onCastAnother, Modifier.fillMaxWidth().testTag("cast_another"), height = 48.dp)
+    }
+    if (a.canControl || viaYouTube) {
         QCard {
             val d = a.durationSec
             val t = a.currentTimeSec ?: 0.0
@@ -1918,7 +1936,7 @@ internal fun NowCastingScreen(
                 PlayButton(playing = a.isPlaying, onClick = onPlayPause)
                 GhostButton(stringResource(R.string.skip_fwd_short), { onSkip(10.0) }, height = 52.dp, description = stringResource(R.string.skip_forward))
             }
-            if (a.kind == CastActivity.Kind.YOUTUBE) {
+            if (a.kind == CastActivity.Kind.YOUTUBE || viaYouTube) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     GhostButton("⏮  " + stringResource(R.string.yt_previous), onPrevious, Modifier.weight(1f).testTag("yt_previous"), height = 48.dp)
                     GhostButton(stringResource(R.string.yt_next) + "  ⏭", onNext, Modifier.weight(1f).testTag("yt_next"), height = 48.dp)
@@ -1954,7 +1972,7 @@ internal fun NowCastingScreen(
             Hint(stringResource(R.string.tv_volume_hint))
         }
     }
-    if (a.sessionId != null) {
+    if (a.sessionId != null || viaYouTube) {
         GhostButton("■  " + stringResource(R.string.stop_casting), onStop, Modifier.fillMaxWidth().testTag("stop_casting"), height = 52.dp, description = stringResource(R.string.stop_casting))
     }
     // YouTube has its own "Sound in headphones" card above; this note is for mirroring and other apps.
@@ -1964,6 +1982,49 @@ internal fun NowCastingScreen(
         GhostButton("🎧  " + stringResource(R.string.hp_settings), onHeadphoneOptions, Modifier.fillMaxWidth().testTag("cast_hp_settings"), height = 48.dp)
     }
     Footer()
+}
+
+// ---------------------------------------------------------------- remote cast (away from home)
+
+/**
+ * Remote cast: everything you can send to the home TV while you're away. YouTube goes over YouTube's own
+ * link (works now). A movie from this phone and mirroring the screen need something at home to receive
+ * them (a Chromecast only takes those from its own Wi-Fi): a Chromecast with Google TV as the home hub,
+ * or the home router's VPN. Each TV shows which applies.
+ */
+@Composable
+internal fun RemoteCastScreen(tvs: List<Pair<String, com.theatresync.core.CastModel.Kind?>>, onYouTube: () -> Unit, onBack: () -> Unit) = Screen {
+    TopBar(stringResource(R.string.remote_cast), onBack)
+    Hint(stringResource(R.string.remote_cast_intro))
+    RemoteOption("▶", stringResource(R.string.youtube), stringResource(R.string.remote_opt_youtube), stringResource(R.string.remote_ready), true, onYouTube, "remote_opt_youtube")
+    RemoteOption("🎬", stringResource(R.string.remote_opt_movie_title), stringResource(R.string.remote_opt_movie), stringResource(R.string.remote_needs_hub), false, {}, "remote_opt_movie")
+    RemoteOption("⧉", stringResource(R.string.mirror_screen), stringResource(R.string.remote_opt_mirror), stringResource(R.string.remote_needs_hub), false, {}, "remote_opt_mirror")
+    if (tvs.isNotEmpty()) QCard {
+        Text(stringResource(R.string.remote_your_tvs), style = MaterialTheme.typography.titleMedium, color = Q.Text)
+        tvs.forEach { (name, kind) ->
+            Text(name, color = Q.Text, style = MaterialTheme.typography.bodyLarge)
+            Hint(stringResource(when (kind) {
+                com.theatresync.core.CastModel.Kind.GOOGLE_TV -> R.string.remote_tv_google
+                com.theatresync.core.CastModel.Kind.CHROMECAST -> R.string.remote_tv_classic
+                else -> R.string.remote_tv_unknown
+            }))
+        }
+    }
+    Footer()
+}
+
+@Composable
+private fun RemoteOption(icon: String, title: String, text: String, status: String, ready: Boolean, onClick: () -> Unit, tag: String) {
+    QCard(Modifier.then(if (ready) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier).testTag(tag), highlighted = ready) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Text(icon, style = MaterialTheme.typography.headlineSmall, color = if (ready) Q.Primary else Q.TextFaint)
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleMedium, color = if (ready) Q.Text else Q.TextMuted)
+                Hint(text)
+            }
+        }
+        StatusPill(status, if (ready) Q.Success else Q.TextFaint)
+    }
 }
 
 // ---------------------------------------------------------------- headphones

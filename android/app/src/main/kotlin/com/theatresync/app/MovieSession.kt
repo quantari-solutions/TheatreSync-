@@ -351,6 +351,10 @@ class MovieSession(private val app: Application) {
         prefs.edit { putStringSet("ytAway", m.map { (k, v) -> "$k\t$v" }.toSet()) }
     }
 
+    /** The kind of each remembered TV (Google TV can be the home hub), by name. */
+    fun rememberedKind(name: String): com.theatresync.core.CastModel.Kind? =
+        prefs.getString("castKind_$name", null)?.let { runCatching { com.theatresync.core.CastModel.Kind.valueOf(it) }.getOrNull() }
+
     fun forgetAwayTv(name: String) = guard("forgetAwayTv") {
         prefs.edit { putStringSet("ytAway", (awayTvs() - name).map { (k, v) -> "$k\t$v" }.toSet()) }
         publishTvs()
@@ -481,7 +485,9 @@ class MovieSession(private val app: Application) {
             // Which kind of Chromecast (Google TV can host TheatreSync; classic ones can't): checked once per address.
             val kind = ip?.let { castKinds[it] } ?: run {
                 if (ip != null && probingKinds.add(ip)) Thread({
-                    castKinds[ip] = com.theatresync.core.CastModel.classify(device?.modelName, speaker, com.theatresync.core.CastModel.hasRemoteService(ip))
+                    val k = com.theatresync.core.CastModel.classify(device?.modelName, speaker, com.theatresync.core.CastModel.hasRemoteService(ip))
+                    castKinds[ip] = k
+                    prefs.edit { putString("castKind_${r.name}", k.name) }
                     main.post { guard("cast kind") { refreshTvs() } }
                 }, "cast-kind").apply { isDaemon = true }.start()
                 null
@@ -553,6 +559,59 @@ class MovieSession(private val app: Application) {
     /** YouTube on any TV is controlled through YouTube's own remote link (the TV's media channel ignores us). */
     private fun usesYouTubeRemote(tvId: String) = isDial(tvId) || activityFor(tvId)?.kind == CastActivity.Kind.YOUTUBE
 
+    /**
+     * Smart TVs and remote casts (over the internet) send no Cast status, so YouTube's own remote-control
+     * events are read every few seconds: the TV reports playing / paused and its position. That confirms
+     * the video really is playing at home, and keeps the card's time and play/pause right.
+     */
+    @Volatile private var remoteWatchTv: String? = null
+
+    private fun startRemoteWatch(tvId: String) {
+        remoteWatchTv = tvId
+        Thread({
+            var silent = 0
+            while (remoteWatchTv == tvId) {
+                val link = synchronized(youTubeRemotes) { youTubeRemotes[tvId] }
+                val state = link?.let { (l, s) -> runCatching { com.theatresync.core.LoungeState.parse(l.events(s, 5_000)) }.getOrNull() }
+                if (state != null) silent = 0 else silent++
+                main.post { guard("remote status") { applyRemoteState(tvId, state, silent) } }
+                if (link == null || state == null) Thread.sleep(3_000)
+            }
+        }, "remote-watch").apply { isDaemon = true }.start()
+    }
+
+    private fun applyRemoteState(tvId: String, s: com.theatresync.core.LoungeState.State?, silent: Int) {
+        val o = optimistic?.takeIf { it.tvId == tvId } ?: return
+        val away = tvId.startsWith(AWAY)
+        val note = when {
+            s == null && silent >= 3 -> app.getString(if (away) R.string.remote_unconfirmed_away else R.string.remote_unconfirmed)
+            s == null -> o.activity.subtitle
+            s.play == com.theatresync.core.LoungeState.Play.PLAYING -> app.getString(if (away) R.string.remote_playing_away else R.string.remote_playing)
+            s.play == com.theatresync.core.LoungeState.Play.PAUSED -> app.getString(R.string.remote_paused)
+            s.play == com.theatresync.core.LoungeState.Play.BUFFERING -> app.getString(R.string.remote_buffering)
+            s.play == com.theatresync.core.LoungeState.Play.STOPPED -> app.getString(R.string.remote_stopped)
+            else -> o.activity.subtitle
+        }
+        var a = o.activity.copy(subtitle = note)
+        if (s != null) {
+            s.positionSec?.let { dialPosSec = it; dialPosAtMs = SystemClock.elapsedRealtime() }
+            a = a.copy(
+                currentTimeSec = s.positionSec ?: a.currentTimeSec,
+                durationSec = s.durationSec ?: a.durationSec,
+                playerState = when (s.play) {
+                    com.theatresync.core.LoungeState.Play.PLAYING -> "PLAYING"
+                    com.theatresync.core.LoungeState.Play.PAUSED -> "PAUSED"
+                    com.theatresync.core.LoungeState.Play.BUFFERING -> "BUFFERING"
+                    else -> a.playerState
+                },
+                contentId = s.videoId ?: a.contentId,
+                imageUrl = s.videoId?.let { "https://i.ytimg.com/vi/$it/hqdefault.jpg" } ?: a.imageUrl,
+            )
+        }
+        optimistic = o.copy(activity = a)
+        publishNowCasting(rawNowCasting)
+    }
+
     /** Where a smart TV's video is now (it reports nothing back), estimated from our own commands. */
     private var dialPosSec = 0.0
     private var dialPosAtMs = 0L
@@ -598,6 +657,7 @@ class MovieSession(private val app: Application) {
     /** Stops whatever is on that TV. If it's our own Cast session, end that cleanly too. */
     private fun castStopUnsafe(tvId: String) {
         if (isDial(tvId)) {
+            remoteWatchTv = null
             youTubeRemote(tvId, "stopVideo")
             optimistic = null
             publishNowCasting(rawNowCasting)
@@ -827,7 +887,7 @@ class MovieSession(private val app: Application) {
                     if (isDial(tv.id)) { dialPosSec = 0.0; dialPosAtMs = SystemClock.elapsedRealtime() }
                     if (isDial(tv.id)) optimistic = optimistic?.copy(activity = optimistic!!.activity.copy(playerState = "PLAYING", contentId = videoId, title = null))
                     publishNowCasting(rawNowCasting)
-                    if (!isDial(tv.id)) tvWatchers.pollNow(tv.id)
+                    if (!isDial(tv.id)) tvWatchers.pollNow(tv.id) else startRemoteWatch(tv.id)
                     CastIndicator.show(app, app.getString(R.string.casting_youtube_to, tv.name), tv.id)
                 }
                 _ui.update { it.copy(youTube = if (ok) YouTubeState.PLAYING else YouTubeState.FAILED, youTubeStep = null) }

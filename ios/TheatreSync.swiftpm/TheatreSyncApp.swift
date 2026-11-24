@@ -45,6 +45,7 @@ struct RootView: View {
                         case .mirror: MirrorPage()
                         case .experimental: ExperimentalPage()
                         case .multiAudio: MultiAudioPage()
+                        case .remoteCast: RemoteCastPage()
                         }
                     }
                 }

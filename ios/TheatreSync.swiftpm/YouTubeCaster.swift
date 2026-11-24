@@ -273,12 +273,14 @@ final class YouTubeCaster: ObservableObject {
     /// The TV's YouTube when it isn't a Chromecast (from YouTube's events): position, playing.
     @Published private(set) var samsungPosition: Double?
     @Published private(set) var samsungPlaying = false
+    /// The TV itself has reported its state (so the cast is confirmed, even when you can't see the TV).
+    @Published private(set) var confirmed = false
     private var samsungAt = Date()
     private let lounge = YouTubeLounge()
     private var listening: Task<Void, Never>?
 
     func cast(link: String, to target: Target, cast: CastController) async {
-        problem = nil; steps = []
+        problem = nil; steps = []; confirmed = false
         guard let id = YouTubeShared.videoId(link) else { problem = "That doesn't look like a YouTube link."; return }
         busy = true
         defer { busy = false }
@@ -327,6 +329,8 @@ final class YouTubeCaster: ObservableObject {
     func playPause() { let p = samsungPlaying; samsungPlaying = !p; send(p ? "pause" : "play") }
     func seek(by s: Double) { let to = max(0, (samsungNow ?? 0) + s); send("seekTo", [("newTime", String(format: "%.1f", to))]) }
     func next() { send("next") }
+    /// Stops the video on the TV (YouTube goes back to its home screen).
+    func stop() { send("stopVideo"); listening?.cancel(); target = nil; confirmed = false; samsungPosition = nil }
     func previous() { send("previous") }
     func setVolume(_ v: Double) { send("setVolume", [("volume", "\(Int(v * 100))")]) }
 
@@ -347,7 +351,7 @@ final class YouTubeCaster: ObservableObject {
                 guard let self else { return }
                 let ev = await self.lounge.events(waitSeconds: 3)
                 if let t = Self.last("\"currentTime\"\\s*:\\s*\"([0-9.]+)\"", ev).flatMap(Double.init) { self.samsungPosition = t; self.samsungAt = Date() }
-                if let st = Self.last("\"state\"\\s*:\\s*\"(-?\\d+)\"", ev) { self.samsungPlaying = st == "1" }
+                if let st = Self.last("\"state\"\\s*:\\s*\"(-?\\d+)\"", ev) { self.samsungPlaying = st == "1"; self.confirmed = true }
                 if let v = Self.last("\"videoId\"\\s*:\\s*\"([A-Za-z0-9_-]{11})\"", ev) { self.castVideoId = v }
             }
         }

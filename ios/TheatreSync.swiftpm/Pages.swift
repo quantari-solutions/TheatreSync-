@@ -269,6 +269,9 @@ struct SamsungRemote: View {
     var body: some View {
         QCard {
             Text("\(tv.name) · YouTube").font(.headline).foregroundStyle(Q.text)
+            Text(youtube.confirmed ? (youtube.samsungPlaying ? "Playing on the TV ✓ (confirmed by YouTube on the TV)" : "Paused on the TV")
+                 : "Waiting for the TV to confirm… Is it on, with YouTube open?")
+                .font(.footnote.weight(.semibold)).foregroundStyle(youtube.confirmed ? Q.success : Q.primary)
             if let p = youtube.samsungNow { Text(clock(p)).font(.caption.monospacedDigit()).foregroundStyle(Q.textMuted) }
             HStack(spacing: 10) {
                 Button { youtube.previous() } label: { Image(systemName: "backward.end.fill").frame(maxWidth: .infinity) }.buttonStyle(GhostButtonStyle())
@@ -281,6 +284,12 @@ struct SamsungRemote: View {
                 Image(systemName: "speaker.fill").foregroundStyle(Q.textMuted)
                 Slider(value: $volume, in: 0...1, onEditingChanged: { editing in if !editing { youtube.setVolume(volume) } }).tint(Q.primary)
                 Image(systemName: "speaker.wave.3.fill").foregroundStyle(Q.textMuted)
+            }
+            HStack(spacing: 10) {
+                NavigationLink(value: Page.youtube) { Label("Cast another", systemImage: "plus.rectangle.on.rectangle").frame(maxWidth: .infinity) }
+                    .buttonStyle(GhostButtonStyle())
+                Button { youtube.stop() } label: { Label("Stop", systemImage: "stop.fill").frame(maxWidth: .infinity) }
+                    .buttonStyle(GhostButtonStyle())
             }
         }
     }
