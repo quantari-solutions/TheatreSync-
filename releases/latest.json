@@ -1,8 +1,8 @@
 {
-  "versionCode": 39,
-  "versionName": "0.7.4",
-  "apkUrl": "https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases/TheatreSync-0.7.4.apk",
-  "sha256": "e8368de78822e2826de26d2dd5f5815ae125027d822ab659a7916c4b4563cc74",
-  "sizeBytes": 26903559,
-  "notes": "Remote cast: the Now casting card shows whether YouTube on the TV confirms it's playing, with play/pause, skip, stop and 'Cast another video'. The gold light now moves round the card while playing. New Remote cast page lists YouTube, your movies and mirroring."
+  "versionCode": 40,
+  "versionName": "0.7.5",
+  "apkUrl": "https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases/TheatreSync-0.7.5.apk",
+  "sha256": "b28433205dfb809912bbc492289be01dd4e6af15be6e414763420741cea300fb",
+  "sizeBytes": 24295655,
+  "notes": "Smoother 60 fps screensaver with random sparks. Find a video: search YouTube inside TheatreSync and cast in one tap. The Frame: its own remote on the Remote page, and a better search for it (Settings \u2192 Samsung TV shows what was found). Remote cast says clearly when the TV isn't listening."
 }
