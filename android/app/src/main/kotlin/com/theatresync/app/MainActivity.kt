@@ -581,6 +581,11 @@ class MainActivity : ComponentActivity() {
                                         onAudio = { refreshAudio(); audioSheet.value = true },
                                         onRemote = { page = Page.REMOTE },
                                         onCastAnother = { page = Page.YOUTUBE },
+                                        playAlongOn = ui.playAlongTv == c.tvId,
+                                        playAlong = ui.playAlong,
+                                        onPlayAlong = { on -> session.setPlayAlong(c.tvId, on) },
+                                        onPlayAlongOpenApp = { PlayAlong.appFor(c.activity.appName)?.let { runCatching { startActivity(session.playAlong.openAppIntent(it)) } } },
+                                        onPlayAlongAccess = { runCatching { startActivity(session.playAlong.accessIntent()) } },
                                         message = ui.message,
                                         onDismissMessage = session::dismissMessage,
                                         upNext = ui.upNext[c.tvId].orEmpty(),
@@ -1857,6 +1862,11 @@ internal fun NowCastingScreen(
     onAudio: () -> Unit = {},
     onRemote: () -> Unit = {},
     onCastAnother: () -> Unit = {},
+    playAlongOn: Boolean = false,
+    playAlong: PlayAlong.Status = PlayAlong.Status(),
+    onPlayAlong: (Boolean) -> Unit = {},
+    onPlayAlongOpenApp: () -> Unit = {},
+    onPlayAlongAccess: () -> Unit = {},
     message: String? = null,
     onDismissMessage: () -> Unit = {},
     upNext: List<MovieSession.UpNextVideo> = emptyList(),
@@ -2007,8 +2017,11 @@ internal fun NowCastingScreen(
     if (a.sessionId != null || viaYouTube) {
         GhostButton("■  " + stringResource(R.string.stop_casting), onStop, Modifier.fillMaxWidth().testTag("stop_casting"), height = 52.dp, description = stringResource(R.string.stop_casting))
     }
+    // Netflix / Prime Video: Play along — the same title in the app on this phone, kept in step with the TV.
+    val playApp = PlayAlong.appFor(a.appName)
+    if (playApp != null && !viaYouTube) PlayAlongCard(playApp, playAlongOn, playAlong, onPlayAlong, onPlayAlongOpenApp, onPlayAlongAccess)
     // YouTube has its own "Sound in headphones" card above; this note is for mirroring and other apps.
-    if (a.kind != CastActivity.Kind.YOUTUBE) QCard {
+    if (a.kind != CastActivity.Kind.YOUTUBE && playApp == null) QCard {
         Text(stringResource(R.string.cast_sound_title), style = MaterialTheme.typography.titleMedium, color = Q.Text)
         Hint(stringResource(R.string.cast_sound_hint))
         GhostButton("🎧  " + stringResource(R.string.hp_settings), onHeadphoneOptions, Modifier.fillMaxWidth().testTag("cast_hp_settings"), height = 48.dp)
@@ -2045,6 +2058,40 @@ private fun SamsungRemoteCard(name: String, onKey: (String) -> Unit) {
             GhostButton("⌂  " + stringResource(R.string.samsung_home), { onKey(k.HOME) }, Modifier.weight(1f), height = 48.dp)
             GhostButton("⏯", { onKey(k.PLAY_PAUSE) }, Modifier.weight(1f), height = 48.dp)
         }
+    }
+}
+
+@Composable
+private fun PlayAlongCard(app: String, on: Boolean, st: PlayAlong.Status, onToggle: (Boolean) -> Unit, onOpenApp: () -> Unit, onAccess: () -> Unit) {
+    val appName = if (app == "netflix") "Netflix" else "Prime Video"
+    QCard(highlighted = on) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                Text(stringResource(R.string.play_along_title), style = MaterialTheme.typography.titleLarge, color = Q.Text)
+                Hint(stringResource(R.string.play_along_short, appName))
+            }
+            Switch(
+                checked = on, onCheckedChange = onToggle, modifier = Modifier.testTag("play_along"),
+                colors = SwitchDefaults.colors(checkedThumbColor = Color.Black, checkedTrackColor = Q.Primary),
+            )
+        }
+        if (on) {
+            when (st.problem) {
+                PlayAlong.Problem.NEEDS_ACCESS -> {
+                    Hint(stringResource(R.string.play_along_access))
+                    GoldButton(stringResource(R.string.play_along_allow), onAccess, Modifier.fillMaxWidth().testTag("play_along_allow"), height = 48.dp)
+                }
+                PlayAlong.Problem.OPEN_APP -> {
+                    Hint(stringResource(R.string.play_along_open, appName))
+                    GoldButton(stringResource(R.string.play_along_open_button, appName), onOpenApp, Modifier.fillMaxWidth().testTag("play_along_open"), height = 48.dp)
+                }
+                PlayAlong.Problem.TV_NO_POSITION -> Hint(stringResource(R.string.play_along_no_position))
+                null -> StatusPill(
+                    st.driftMs?.let { d -> stringResource(R.string.play_along_in_step, (if (d >= 0) "+" else "") + d) } ?: stringResource(R.string.play_along_following),
+                    if (st.driftMs != null && kotlin.math.abs(st.driftMs) < 700) Q.Success else Q.Primary,
+                )
+            }
+        } else Hint(stringResource(R.string.play_along_how, appName))
     }
 }
 

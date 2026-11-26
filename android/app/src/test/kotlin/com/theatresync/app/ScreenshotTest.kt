@@ -146,6 +146,18 @@ class ScreenshotTest {
             {}, {}, {},
         )
     }
+    /** Netflix on the TV: Play along in the headphones. */
+    @Test fun playAlong1_netflix() = shot {
+        NowCastingScreen(
+            TvWatchers.NowCasting("1", "Media Room TV", CastActivity(
+                appId = "CA5E8412", appName = "Netflix", kind = CastActivity.Kind.MEDIA, title = "Stranger Things", subtitle = "S4 · E1",
+                imageUrl = null, playerState = "PLAYING", currentTimeSec = 812.0, durationSec = 4560.0,
+                mediaSessionId = 1, transportId = "t", hasMedia = true, sessionId = "s",
+            )),
+            {}, {}, {},
+            playAlongOn = true, playAlong = PlayAlong.Status(on = true, app = "Netflix", driftMs = 180),
+        )
+    }
     @Test fun experimental1() = shot { ExperimentalScreen(Ui(signatureIntro = true), {}, {}) }
     @Test fun multiAudio1_unsupported() = shot { MultiAudioScreen(AudioSharing.UNSUPPORTED, listOf("MOMENTUM 4", "WH-1000XM4"), {}, {}, {}) }
     @Test fun casting4_upNext() = shot {

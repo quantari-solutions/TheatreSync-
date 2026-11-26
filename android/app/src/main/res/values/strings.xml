@@ -494,4 +494,15 @@
     <string name="nfc_sent_hint">The other phone got the link: it opens the listening page (it needs the same Wi-Fi).</string>
     <string name="nfc_nothing">Nothing to share yet: start a movie or YouTube first.</string>
     <string name="nfc_or_scan">Or scan this with the other phone\'s camera.</string>
+    <string name="play_along_access_label">TheatreSync Play along (follows Netflix / Prime Video on the TV)</string>
+    <string name="play_along_title">Play along in your headphones</string>
+    <string name="play_along_short">Hear %1$s through this phone, in step with the TV</string>
+    <string name="play_along_how">%1$s doesn\'t let any app take the TV\'s sound, so this phone plays the same title in the %1$s app (your headphones get its sound) and TheatreSync keeps it in step with the TV: pause, play and skips follow. Close, not exact: within about half a second. Needs a %1$s login on this phone.</string>
+    <string name="play_along_access">Once only: allow TheatreSync to follow and control the playback of other apps on this phone (Android calls it Notification access). Turn on TheatreSync in the list, then come back.</string>
+    <string name="play_along_allow">Allow (once)</string>
+    <string name="play_along_open">Open %1$s on this phone and start the same title (any point: TheatreSync moves it to where the TV is). Headphones on.</string>
+    <string name="play_along_open_button">Open %1$s</string>
+    <string name="play_along_no_position">The TV hasn\'t said where it is in the film yet. Give it a few seconds; if it stays like this, this app on the TV doesn\'t report its position.</string>
+    <string name="play_along_in_step">In step with the TV · %1$s ms</string>
+    <string name="play_along_following">Following the TV…</string>
 </resources>
