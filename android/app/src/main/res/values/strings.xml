@@ -505,4 +505,5 @@
     <string name="play_along_no_position">The TV hasn\'t said where it is in the film yet. Give it a few seconds; if it stays like this, this app on the TV doesn\'t report its position.</string>
     <string name="play_along_in_step">In step with the TV · %1$s ms</string>
     <string name="play_along_following">Following the TV…</string>
+    <string name="play_along_share_none">Nothing is playing %1$s on a TV yet. Start it on the TV first (cast from the app), then share again.</string>
 </resources>

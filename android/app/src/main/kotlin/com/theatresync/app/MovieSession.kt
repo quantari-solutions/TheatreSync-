@@ -1785,6 +1785,8 @@ class MovieSession(private val app: Application) {
 
     private fun say(res: Int) = _ui.update { it.copy(message = app.getString(res)) }
     private fun say(text: String) = _ui.update { it.copy(message = text) }
+    /** A plain message on the current page (from the screen layer). */
+    fun notice(text: String) = say(text)
 
     // ---------------------------------------------------------------- crash safety
     //

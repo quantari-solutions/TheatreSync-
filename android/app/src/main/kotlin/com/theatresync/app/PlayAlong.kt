@@ -45,10 +45,12 @@ class PlayAlong(private val context: Context) {
         packages = if (tvApp == "netflix") NETFLIX else PRIME
         tvTarget = target
         sync = PlayAlongSync()
+        speedIgnored = false; speedAskedAt = 0
         if (!running) { running = true; main.post(tick) }
     }
 
     fun stop() {
+        if (running && sync.rate != 1f && android.os.Build.VERSION.SDK_INT >= 29) runCatching { controller()?.transportControls?.setPlaybackSpeed(1f) }
         running = false
         main.removeCallbacks(tick)
         onStatus(Status(on = false))
@@ -66,7 +68,7 @@ class PlayAlong(private val context: Context) {
         override fun run() {
             if (!running) return
             onStatus(step())
-            main.postDelayed(this, 1_000)
+            main.postDelayed(this, 500)
         }
     }
 
@@ -80,13 +82,42 @@ class PlayAlong(private val context: Context) {
         val playing = state.state == PlaybackState.STATE_PLAYING
         val phonePos = state.position + if (playing && state.lastPositionUpdateTime > 0) ((now - state.lastPositionUpdateTime) * state.playbackSpeed).toLong() else 0L
         val controls = controller.transportControls
-        when (val a = sync.decide(phonePos, playing, tvPos, tvPlaying, now)) {
+        // Speed nudges where the app accepts them (Android 10+, and it actually changes speed when asked).
+        if (speedAskedAt > 0 && now - speedAskedAt > 3_000) {
+            if (kotlin.math.abs(state.playbackSpeed - sync.rate) > 0.01f) speedIgnored = true
+            speedAskedAt = 0
+        }
+        val canSpeed = !speedIgnored && android.os.Build.VERSION.SDK_INT >= 29 &&
+            (state.actions and PlaybackState.ACTION_SET_PLAYBACK_SPEED) != 0L
+        // Aim ahead by the headphones' own delay (Bluetooth plays a little late), so you hear it with the picture.
+        val target = tvPos + headphoneDelayMs()
+        when (val a = sync.decide(phonePos, playing, target, tvPlaying, now, canSpeed)) {
             PlayAlongSync.Action.Play -> controls.play()
             PlayAlongSync.Action.Pause -> controls.pause()
             is PlayAlongSync.Action.SeekTo -> controls.seekTo(a.positionMs)
+            is PlayAlongSync.Action.SetSpeed -> if (android.os.Build.VERSION.SDK_INT >= 29) { controls.setPlaybackSpeed(a.rate); speedAskedAt = now }
             PlayAlongSync.Action.None -> Unit
         }
         return Status(on = true, app = name, driftMs = sync.driftMs)
+    }
+
+    private var speedIgnored = false
+    private var speedAskedAt = 0L
+
+    /** How late the current headphones play sound: Android's estimate, else ~200 ms for Bluetooth, 0 otherwise. */
+    private fun headphoneDelayMs(): Long {
+        val am = context.getSystemService(android.media.AudioManager::class.java) ?: return 0
+        val bt = am.getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS).any {
+            it.type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP || (android.os.Build.VERSION.SDK_INT >= 31 && it.type == android.media.AudioDeviceInfo.TYPE_BLE_HEADSET)
+        }
+        val reported = runCatching {
+            (android.media.AudioManager::class.java.getMethod("getOutputLatency", Int::class.javaPrimitiveType).invoke(am, android.media.AudioManager.STREAM_MUSIC) as Int).toLong()
+        }.getOrDefault(0L)
+        return when {
+            bt && reported >= 100 -> reported
+            bt -> 200
+            else -> reported.coerceIn(0, 100)
+        }
     }
 
     private fun controller(): MediaController? = runCatching {
@@ -97,6 +128,16 @@ class PlayAlong(private val context: Context) {
     companion object {
         val NETFLIX = listOf("com.netflix.mediaclient")
         val PRIME = listOf("com.amazon.avod.thirdpartyclient", "com.amazon.avod")
+
+        /** "netflix" / "prime" for a link shared from those apps (title pages), else null. */
+        fun appForLink(text: String): String? = when {
+            Regex("netflix\\.com/", RegexOption.IGNORE_CASE).containsMatchIn(text) -> "netflix"
+            Regex("primevideo\\.com/|amazon\\.[a-z.]+/(gp/video|.*/dp/)|watch\\.amazon|app\\.primevideo", RegexOption.IGNORE_CASE).containsMatchIn(text) -> "prime"
+            else -> null
+        }
+
+        /** The first web address in shared text ("Watch X on Netflix https://..."). */
+        fun linkIn(text: String): String? = Regex("https?://\\S+").find(text)?.value
 
         /** "netflix" / "prime" for a TV app name, else null. */
         fun appFor(appName: String?): String? = when {

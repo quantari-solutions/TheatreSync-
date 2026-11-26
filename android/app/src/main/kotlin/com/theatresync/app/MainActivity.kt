@@ -326,6 +326,21 @@ class MainActivity : ComponentActivity() {
                     if (qrDialog.value && listenUrl != null) QrDialog(listenUrl, onDone = { qrDialog.value = false })
                     // Shared from the YouTube app: jump straight to the YouTube page.
                     LaunchedEffect(sharedLink.value) { if (sharedLink.value != null) page = Page.YOUTUBE }
+                    // Shared from Netflix / Prime Video: open that TV's page with Play along on, and the title in the app.
+                    LaunchedEffect(sharedPlayAlong.value) {
+                        val (app, link) = sharedPlayAlong.value ?: return@LaunchedEffect
+                        var tv: TvWatchers.NowCasting? = null
+                        repeat(20) { if (tv == null) { tv = session.ui.value.nowCasting.firstOrNull { PlayAlong.appFor(it.activity.appName) == app }; if (tv == null) kotlinx.coroutines.delay(500) } }
+                        sharedPlayAlong.value = null
+                        val found = tv
+                        if (found == null) { session.notice(getString(R.string.play_along_share_none, if (app == "netflix") "Netflix" else "Prime Video")); return@LaunchedEffect }
+                        castTvId = found.tvId
+                        page = Page.NOW_CASTING
+                        session.setPlayAlong(found.tvId, true)
+                        // The same title in the app on this phone (the app opens its page); press play and it lines up.
+                        val open = link?.let { Intent(Intent.ACTION_VIEW, it.toUri()) } ?: session.playAlong.openAppIntent(app)
+                        runCatching { startActivity(open.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                    }
                     // If the cast we're looking at ends, go back home on its own.
                     LaunchedEffect(page, casting == null) {
                         if (page == Page.NOW_CASTING && casting == null) {
@@ -801,8 +816,13 @@ class MainActivity : ComponentActivity() {
     private fun handleShare(intent: Intent?) {
         if (intent?.action != Intent.ACTION_SEND) return
         val text = intent.getStringExtra(Intent.EXTRA_TEXT) ?: return
-        if (YouTubeLinks.videoId(text) != null) { sharedLink.value = text; ytLink.value = text }
+        if (YouTubeLinks.videoId(text) != null) { sharedLink.value = text; ytLink.value = text; return }
+        // Shared from Netflix / Prime Video: Play along for the TV playing it, and the title opened on this phone.
+        PlayAlong.appForLink(text)?.let { sharedPlayAlong.value = it to PlayAlong.linkIn(text) }
     }
+
+    /** A Netflix / Prime title shared to TheatreSync: (app, link), handled once the TVs are known. */
+    private val sharedPlayAlong = mutableStateOf<Pair<String, String?>?>(null)
 
     private fun openYouTubeApp(link: String?) {
         val uri = (link?.takeIf { YouTubeLinks.videoId(it) != null } ?: "https://www.youtube.com/").toUri()

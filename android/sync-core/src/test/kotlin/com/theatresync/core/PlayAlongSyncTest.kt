@@ -34,4 +34,19 @@ class PlayAlongSyncTest {
         s.decide(63_100, true, 63_000, true, 3_000) // settles, learns
         assertEquals(PlayAlongSync.Action.None, s.decide(64_000, true, 64_900, true, 4_000)) // small drift, too soon
     }
+
+    @Test fun smallGapsCloseBySpeedNotJumps() {
+        val s = PlayAlongSync()
+        val a = s.decide(10_500, true, 10_000, true, 0, canSetSpeed = true) // phone 500 ms ahead
+        assertTrue(a is PlayAlongSync.Action.SetSpeed)
+        assertTrue((a as PlayAlongSync.Action.SetSpeed).rate < 1f) // slows down
+        assertEquals(PlayAlongSync.Action.None, s.decide(10_480, true, 10_000, true, 500, canSetSpeed = true)) // keeps it
+        val back = s.decide(10_020, true, 10_000, true, 9_000, canSetSpeed = true) // closed
+        assertEquals(PlayAlongSync.Action.SetSpeed(1f), back)
+    }
+
+    @Test fun bigGapsStillJumpWithSpeed() {
+        val s = PlayAlongSync()
+        assertTrue(s.decide(10_000, true, 20_000, true, 0, canSetSpeed = true) is PlayAlongSync.Action.SeekTo)
+    }
 }
