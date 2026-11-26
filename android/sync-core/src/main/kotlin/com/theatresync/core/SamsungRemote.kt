@@ -25,6 +25,12 @@ object SamsungRemote {
         const val PLAY_PAUSE = "KEY_PLAY_BACK"
     }
 
+    /** Samsung's app number for YouTube on its TVs. */
+    const val YOUTUBE_APP = "111299001912"
+
+    fun launchJson(appId: String) =
+        """{"method":"ms.channel.emit","params":{"event":"ed.apps.launch","to":"host","data":{"appId":"$appId","action_type":"DEEP_LINK"}}}"""
+
     fun clickJson(key: String) =
         """{"method":"ms.remote.control","params":{"Cmd":"Click","DataOfCmd":"$key","Option":"false","TypeOfRemote":"SendRemoteKey"}}"""
 
@@ -46,7 +52,7 @@ object SamsungRemote {
             // The TV says "ms.channel.connect" once allowed, or "ms.channel.unauthorized" if refused.
             val hello = readTextFrame(inp) ?: return Result.ALLOW_ON_TV
             if ("unauthorized" in hello || "ms.channel.connect" !in hello) return Result.ALLOW_ON_TV
-            for (k in keys) { out.write(textFrame(clickJson(k))); out.flush(); Thread.sleep(120) }
+            for (k in keys) { out.write(textFrame(if (k.startsWith("APP:")) launchJson(k.removePrefix("APP:")) else clickJson(k))); out.flush(); Thread.sleep(120) }
             Result.OK
         }
     }.getOrElse { if (it is java.net.SocketTimeoutException) Result.ALLOW_ON_TV else Result.FAILED }

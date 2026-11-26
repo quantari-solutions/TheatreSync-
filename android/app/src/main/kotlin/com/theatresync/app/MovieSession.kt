@@ -397,7 +397,7 @@ class MovieSession(private val app: Application) {
         val ip = d.appsUrl.substringAfter("//").substringBefore(':')
         Thread({
             val result = when (key) {
-                "YOUTUBE" -> if (runCatching { Dial.youTubeScreenId(d) }.isSuccess) com.theatresync.core.SamsungRemote.Result.OK else com.theatresync.core.SamsungRemote.Result.FAILED
+                "YOUTUBE" -> com.theatresync.core.SamsungRemote.send(ip, "APP:" + com.theatresync.core.SamsungRemote.YOUTUBE_APP)
                 else -> com.theatresync.core.SamsungRemote.send(ip, key)
             }
             if (key == com.theatresync.core.SamsungRemote.Keys.POWER && result == com.theatresync.core.SamsungRemote.Result.FAILED) {
@@ -496,7 +496,13 @@ class MovieSession(private val app: Application) {
     /** The YouTube "screen ID" of a Chromecast (Cast connection) or a smart TV (DIAL). Blocking. */
     private fun youTubeScreenId(tvId: String): String {
         if (tvId.startsWith(AWAY)) return awayTvs()[tvId.removePrefix(AWAY)] ?: throw java.io.IOException("TV not remembered")
-        dialTvs[tvId]?.let { return Dial.youTubeScreenId(it) }
+        dialTvs[tvId]?.let { d ->
+            val ip = d.appsUrl.substringAfter("//").substringBefore(':')
+            val samsung = d.manufacturer?.contains("Samsung", true) == true
+            return Dial.youTubeScreenId(d, fallbackLaunch = if (!samsung) null else {
+                { com.theatresync.core.SamsungRemote.send(ip, "APP:" + com.theatresync.core.SamsungRemote.YOUTUBE_APP) == com.theatresync.core.SamsungRemote.Result.OK }
+            })
+        }
         val tv = knownTvs.firstOrNull { it.id == tvId } ?: throw java.io.IOException("TV not found")
         return YouTubeScreenFinder({ TvWatchers.openTls(tv.address, tv.port) }).screenId()
     }

@@ -63,12 +63,19 @@ class AdSkipper(
         var lastPosAt = 0L
         var playing = false
         var failures = 0
+        var lastMuteAt = 0L
         while (running[tvId] === me && !me.isInterrupted) {
             try {
                 val (lounge, session) = link ?: connect(tvId).also { link = it; afterId = 0 }
                 fun command(name: String, params: Map<String, String> = emptyMap()) = runCatching { lounge.command(session, name, params) }
+                // Belt and braces (owner: "the mute isn't working for the ads"): a Chromecast on an AV receiver
+                // usually has fixed volume and ignores mute, so YouTube on the TV is muted too, every way it
+                // accepts ("mute"/"unMute" and setVolume muted), and the mute is re-applied while the ad lasts.
                 fun mute(on: Boolean) {
-                    if (!setTvMuted(tvId, on)) command("setVolume", mapOf("volume" to volume, "muted" to on.toString()))
+                    setTvMuted(tvId, on)
+                    command(if (on) "mute" else "unMute")
+                    command("setVolume", mapOf("volume" to volume, "muted" to on.toString()))
+                    lastMuteAt = System.currentTimeMillis()
                 }
                 // While an advert is muted, check more often so the sound comes back right on time.
                 for (e in LoungeEvents.parse(lounge.events(session, waitMs = if (ad.muted) 700 else 1_500, afterId = afterId))) {
@@ -107,6 +114,8 @@ class AdSkipper(
                 }
                 // The advert's time is up (or the safety limit passed): sound back, never forgotten.
                 if (ad.tick(System.currentTimeMillis())) mute(false)
+                // Still in the advert: keep it muted (in case the TV or YouTube dropped the first mute).
+                else if (ad.muted && System.currentTimeMillis() - lastMuteAt > 3_000) mute(true)
                 // Sponsor segments: jump to the end of the one we're in.
                 val pos = positionSec(tvId) ?: (lastPos + if (playing) (System.currentTimeMillis() - lastPosAt) / 1000.0 else 0.0)
                 SponsorBlock.current(segments, pos)?.takeIf { it !in skipped }?.let { seg ->
@@ -116,17 +125,23 @@ class AdSkipper(
                 }
                 failures = 0
             } catch (_: InterruptedException) {
-                if (ad.adOver()) setTvMuted(tvId, false) // stopped (ad skipper off / YouTube closed): never leave it muted
+                if (ad.adOver()) unmuteAll(tvId, link) // stopped (ad skipper off / YouTube closed): never leave it muted
                 return
             } catch (_: Exception) {
                 // Lost YouTube mid-advert: unmute rather than leave the TV silent.
-                if (ad.connectionLost(System.currentTimeMillis())) setTvMuted(tvId, false)
+                if (ad.connectionLost(System.currentTimeMillis())) unmuteAll(tvId, link)
                 link = null // the link expired or the TV went away: reconnect after a pause
                 failures++
-                try { Thread.sleep(minOf(30_000L, 2_000L * failures)) } catch (_: InterruptedException) { if (ad.adOver()) setTvMuted(tvId, false); return }
+                try { Thread.sleep(minOf(30_000L, 2_000L * failures)) } catch (_: InterruptedException) { if (ad.adOver()) unmuteAll(tvId, link); return }
             }
         }
-        if (ad.adOver()) setTvMuted(tvId, false) // finished for this TV: never leave it muted
+        if (ad.adOver()) unmuteAll(tvId, link) // finished for this TV: never leave it muted
+    }
+
+    /** Sound back on every path an advert could have been muted on (TV and YouTube), best effort. */
+    private fun unmuteAll(tvId: String, link: Pair<YouTubeLounge, YouTubeLounge.Session>?) {
+        setTvMuted(tvId, false)
+        link?.let { (l, s) -> runCatching { l.command(s, "unMute") } }
     }
 
     private fun fetchSegments(videoId: String): List<SponsorBlock.Segment> = runCatching {

@@ -154,18 +154,22 @@ object Dial {
     }
 
     /** Starts YouTube on the TV (if needed) and waits for its screen ID. */
-    fun youTubeScreenId(device: Device, timeoutMs: Long = 20_000): String {
-        youTubeState(device).screenId?.let { return it }
-        val c = URL(device.appsUrl + "YouTube").openConnection() as HttpURLConnection
-        c.requestMethod = "POST"
-        c.connectTimeout = 3_000
-        c.readTimeout = 8_000
-        c.doOutput = true
-        c.setRequestProperty("Content-Type", "text/plain; charset=utf-8")
-        c.outputStream.use { it.write(ByteArray(0)) }
-        val code = c.responseCode
-        c.disconnect()
-        if (code !in 200..299) throw IOException("TV refused to start YouTube ($code)")
+    fun youTubeScreenId(device: Device, timeoutMs: Long = 20_000, fallbackLaunch: (() -> Boolean)? = null): String {
+        runCatching { youTubeState(device).screenId }.getOrNull()?.let { return it }
+        // Ask the TV to start YouTube (DIAL). Some Samsung firmware refuses this (403/404) or has DIAL off:
+        // then [fallbackLaunch] opens YouTube the way the TV's own remote does, and we wait the same way.
+        val code = runCatching {
+            val c = URL(device.appsUrl + "YouTube").openConnection() as HttpURLConnection
+            c.requestMethod = "POST"
+            c.connectTimeout = 3_000
+            c.readTimeout = 8_000
+            c.doOutput = true
+            c.setRequestProperty("Content-Type", "text/plain; charset=utf-8")
+            c.outputStream.use { it.write(ByteArray(0)) }
+            c.responseCode.also { c.disconnect() }
+        }.getOrDefault(-1)
+        val launched = code in 200..299 || fallbackLaunch?.invoke() == true
+        if (!launched) throw IOException("TV refused to start YouTube (DIAL $code)")
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
             Thread.sleep(1_000)
@@ -173,4 +177,5 @@ object Dial {
         }
         throw IOException("YouTube on the TV didn't report a screen ID")
     }
+
 }
