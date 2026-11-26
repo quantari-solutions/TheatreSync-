@@ -471,4 +471,21 @@
     <string name="remote_tv_google">Chromecast with Google TV: can be the home hub itself, so movies and mirroring from away can work with no extra device.</string>
     <string name="remote_tv_classic">Classic Chromecast: YouTube from away now. Movies and mirroring from away need your router\'s VPN (many routers have one built in).</string>
     <string name="remote_tv_unknown">Kind not checked yet: open TheatreSync once at home on the same Wi-Fi.</string>
+    <string name="remote_not_listening">Media Room didn\'t pick up: YouTube isn\'t open on the Chromecast right now, and a Chromecast only listens over the internet while YouTube is open. The home hub (Remote cast page) fixes this.</string>
+    <string name="yt_find">Find a video</string>
+    <string name="yt_find_title">Find a video</string>
+    <string name="yt_find_cast">Cast this video</string>
+    <string name="yt_find_cast_to">Cast to %1$s</string>
+    <string name="remote_samsung_title">The Frame (Samsung) from anywhere</string>
+    <string name="remote_samsung_text">Switch The Frame on and open YouTube on it with Samsung\'s SmartThings, then cast YouTube from here and it plays on The Frame. At home, TheatreSync\'s Remote page controls The Frame directly.</string>
+    <string name="remote_samsung_button">Open SmartThings</string>
+    <string name="samsung_remote_title">%1$s remote</string>
+    <string name="samsung_remote_hint">Controls the TV directly over the Wi-Fi. The first time, press Allow on the TV when it asks about TheatreSync.</string>
+    <string name="samsung_power">Power</string>
+    <string name="samsung_vol_up">Volume up</string>
+    <string name="samsung_vol_down">Volume down</string>
+    <string name="samsung_back">Back</string>
+    <string name="samsung_home">Home</string>
+    <string name="samsung_allow">Look at The Frame: press Allow when it asks about TheatreSync (once only).</string>
+    <string name="samsung_no_answer">The Frame didn\'t answer. Is it on and on the same Wi-Fi?</string>
 </resources>

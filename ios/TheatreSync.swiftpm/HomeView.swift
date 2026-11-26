@@ -214,7 +214,7 @@ struct HomeView: View {
 
 /// The pages reached from home (each shows a back button).
 enum Page: Hashable {
-    case nowCasting, remote, youtube, settings, listen, listening, movie, headphones, mirror, experimental, multiAudio, remoteCast
+    case nowCasting, remote, youtube, settings, listen, listening, movie, headphones, mirror, experimental, multiAudio, remoteCast, youtubeBrowse
 
     init?(name: String) {
         switch name {
@@ -229,6 +229,7 @@ enum Page: Hashable {
         case "experimental": self = .experimental
         case "multiAudio": self = .multiAudio
         case "remoteCast": self = .remoteCast
+        case "youtubeBrowse": self = .youtubeBrowse
         default: return nil
         }
     }

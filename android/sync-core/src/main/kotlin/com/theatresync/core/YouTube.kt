@@ -86,7 +86,9 @@ class YouTubeScreenFinder(private val connect: () -> Socket, private val timeout
  * Undocumented by Google: if it changes, callers fall back to the YouTube app.
  */
 class YouTubeLounge(private val baseUrl: String = "https://www.youtube.com/") {
-    data class Session(val loungeToken: String, val sid: String, val gsessionId: String)
+    /** @param screenListening whether the TV's YouTube is connected to the link right now (from "loungeStatus"):
+     *  false means it isn't open on the TV, so nothing sent will play; null when YouTube didn't say. */
+    data class Session(val loungeToken: String, val sid: String, val gsessionId: String, val screenListening: Boolean? = null)
 
     private var rid = 0
     private var reqCount = 0
@@ -109,7 +111,7 @@ class YouTubeLounge(private val baseUrl: String = "https://www.youtube.com/") {
         val body = post("api/lounge/bc/bind", mapOf("RID" to "$rid", "VER" to "8", "CVER" to "1"), BIND_DATA, token)
         val sid = Regex(""""c","(.*?)",""").find(body)?.groupValues?.get(1) ?: throw IOException("no SID")
         val gsid = Regex(""""S","(.*?)"]""").find(body)?.groupValues?.get(1) ?: throw IOException("no gsessionid")
-        return Session(token, sid, gsid)
+        return Session(token, sid, gsid, screenListening(body))
     }
 
     fun setPlaylist(s: Session, videoId: String) {
@@ -198,6 +200,12 @@ class YouTubeLounge(private val baseUrl: String = "https://www.youtube.com/") {
         m.entries.joinToString("&") { (k, v) -> URLEncoder.encode(k, "UTF-8") + "=" + URLEncoder.encode(v, "UTF-8") }
 
     companion object {
+        /** From a bind reply: is a TV ("LOUNGE_SCREEN") connected to this link? Null if YouTube sent no status. */
+        fun screenListening(bindBody: String): Boolean? {
+            if (!bindBody.contains("loungeStatus")) return null
+            return bindBody.contains("LOUNGE_SCREEN")
+        }
+
         private val BIND_DATA = linkedMapOf(
             "device" to "REMOTE_CONTROL",
             "id" to "theatresyncremote00000000",

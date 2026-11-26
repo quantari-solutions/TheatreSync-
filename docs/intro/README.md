@@ -6,9 +6,9 @@ so text is rendered at the phone's own resolution and laid out for a tall screen
 `res/drawable-nodpi/quantari_wordmark.webp`: `card_wordmark.png` rebuilt at 2× (1904×930) by `upscale_wordmark.py` (letters re-drawn crisp, swooshes enlarged smoothly; run it, then downsample the 3× result to 1904×930), so the logo stays sharp on any phone or tablet. Screenshot tests: `opening1`, `opening_largeFont`, `opening_tablet`.
 
 **TV (intro and screensaver):** `android/app/src/main/res/raw/signature_card_live.webp`, an **animated picture that
-loops forever** (1280×720, 60 fps, 12 s, ~8.7 MB), rendered from `loop.html`: the words stay still while the glow
+loops forever** (960×540, exactly 60 fps, 24 s, ~6 MB), rendered from `loop.html`: the words stay still while the glow
 breathes and drifts, a shine sweeps the Quantari swooshes, a light runs along the line and gentle bonfire embers rise, flicker and fade. Every
-motion repeats exactly every 12 s, so the loop has no visible join. The Chromecast shows pictures full-screen with no
+motion repeats exactly every 24 s, so the loop has no visible join. The Chromecast shows pictures full-screen with no
 player bar, "LIVE" or time. Its first frame is the full card, so a TV that doesn't animate pictures shows the still card.
 
 `loop.html` without `?render` runs live with a real clock: it's ready to be the page of our own Cast receiver (needs a
@@ -17,8 +17,12 @@ one-time Google Cast developer registration), which would make the animation ind
 History: 0.5.8 video (progress bar and time), 0.5.9 animated WebP starting on black (nothing visible), 0.6.0 live HLS
 (nothing), 0.6.1–0.6.5 MP4 marked live and HLS screensaver (bar with "LIVE", fades, replays), 0.6.6–0.6.8 still PNG.
 
-Re-make: render 720 frames of `loop.html?render` (Playwright: `window.setTime(i / 60)` then a 1920×1080 screenshot),
-scale to 1280×720 and save with Pillow: `save_all=True, duration=17, loop=0, quality=62, kmin=1, kmax=1, allow_mixed=False`.
+Re-make: render 1440 frames of `loop.html?render` (Playwright, 1920×1080 viewport at deviceScaleFactor 0.5 so
+each screenshot is 960×540: `window.setTime(i / 60)`), save with Pillow: `save_all=True, duration=[17,17,16]×480
+(exactly 60 fps), loop=0, quality=62, method=4, kmin=29, kmax=30, allow_mixed=False`. Why 960×540 and not every
+frame a key frame: the Chromecast decodes animated pictures in software; the old 1280×720 all-key-frame file
+(8.7 MB) managed ~20 fps with a pause at each loop (owner, 0.7.4). About half the work per frame now; 110
+embers with lives of 24, 12 or 8 s and random height/sway/size/flicker look random over the 24 s loop.
 
 Re-make from `card.html` (needs `card_wordmark_soft.png` next to it):
 

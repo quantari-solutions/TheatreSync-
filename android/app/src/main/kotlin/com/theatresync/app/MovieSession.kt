@@ -68,7 +68,7 @@ class MovieSession(private val app: Application) {
     }
 
     /** @param youTubeOnly a smart TV found via DIAL (e.g. Samsung The Frame): YouTube only, no movies. */
-    data class Tv(val id: String, val name: String, val isSpeaker: Boolean = false, val youTubeOnly: Boolean = false, val away: Boolean = false, val kind: com.theatresync.core.CastModel.Kind? = null)
+    data class Tv(val id: String, val name: String, val isSpeaker: Boolean = false, val youTubeOnly: Boolean = false, val away: Boolean = false, val kind: com.theatresync.core.CastModel.Kind? = null, val samsung: Boolean = false)
 
     data class Ui(
         val castAvailable: Boolean = true,
@@ -123,6 +123,8 @@ class MovieSession(private val app: Application) {
         val signatureIntro: Boolean = false,
         /** Experimental: YouTube to remembered TVs over the internet when you're away from home. */
         val remoteCast: Boolean = true,
+        /** The last Samsung TV search, in plain words (Settings → Samsung TV), for when The Frame isn't listed. */
+        val samsungSearch: String? = null,
         /** Quantari screensaver on the TV while connected with nothing playing (Settings → Experimental). */
         val screensaver: Boolean = true,
         /** Projectors / receivers found on the Wi-Fi that can be switched on and off (labels). */
@@ -296,7 +298,7 @@ class MovieSession(private val app: Application) {
     /** When each smart TV last answered: one missed search doesn't drop it (kept 3 minutes). */
     private val dialSeen = java.util.concurrent.ConcurrentHashMap<String, Long>()
     private val samsungFinder by lazy {
-        SamsungTvFinder(app) { d -> main.post { addSmartTv(d) } }
+        SamsungTvFinder(app) { d -> samsungAnnounced += d.name; main.post { addSmartTv(d) } }
     }
     /** While the app is open: look for smart TVs again every minute. */
     private val dialRepeat = object : Runnable {
@@ -318,7 +320,7 @@ class MovieSession(private val app: Application) {
 
     private fun publishTvs() {
         val castNames = castTvs.map { it.name.lowercase() }.toSet()
-        val smart = dialTvs.map { (id, d) -> Tv(id, d.name.removePrefix("[TV] ").trim(), youTubeOnly = true) }
+        val smart = dialTvs.map { (id, d) -> Tv(id, d.name.removePrefix("[TV] ").trim(), youTubeOnly = true, samsung = d.manufacturer?.contains("Samsung", true) == true) }
             .filter { it.name.lowercase() !in castNames }
             .sortedBy { it.name }
         // TVs YouTube was cast to before, not on this Wi-Fi now (e.g. you're at work): YouTube over the internet.
@@ -386,6 +388,31 @@ class MovieSession(private val app: Application) {
         }, "dial-scan").apply { isDaemon = true }.start()
     }
 
+    /**
+     * The Frame's own remote, from TheatreSync (home Wi-Fi). "YOUTUBE" opens YouTube on it (DIAL). Power on
+     * from standby uses Wake-on-LAN with the TV's address learned while it was on.
+     */
+    fun samsungKey(tvName: String, key: String) = guard("samsungKey") {
+        val d = dialTvs.values.firstOrNull { it.name.removePrefix("[TV] ").trim() == tvName } ?: return@guard say(R.string.yt_no_tv)
+        val ip = d.appsUrl.substringAfter("//").substringBefore(':')
+        Thread({
+            val result = when (key) {
+                "YOUTUBE" -> if (runCatching { Dial.youTubeScreenId(d) }.isSuccess) com.theatresync.core.SamsungRemote.Result.OK else com.theatresync.core.SamsungRemote.Result.FAILED
+                else -> com.theatresync.core.SamsungRemote.send(ip, key)
+            }
+            if (key == com.theatresync.core.SamsungRemote.Keys.POWER && result == com.theatresync.core.SamsungRemote.Result.FAILED) {
+                prefs.getString("samsungMac_$ip", null)?.let { com.theatresync.core.SamsungRemote.wake(it) }
+            }
+            main.post {
+                when (result) {
+                    com.theatresync.core.SamsungRemote.Result.ALLOW_ON_TV -> say(R.string.samsung_allow)
+                    com.theatresync.core.SamsungRemote.Result.FAILED -> if (key != com.theatresync.core.SamsungRemote.Keys.POWER) say(R.string.samsung_no_answer)
+                    else -> Unit
+                }
+            }
+        }, "samsung-key").apply { isDaemon = true }.start()
+    }
+
     /** The Samsung TV address typed in Settings (when The Frame isn't found by itself). */
     fun samsungIp(): String = prefs.getString("samsungIp", "").orEmpty()
 
@@ -401,6 +428,27 @@ class MovieSession(private val app: Application) {
      */
     private fun scanSamsung(): List<Dial.Device> {
         val found = java.util.concurrent.ConcurrentLinkedQueue<Dial.Device>()
+        val port8001 = java.util.concurrent.ConcurrentLinkedQueue<String>()
+        val port8080 = java.util.concurrent.ConcurrentLinkedQueue<String>()
+        try { return scanSamsungInto(found, port8001, port8080) } finally {
+            val t = java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date())
+            val names = found.joinToString(", ") { "${it.name} (${it.appsUrl.substringAfter("//").substringBefore(':')})" }
+            val note = "Last search $t on ${NetworkInfo.localIpv4(app) ?: "no Wi-Fi"}: " +
+                (if (found.isEmpty()) "no Samsung TV found." else "found $names.") +
+                " Samsung TV answers: ${port8001.joinToString().ifEmpty { "none" }}. YouTube launchers: ${port8080.joinToString().ifEmpty { "none" }}." +
+                " Wi-Fi announcements: ${samsungAnnounced.joinToString().ifEmpty { "none" }}."
+            _ui.update { it.copy(samsungSearch = note) }
+        }
+    }
+
+    /** Samsung TVs heard through their Wi-Fi announcement (mDNS), for the search note. */
+    val samsungAnnounced: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+
+    private fun scanSamsungInto(
+        found: java.util.concurrent.ConcurrentLinkedQueue<Dial.Device>,
+        port8001: java.util.concurrent.ConcurrentLinkedQueue<String>,
+        port8080: java.util.concurrent.ConcurrentLinkedQueue<String>,
+    ): List<Dial.Device> {
         samsungIp().takeIf { it.isNotBlank() }?.let { ip ->
             found.add(com.theatresync.core.SamsungTv.device(ip, com.theatresync.core.SamsungTv.query(ip)?.name ?: "Samsung TV ($ip)"))
         }
@@ -411,7 +459,16 @@ class MovieSession(private val app: Application) {
             (1..254).map { "$prefix.$it" }.filter { it != me && it != samsungIp() }.map { host ->
                 pool.submit {
                     if (com.theatresync.core.NetworkPower.portOpen(host, com.theatresync.core.SamsungTv.INFO_PORT)) {
-                        com.theatresync.core.SamsungTv.query(host)?.let { found.add(com.theatresync.core.SamsungTv.device(host, it.name)) }
+                        port8001 += host
+                        com.theatresync.core.SamsungTv.query(host)?.let { info ->
+                            info.mac?.let { prefs.edit { putString("samsungMac_$host", it) } }
+                            found.add(com.theatresync.core.SamsungTv.device(host, info.name))
+                        }
+                    } else if (com.theatresync.core.NetworkPower.portOpen(host, 8080)) {
+                        port8080 += host
+                        // Some Samsung firmware closes port 8001: its YouTube launcher (DIAL, port 8080) still answers.
+                        val d = com.theatresync.core.SamsungTv.device(host, "Samsung TV ($host)")
+                        if (runCatching { Dial.youTubeState(d) }.isSuccess) found.add(d)
                     }
                 }
             }.forEach { runCatching { it.get(5, java.util.concurrent.TimeUnit.SECONDS) } }
@@ -862,6 +919,12 @@ class MovieSession(private val app: Application) {
                     retrying { lounge.setPlaylist(session, videoId) }
                 }
                 synchronized(youTubeRemotes) { youTubeRemotes[tvId] = lounge to session }
+                // Away (over the internet): YouTube tells us whether the TV is connected to the link. If it
+                // isn't, nothing will play there, so say so plainly instead of "connecting" for ever.
+                if (tvId.startsWith(AWAY) && session.screenListening == false) {
+                    lastYouTubeError = "Remote cast: the TV's YouTube isn't connected (loungeStatus has no LOUNGE_SCREEN)"
+                    main.post { say(R.string.remote_not_listening) }
+                }
                 // Sound in headphones was on last time: switch it on again for this video.
                 if (prefs.getBoolean("ytHeadphones", true) && currentHeadphones() != null) main.postDelayed({ setYouTubeHeadphones(tvId, true) }, 2_500)
                 lastYouTubeError = null
