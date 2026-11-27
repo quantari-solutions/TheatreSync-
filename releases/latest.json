@@ -1,8 +1,8 @@
 {
-  "versionCode": 43,
-  "versionName": "0.7.8",
-  "apkUrl": "https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases/TheatreSync-0.7.8.apk",
+  "versionCode": 44,
+  "versionName": "0.7.9",
+  "apkUrl": "https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases/TheatreSync-0.7.9.apk",
   "sha256": "d8f6e34a9399e7a28cf537838b9fa7702235f437b5ae4decbcdc50dbb979d208",
   "sizeBytes": 24339423,
-  "notes": "TheatreSync stops by itself after 4 hours unused in the background (change it in Settings \u2192 Experimental \u2192 Run in the background). Updates now finish by themselves, and pick up where they left off if interrupted."
+  "notes": "The Frame: link YouTube with the TV's code, clearer reasons when it fails, Netflix and Prime buttons on The Frame remote. Crash reports now upload automatically, all together, and the GitHub code pastes in one go."
 }
