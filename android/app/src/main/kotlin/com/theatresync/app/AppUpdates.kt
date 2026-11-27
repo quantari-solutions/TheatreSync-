@@ -98,15 +98,22 @@ object AppUpdates {
                     )
                 }
                 // The owner tapped Update earlier and it didn't finish (app closed, phone locked): carry on by itself.
-                val wanted = prefs(context).getInt("updateWanted", 0)
-                if (newer == null && wanted != 0 && BuildConfig.VERSION_CODE >= wanted) prefs(context).edit().remove("updateWanted").apply()
-                if (newer != null && wanted == newer.versionCode && _state.value.downloadPercent == null && !_state.value.installing) update(context)
+                // Only twice, though: an install that "works" but leaves the old version (or one that keeps failing)
+                // must never loop (owner, 2026-11-27: "it keeps going in that loop forever").
+                val p = prefs(context)
+                val wanted = p.getInt("updateWanted", 0)
+                if (newer == null && wanted != 0 && BuildConfig.VERSION_CODE >= wanted) p.edit().remove("updateWanted").remove("updateTries").remove("updateError").apply()
+                val tries = p.getInt("updateTries", 0)
+                if (newer != null && wanted == newer.versionCode && _state.value.downloadPercent == null && !_state.value.installing) {
+                    if (UpdateRetry.shouldAutoContinue(tries)) update(context, auto = true)
+                    else _state.update { it.copy(error = p.getString("updateError", null) ?: context.getString(R.string.update_failed, context.getString(R.string.update_not_applied))) }
+                }
             }
         }, "update-check").apply { isDaemon = true }.start()
     }
 
     /** Download, verify, install. Asks for Android's "install unknown apps" permission first if needed. */
-    fun update(context: Context) {
+    fun update(context: Context, auto: Boolean = false) {
         val u = _state.value.available ?: return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !context.packageManager.canRequestPackageInstalls()) {
             _state.update { it.copy(needsPermission = true) }
@@ -115,7 +122,9 @@ object AppUpdates {
             )
             return
         }
-        prefs(context).edit().putInt("updateWanted", u.versionCode).apply()
+        // A tap from the owner starts the count again; carrying on by itself adds one.
+        val tries = if (auto) prefs(context).getInt("updateTries", 0) + 1 else 1
+        prefs(context).edit().putInt("updateWanted", u.versionCode).putInt("updateTries", tries).remove("updateError").apply()
         _state.update { it.copy(needsPermission = false, downloadPercent = 0, error = null) }
         val app = context.applicationContext
         Thread({
@@ -140,7 +149,7 @@ object AppUpdates {
         // Stuck on "installing" (the installer never answered, e.g. the app was closed): try again.
         if (_state.value.installing && pendingConfirm == null && System.currentTimeMillis() - installStartedMs > 90_000) {
             _state.update { it.copy(installing = false) }
-            update(context)
+            if (UpdateRetry.shouldAutoContinue(prefs(context).getInt("updateTries", 0))) update(context, auto = true)
         }
         check(context)
     }
@@ -219,8 +228,19 @@ object AppUpdates {
 
     internal fun onInstallResult(context: Context, status: Int, message: String?) {
         if (status == PackageInstaller.STATUS_SUCCESS || status == PackageInstaller.STATUS_PENDING_USER_ACTION) return
-        _state.update { it.copy(installing = false, error = context.getString(R.string.update_failed, message ?: "status $status")) }
+        val error = context.getString(R.string.update_failed, message ?: "status $status")
+        prefs(context).edit().apply {
+            // Cancelled on Android's screen: the owner said no, so don't ask again until they tap Update.
+            if (status == PackageInstaller.STATUS_FAILURE_ABORTED) remove("updateWanted") else putString("updateError", error)
+        }.apply()
+        _state.update { it.copy(installing = false, error = error) }
     }
+}
+
+/** How many times an update carries on by itself before waiting for the owner's tap. */
+object UpdateRetry {
+    const val MAX_AUTO = 2
+    fun shouldAutoContinue(triesSoFar: Int) = triesSoFar < MAX_AUTO
 }
 
 /** Android's installer reports here: shows its "Update this app?" screen, or reports a failure. */
