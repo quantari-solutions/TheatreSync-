@@ -17,7 +17,9 @@ import androidx.core.content.ContextCompat
  * Keeps TheatreSync running in the background for as long as the owner needs it (owner: "let the app run
  * in the background, no issues, for however long I need it"): the TV card, notification Stop, ad muting,
  * headphones and movies keep working with the app closed or the screen off. Started whenever the app is
- * opened; ends only with Quit in its notification. The notification shows the movie controls during a
+ * opened (never at phone start-up); ends with Quit in its notification, or by itself after the idle time
+ * chosen in Experimental (default 4 h, owner: "when it's not opened that day there is no reason to run"),
+ * but never while something is playing through it. The notification shows the movie controls during a
  * movie, otherwise Remote and Quit.
  */
 class HostService : Service() {
@@ -39,11 +41,30 @@ class HostService : Service() {
         }
         ServiceCompat.startForeground(this, ID, build(this, movie), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
         running = true
+        idle.removeCallbacks(idleCheck); idle.postDelayed(idleCheck, 60_000)
         return START_NOT_STICKY
+    }
+
+    private val idle = android.os.Handler(android.os.Looper.getMainLooper())
+    /** Once a minute: idle in the background for longer than the owner allows (and nothing playing)? Stop. */
+    private val idleCheck = object : Runnable {
+        override fun run() {
+            val session = (application as TheatreSyncApplication).session
+            val busy = movie || onScreen || session.busyInBackground()
+            if (busy) lastActiveMs = System.currentTimeMillis()
+            if (!busy && BackgroundLimit.expired(this@HostService, lastActiveMs, System.currentTimeMillis())) {
+                running = false
+                ServiceCompat.stopForeground(this@HostService, ServiceCompat.STOP_FOREGROUND_REMOVE)
+                stopSelf()
+                return
+            }
+            idle.postDelayed(this, 60_000)
+        }
     }
 
     override fun onDestroy() {
         running = false
+        idle.removeCallbacks(idleCheck)
         super.onDestroy()
     }
 
@@ -104,6 +125,10 @@ class HostService : Service() {
         private const val ACTION_STOP = "com.theatresync.app.STOP"
         @Volatile var running = false
             private set
+        /** TheatreSync on screen (set by the main screen); the idle clock starts when it leaves the screen. */
+        @Volatile var onScreen = false
+            set(v) { field = v; lastActiveMs = System.currentTimeMillis() }
+        @Volatile private var lastActiveMs = System.currentTimeMillis()
 
         /**
          * Start while the app is on screen (Android refuses from the background, e.g. when a

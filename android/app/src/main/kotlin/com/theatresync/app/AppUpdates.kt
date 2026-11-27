@@ -49,6 +49,14 @@ object AppUpdates {
         val error: String? = null,
     )
 
+    /** Android's "Update this app?" screen, kept if it couldn't be shown (app in the background, phone locked). */
+    @Volatile internal var pendingConfirm: Intent? = null
+    /** TheatreSync is on screen (set by the main screen), so Android lets it open the installer's screen. */
+    @Volatile var inForeground = false
+    private var installStartedMs = 0L
+
+    private fun prefs(context: Context) = context.getSharedPreferences("theatresync", Context.MODE_PRIVATE)
+
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state
     private val main = Handler(Looper.getMainLooper())
@@ -89,6 +97,10 @@ object AppUpdates {
                         error = if (result.isFailure && force) context.getString(R.string.update_check_failed) else null,
                     )
                 }
+                // The owner tapped Update earlier and it didn't finish (app closed, phone locked): carry on by itself.
+                val wanted = prefs(context).getInt("updateWanted", 0)
+                if (newer == null && wanted != 0 && BuildConfig.VERSION_CODE >= wanted) prefs(context).edit().remove("updateWanted").apply()
+                if (newer != null && wanted == newer.versionCode && _state.value.downloadPercent == null && !_state.value.installing) update(context)
             }
         }, "update-check").apply { isDaemon = true }.start()
     }
@@ -103,11 +115,13 @@ object AppUpdates {
             )
             return
         }
+        prefs(context).edit().putInt("updateWanted", u.versionCode).apply()
         _state.update { it.copy(needsPermission = false, downloadPercent = 0, error = null) }
         val app = context.applicationContext
         Thread({
             try {
-                val file = download(app, u) { p -> main.post { _state.update { it.copy(downloadPercent = p) } } }
+                // Already downloaded and checked (an earlier try was interrupted)? Use it; else download.
+                val file = verified(app, u) ?: download(app, u) { p -> main.post { _state.update { it.copy(downloadPercent = p) } } }
                 main.post { _state.update { it.copy(downloadPercent = null, installing = true) } }
                 install(app, file)
             } catch (e: Exception) {
@@ -117,10 +131,48 @@ object AppUpdates {
         }, "update-download").apply { isDaemon = true }.start()
     }
 
-    /** Back from Android's permission screen: carry on if it was allowed. */
+    /** Back on screen: carry on whatever the update was waiting for. */
     fun onResume(context: Context) {
+        inForeground = true
+        // Android's "Update this app?" screen that couldn't open while TheatreSync was in the background.
+        pendingConfirm?.let { c -> pendingConfirm = null; cancelNotice(context); runCatching { context.startActivity(c.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } }
         if (_state.value.needsPermission && (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || context.packageManager.canRequestPackageInstalls())) update(context)
+        // Stuck on "installing" (the installer never answered, e.g. the app was closed): try again.
+        if (_state.value.installing && pendingConfirm == null && System.currentTimeMillis() - installStartedMs > 90_000) {
+            _state.update { it.copy(installing = false) }
+            update(context)
+        }
+        check(context)
     }
+
+    /** The downloaded update, if it's there and exactly the published file. */
+    private fun verified(context: Context, u: UpdateInfo): File? {
+        val f = File(File(context.cacheDir, "updates"), "TheatreSync-${u.versionName}.apk")
+        if (!f.exists()) return null
+        val sha = MessageDigest.getInstance("SHA-256")
+        f.inputStream().use { i -> val b = ByteArray(64 * 1024); while (true) { val n = i.read(b); if (n < 0) break; sha.update(b, 0, n) } }
+        return f.takeIf { sha.digest().joinToString("") { "%02x".format(it) }.equals(u.sha256, ignoreCase = true) }
+    }
+
+    /** Android needs a tap to finish: show its screen now if on screen, else a notification (and on next open). */
+    internal fun needsConfirm(context: Context, confirm: Intent) {
+        if (inForeground && runCatching { context.startActivity(confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }.isSuccess) return
+        pendingConfirm = confirm
+        val nm = context.getSystemService(android.app.NotificationManager::class.java) ?: return
+        if (Build.VERSION.SDK_INT >= 26) nm.createNotificationChannel(android.app.NotificationChannel("updates", context.getString(R.string.update_channel), android.app.NotificationManager.IMPORTANCE_HIGH))
+        val tap = PendingIntent.getActivity(context, 7, confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val n = androidx.core.app.NotificationCompat.Builder(context, "updates")
+            .setSmallIcon(R.drawable.ic_device_cast)
+            .setContentTitle(context.getString(R.string.update_notice_title))
+            .setContentText(context.getString(R.string.update_notice_text))
+            .setContentIntent(tap).setAutoCancel(true)
+            .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
+            .build()
+        runCatching { nm.notify(NOTICE_ID, n) }
+    }
+
+    private const val NOTICE_ID = 4711
+    private fun cancelNotice(context: Context) { runCatching { context.getSystemService(android.app.NotificationManager::class.java)?.cancel(NOTICE_ID) } }
 
     private fun download(context: Context, u: UpdateInfo, progress: (Int) -> Unit): File {
         val dir = File(context.cacheDir, "updates").apply { mkdirs(); listFiles()?.forEach { it.delete() } }
@@ -148,6 +200,7 @@ object AppUpdates {
     }
 
     private fun install(context: Context, apk: File) {
+        installStartedMs = System.currentTimeMillis()
         val installer = context.packageManager.packageInstaller
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
             setAppPackageName(context.packageName)
@@ -177,7 +230,7 @@ class UpdateResultReceiver : BroadcastReceiver() {
         if (status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
             @Suppress("DEPRECATION")
             val confirm = if (Build.VERSION.SDK_INT >= 33) intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java) else intent.getParcelableExtra(Intent.EXTRA_INTENT)
-            confirm?.let { context.startActivity(it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            confirm?.let { AppUpdates.needsConfirm(context, it) }
         }
         AppUpdates.onInstallResult(context, status, intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE))
     }

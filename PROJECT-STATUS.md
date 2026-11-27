@@ -2,6 +2,12 @@
 
 _Last updated: 2026-11-22. Android 0.7.0: TapIn fixed and on the movie screen, TapIn for YouTube (any phone's cast). iOS 0.7.0: full TheatreSync part 1_
 
+## Android 0.7.8: background time limit and an update that finishes by itself
+| Ask | Done | Checked |
+|---|---|---|
+| "Keeps running in the background… I never asked for auto start… a timer… in Experimental… hours or a specific time… or always" | No start-up launch (never was). The background service now stops itself after the idle time chosen in Experimental → Run in the background: 1/2/4/8/12 h, any number of hours, until a time (hh:mm), or Always; default 4 h. Idle = TheatreSync not on screen and nothing playing through it (movie, Play along, YouTube headphones, TapIn guests keep it running) | `BackgroundLimitTest`, `experimental1` screenshot |
+| Update stuck on "tap Update on the screen Android shows" after the phone locked; continue if the app was closed | Manifest gains UPDATE_PACKAGES_WITHOUT_USER_ACTION (Android 12+ self-updates without the prompt). If Android still wants a tap while TheatreSync is in the background, the request is kept: a "Finish updating" notification, and it opens next time the app is on screen. An interrupted update resumes on the next open (re-checks the downloaded file, else downloads again); a stuck "installing" retries | Build; needs HW (first silent update: from 0.7.8 to the next) |
+
 ## Android 0.7.6: owner's list (TapIn, NFC, Netflix, ad mute, buttons, cards, The Frame casting)
 | Ask | Done | Checked |
 |---|---|---|
