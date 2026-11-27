@@ -462,7 +462,7 @@ class MainActivity : ComponentActivity() {
                                     code = gitHubCode.value,
                                     state = gitHubState.value,
                                     onStart = ::startGitHubConnect,
-                                    onOpenGitHub = { c -> runCatching { startActivity(Intent(Intent.ACTION_VIEW, c.verificationUri.toUri())) } },
+                                    onOpenGitHub = { c -> openGitHubPanel(c) },
                                     onCopyCode = ::copyGitHubCode,
                                     onDisconnect = { GitHubLink.disconnect(this@MainActivity); gitHubConnected.value = false; gitHubLastUpload.value = null },
                                     onBack = { page = Page.SETTINGS },
@@ -542,7 +542,7 @@ class MainActivity : ComponentActivity() {
                                             code = gitHubCode.value,
                                             state = gitHubState.value,
                                             onStart = ::startGitHubConnect,
-                                            onOpenGitHub = { c -> runCatching { startActivity(Intent(Intent.ACTION_VIEW, c.verificationUri.toUri())) } },
+                                            onOpenGitHub = { c -> openGitHubPanel(c) },
                                     onCopyCode = ::copyGitHubCode,
                                             onDisconnect = { GitHubLink.disconnect(this@MainActivity); gitHubConnected.value = false; gitHubLastUpload.value = null },
                                             onCreateApp = { runCatching { startActivity(Intent(Intent.ACTION_VIEW, GitHubLink.createAppUrl.toUri())) } },
@@ -929,6 +929,23 @@ class MainActivity : ComponentActivity() {
                 runOnUiThread { gitHubState.value = GitHubState.FAILED; gitHubCode.value = null }
             }
         }, "github-connect").apply { isDaemon = true }.start()
+    }
+
+    /**
+     * GitHub's "enter the code" page in a Chrome panel that slides up over TheatreSync (owner: "within the app...
+     * it should be able to use the passkey"). An app's own web page can't use passkeys for github.com (Android only
+     * allows that for sites that list the app), but this panel is Chrome's, so the owner's GitHub sign-in and passkey
+     * work. When GitHub approves, the app (already checking) notices, and coming back closes the panel.
+     */
+    private fun openGitHubPanel(code: GitHubLink.DeviceCode) {
+        val uri = code.verificationUri.toUri()
+        val panel = androidx.browser.customtabs.CustomTabsIntent.Builder()
+            .setShowTitle(true)
+            .setUrlBarHidingEnabled(true)
+            .setShareState(androidx.browser.customtabs.CustomTabsIntent.SHARE_STATE_OFF)
+            .setDefaultColorSchemeParams(androidx.browser.customtabs.CustomTabColorSchemeParams.Builder().setToolbarColor(0xFF000000.toInt()).build())
+            .build()
+        if (runCatching { panel.launchUrl(this, uri) }.isFailure) runCatching { startActivity(Intent(Intent.ACTION_VIEW, uri)) }
     }
 
     /** Copies the GitHub sign-in code, so it can just be pasted on GitHub's page. */

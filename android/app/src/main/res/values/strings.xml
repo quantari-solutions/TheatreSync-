@@ -150,7 +150,7 @@
         <item quantity="other">Reports are deleted from this phone automatically after %1$d days.</item>
     </plurals>
     <string name="github_copy_code">Copy code</string>
-    <string name="github_code_ready">Already copied: on GitHub\'s page, just paste it.</string>
+    <string name="github_code_ready">It\'s copied. Tap Sign in on GitHub: it opens right here and your passkey works. Hold the first box, tap Paste, then Continue and Authorize. TheatreSync notices by itself.</string>
     <string name="github_code_copied">Code copied</string>
     <string name="version_line">Version %1$s</string>
     <string name="update_available">Update available · %1$s</string>
@@ -176,7 +176,7 @@
     <string name="github_intro_text">Connect once and every crash or problem is uploaded to the TheatreSync GitHub project by itself. You never need to copy or share anything again.</string>
     <string name="github_connect">Connect GitHub</string>
     <string name="github_enter_code">Enter this code on GitHub</string>
-    <string name="github_open">Open GitHub</string>
+    <string name="github_open">Sign in on GitHub</string>
     <string name="github_waiting">Waiting for you to approve on GitHub…</string>
     <string name="github_failed">That didn\'t work. Please try again.</string>
     <string name="github_connected_text">Crash reports and problems upload to GitHub as soon as they happen (or when the app next opens after a crash).</string>

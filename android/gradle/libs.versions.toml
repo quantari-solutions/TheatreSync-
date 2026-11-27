@@ -22,6 +22,7 @@ espresso = "3.6.1"
 uiautomator = "2.3.0"
 
 [libraries]
+androidx-browser = { group = "androidx.browser", name = "browser", version = "1.8.0" }
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
 compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }

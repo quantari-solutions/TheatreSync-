@@ -16,8 +16,8 @@ android {
         // 29 = Android 10, the first release with AudioPlaybackCapture.
         minSdk = 29
         targetSdk = 35
-        versionCode = 44
-        versionName = "0.7.9"
+        versionCode = 45
+        versionName = "0.7.10"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Where "Send to GitHub" opens a pre-filled crash issue (the owner submits it).
         buildConfigField("String", "CRASH_REPO", "\"quantari-solutions/TheatreSync-\"")
@@ -76,6 +76,7 @@ kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarg
 dependencies {
     implementation(project(":sync-core"))
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.browser) // GitHub sign-in in a Chrome panel over the app (passkeys work there)
     implementation(libs.zxing.core) // QR code for TapIn (encoding only, pure Java)
     implementation(libs.mlkit.translate) // on-device subtitle translation (models downloaded on first use)
     // Offline speech recognition for generated subtitles (works on any phone; language pack downloaded once).
