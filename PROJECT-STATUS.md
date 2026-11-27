@@ -2,6 +2,12 @@
 
 _Last updated: 2026-11-22. Android 0.7.0: TapIn fixed and on the movie screen, TapIn for YouTube (any phone's cast). iOS 0.7.0: full TheatreSync part 1_
 
+## Android 0.7.9: The Frame by TV code; Netflix / Prime Video
+| Ask | Done | Checked |
+|---|---|---|
+| The Frame: "YouTube doesn't open from TheatreSync" (0.7.8, address verified) | No crash reports arrived (50 waiting on the phone: upload stalled), so the YouTube page now shows "What happened: …" under a failure. New, independent of the TV's network features: **Link with TV code** (YouTube on the TV → Settings → Link with TV code → type it in TheatreSync once): `YouTubeLounge.screenIdForCode` (lounge pairing/get_screen); casts then use that ID (opening YouTube on the TV best effort) | `YouTubeTest.screenFromTvCode`, `youtube4_frameCode` screenshot; needs HW |
+| "Cast video from the app for Netflix and Amazon Prime" | Not possible to a Chromecast from any app but their own (their TV players need their own sign-in). The Frame remote gets **Netflix** and **Prime Video** buttons (open the app on the TV over Wi-Fi). Hearing them in headphones = Play along (0.7.7) | `remote3_frame` screenshot |
+
 ## Android 0.7.8: background time limit and an update that finishes by itself
 | Ask | Done | Checked |
 |---|---|---|

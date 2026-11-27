@@ -130,4 +130,9 @@ class YouTubeScreenFinderTest {
         org.junit.Assert.assertEquals(false, YouTubeLounge.screenListening(off))
         org.junit.Assert.assertNull(YouTubeLounge.screenListening("[[0,[\"c\",\"SID\"]]]"))
     }
+
+    @Test fun screenFromTvCode() {
+        org.junit.Assert.assertEquals("abc123", YouTubeLounge.parseScreenFromPairing("""{"screen":{"accessType":"permanent","screenId":"abc123","loungeToken":"LT","name":"YouTube on TV"}}"""))
+        org.junit.Assert.assertNull(YouTubeLounge.parseScreenFromPairing("{}"))
+    }
 }

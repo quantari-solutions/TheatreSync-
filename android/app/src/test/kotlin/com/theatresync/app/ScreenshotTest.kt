@@ -234,6 +234,14 @@ class ScreenshotTest {
     @Test fun youtube2_failed() = shot {
         YouTubeScreen(Ui(tvs = listOf(Tv("1", "Media Room TV"), Tv("2", "Alfred")), youTube = MovieSession.YouTubeState.FAILED), "https://youtu.be/dQw4w9WgXcQ", { _, _ -> }, {}, {})
     }
+    /** The Frame refused: what happened, and Link with TV code. */
+    @Test fun youtube4_frameCode() = shot {
+        YouTubeScreen(
+            Ui(tvs = listOf(Tv("dial:samsung:192.168.1.179", "Samsung TV (192.168.1.179)", youTubeOnly = true, samsung = true)), youTube = MovieSession.YouTubeState.FAILED),
+            "https://youtu.be/dQw4w9WgXcQ", { _, _ -> }, {}, {},
+            problem = "Failed while starting YouTube on the TV: IOException: TV refused to start YouTube (DIAL 403)",
+        )
+    }
     @Test fun mirror() = shot { MirrorScreen({}, {}) }
     private val crash = CrashReporter.Entry("1", 1_763_456_941_000, "0.4.0", CrashReporter.Kind.CRASH,
         "NetworkOnMainThreadException", "TheatreSync 0.4.0 (5) crash report\n…", CrashReporter.Status.SAVED, null)

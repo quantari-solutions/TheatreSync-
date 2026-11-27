@@ -564,6 +564,8 @@ class MainActivity : ComponentActivity() {
                                     onOpenApp = { link -> openYouTubeApp(link) },
                                     onBack = { session.resetYouTube(); sharedLink.value = null; page = Page.HOME },
                                     onBrowse = { page = Page.YT_BROWSE },
+                                    problem = if (ui.youTube == MovieSession.YouTubeState.FAILED) session.youTubeProblem() else null,
+                                    onLinkCode = session::linkTvCode,
                                 )
                                 "ytbrowse" -> YouTubeBrowserScreen(
                                     tvName = ytTvName.value ?: ui.tvs.singleOrNull()?.name,
@@ -1449,6 +1451,8 @@ internal fun YouTubeScreen(
     tvName: String? = null,
     onTv: (String) -> Unit = {},
     onBrowse: () -> Unit = {},
+    problem: String? = null,
+    onLinkCode: (String, String) -> Unit = { _, _ -> },
 ) = Screen {
     val clipboard = LocalClipboardManager.current
     val videoId = YouTubeLinks.videoId(link)
@@ -1538,6 +1542,9 @@ internal fun YouTubeScreen(
             MovieSession.YouTubeState.PLAYING -> StatusPill(stringResource(R.string.yt_playing), Q.Success)
             MovieSession.YouTubeState.FAILED -> {
                 Body(stringResource(R.string.yt_failed))
+                // What went wrong, in short: a screenshot of this tells the developer exactly which step failed.
+                problem?.let { Hint(stringResource(R.string.yt_failed_detail, it)) }
+                if (chosenTv?.youTubeOnly == true && !chosenTv.away) TvCodeLink(chosenTv.name, ui.tvCodeStatus, onLinkCode)
                 GoldButton(stringResource(R.string.yt_open_this), { onOpenApp(link) }, height = 48.dp)
             }
             MovieSession.YouTubeState.IDLE -> Unit
@@ -2069,6 +2076,10 @@ private fun SamsungRemoteCard(name: String, onKey: (String) -> Unit) {
             GhostButton("▶  YouTube", { onKey("YOUTUBE") }, Modifier.weight(1f).testTag("samsung_youtube"), height = 48.dp)
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            GhostButton("Netflix", { onKey("NETFLIX") }, Modifier.weight(1f).testTag("samsung_netflix"), height = 48.dp)
+            GhostButton("Prime Video", { onKey("PRIME") }, Modifier.weight(1f).testTag("samsung_prime"), height = 48.dp)
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             GhostButton("−", { onKey(k.VOL_DOWN) }, Modifier.weight(1f), height = 48.dp, description = stringResource(R.string.samsung_vol_down))
             GhostButton(stringResource(R.string.mute), { onKey(k.MUTE) }, Modifier.weight(1f), height = 48.dp)
             GhostButton("+", { onKey(k.VOL_UP) }, Modifier.weight(1f), height = 48.dp, description = stringResource(R.string.samsung_vol_up))
@@ -2165,6 +2176,28 @@ private fun BackgroundLimitCard() {
             },
             Q.Primary,
         )
+    }
+}
+
+/** Smart TV (The Frame): link its YouTube once with the code YouTube shows on the TV. */
+@Composable
+private fun TvCodeLink(tvName: String, status: MovieSession.TvCodeStatus?, onLink: (String, String) -> Unit) {
+    var code by rememberSaveable { mutableStateOf("") }
+    QCard(highlighted = true) {
+        Text(stringResource(R.string.tv_code_title, tvName), style = MaterialTheme.typography.titleMedium, color = Q.Text)
+        Hint(stringResource(R.string.tv_code_steps))
+        androidx.compose.material3.OutlinedTextField(
+            value = code, onValueChange = { code = it.filter { c -> c.isDigit() || c == ' ' || c == '-' }.take(20) }, singleLine = true,
+            placeholder = { Text("123 456 789 012") }, modifier = Modifier.fillMaxWidth().testTag("tv_code"),
+            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+        )
+        GoldButton(
+            stringResource(when (status) { MovieSession.TvCodeStatus.LINKING -> R.string.tv_code_linking; MovieSession.TvCodeStatus.LINKED -> R.string.tv_code_linked; else -> R.string.tv_code_link }),
+            { onLink(tvName, code) }, Modifier.fillMaxWidth().testTag("tv_code_link"), height = 48.dp,
+            enabled = code.count { it.isDigit() } >= 8 && status != MovieSession.TvCodeStatus.LINKING,
+        )
+        if (status == MovieSession.TvCodeStatus.FAILED) Hint(stringResource(R.string.tv_code_failed))
+        if (status == MovieSession.TvCodeStatus.LINKED) Hint(stringResource(R.string.tv_code_done))
     }
 }
 
