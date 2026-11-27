@@ -99,6 +99,17 @@ class YouTubeLounge(private val baseUrl: String = "https://www.youtube.com/") {
         setPlaylist(session, videoId)
     }
 
+    /**
+     * The TV's YouTube ID from the code YouTube shows on the TV (YouTube → Settings → Link with TV code).
+     * Works for any smart TV's YouTube, whatever the TV's own network features allow.
+     */
+    fun screenIdForCode(code: String): String {
+        val digits = code.filter { it.isDigit() }
+        if (digits.length < 8) throw IOException("that doesn't look like a TV code")
+        val body = post("api/lounge/pairing/get_screen", emptyMap(), mapOf("pairing_code" to digits), null)
+        return parseScreenFromPairing(body) ?: throw IOException("YouTube didn't recognise that code")
+    }
+
     fun loungeToken(screenId: String): String {
         val body = post("api/lounge/pairing/get_lounge_token_batch", emptyMap(), mapOf("screen_ids" to screenId), null)
         return Regex(""""loungeToken"\s*:\s*"([^"]+)"""").find(body)?.groupValues?.get(1)
@@ -200,6 +211,10 @@ class YouTubeLounge(private val baseUrl: String = "https://www.youtube.com/") {
         m.entries.joinToString("&") { (k, v) -> URLEncoder.encode(k, "UTF-8") + "=" + URLEncoder.encode(v, "UTF-8") }
 
     companion object {
+        /** The screen ID in YouTube's reply to a TV code. */
+        fun parseScreenFromPairing(body: String): String? =
+            Regex(""""screenId"\s*:\s*"([^"]+)"""").find(body)?.groupValues?.get(1)
+
         /** From a bind reply: is a TV ("LOUNGE_SCREEN") connected to this link? Null if YouTube sent no status. */
         fun screenListening(bindBody: String): Boolean? {
             if (!bindBody.contains("loungeStatus")) return null

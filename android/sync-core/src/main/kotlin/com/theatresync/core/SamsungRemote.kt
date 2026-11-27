@@ -27,6 +27,9 @@ object SamsungRemote {
 
     /** Samsung's app number for YouTube on its TVs. */
     const val YOUTUBE_APP = "111299001912"
+    /** Netflix and Prime Video on Samsung TVs (newer, then older app numbers). */
+    val NETFLIX_APPS = listOf("3201907018807", "11101200001")
+    val PRIME_APPS = listOf("3201910019365", "3201512006785")
 
     fun launchJson(appId: String) =
         """{"method":"ms.channel.emit","params":{"event":"ed.apps.launch","to":"host","data":{"appId":"$appId","action_type":"DEEP_LINK"}}}"""

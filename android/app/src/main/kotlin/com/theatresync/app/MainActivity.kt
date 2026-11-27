@@ -564,6 +564,8 @@ class MainActivity : ComponentActivity() {
                                     onOpenApp = { link -> openYouTubeApp(link) },
                                     onBack = { session.resetYouTube(); sharedLink.value = null; page = Page.HOME },
                                     onBrowse = { page = Page.YT_BROWSE },
+                                    problem = if (ui.youTube == MovieSession.YouTubeState.FAILED) session.youTubeProblem() else null,
+                                    onLinkCode = session::linkTvCode,
                                 )
                                 "ytbrowse" -> YouTubeBrowserScreen(
                                     tvName = ytTvName.value ?: ui.tvs.singleOrNull()?.name,
@@ -725,6 +727,7 @@ class MainActivity : ComponentActivity() {
         askToRunInBackgroundOnce()
         refreshCrashes()
         AppUpdates.check(this)        // quietly, at most every 10 minutes
+        GitHubLink.uploadPending(this) // any waiting reports, all in one batch (automatic, every time the app opens)
         GitHubLink.keepAlive(this)    // renew the crash-report sign-in before it runs out
         CrashReporter.prune(this)     // reports older than 69 days are deleted from the phone
         AppUpdates.onResume(this)     // back from allowing updates: carry on
@@ -931,7 +934,9 @@ class MainActivity : ComponentActivity() {
     /** Copies the GitHub sign-in code, so it can just be pasted on GitHub's page. */
     private fun copyGitHubCode(code: String) {
         val cm = getSystemService(android.content.ClipboardManager::class.java) ?: return
-        cm.setPrimaryClip(android.content.ClipData.newPlainText("GitHub code", code))
+        // Just the letters and digits (no dash): GitHub's page has one box per character and fills them all
+        // from one paste only without the dash (owner: "doesn't paste the full code at once").
+        cm.setPrimaryClip(android.content.ClipData.newPlainText("GitHub code", code.filter { it.isLetterOrDigit() }))
         // Android 13+ shows its own "Copied" bubble; older versions get ours.
         if (Build.VERSION.SDK_INT < 33) android.widget.Toast.makeText(this, getString(R.string.github_code_copied), android.widget.Toast.LENGTH_SHORT).show()
     }
@@ -1449,6 +1454,8 @@ internal fun YouTubeScreen(
     tvName: String? = null,
     onTv: (String) -> Unit = {},
     onBrowse: () -> Unit = {},
+    problem: String? = null,
+    onLinkCode: (String, String) -> Unit = { _, _ -> },
 ) = Screen {
     val clipboard = LocalClipboardManager.current
     val videoId = YouTubeLinks.videoId(link)
@@ -1538,6 +1545,9 @@ internal fun YouTubeScreen(
             MovieSession.YouTubeState.PLAYING -> StatusPill(stringResource(R.string.yt_playing), Q.Success)
             MovieSession.YouTubeState.FAILED -> {
                 Body(stringResource(R.string.yt_failed))
+                // What went wrong, in short: a screenshot of this tells the developer exactly which step failed.
+                problem?.let { Hint(stringResource(R.string.yt_failed_detail, it)) }
+                if (chosenTv?.youTubeOnly == true && !chosenTv.away) TvCodeLink(chosenTv.name, ui.tvCodeStatus, onLinkCode)
                 GoldButton(stringResource(R.string.yt_open_this), { onOpenApp(link) }, height = 48.dp)
             }
             MovieSession.YouTubeState.IDLE -> Unit
@@ -2069,6 +2079,10 @@ private fun SamsungRemoteCard(name: String, onKey: (String) -> Unit) {
             GhostButton("▶  YouTube", { onKey("YOUTUBE") }, Modifier.weight(1f).testTag("samsung_youtube"), height = 48.dp)
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            GhostButton("Netflix", { onKey("NETFLIX") }, Modifier.weight(1f).testTag("samsung_netflix"), height = 48.dp)
+            GhostButton("Prime Video", { onKey("PRIME") }, Modifier.weight(1f).testTag("samsung_prime"), height = 48.dp)
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             GhostButton("−", { onKey(k.VOL_DOWN) }, Modifier.weight(1f), height = 48.dp, description = stringResource(R.string.samsung_vol_down))
             GhostButton(stringResource(R.string.mute), { onKey(k.MUTE) }, Modifier.weight(1f), height = 48.dp)
             GhostButton("+", { onKey(k.VOL_UP) }, Modifier.weight(1f), height = 48.dp, description = stringResource(R.string.samsung_vol_up))
@@ -2165,6 +2179,28 @@ private fun BackgroundLimitCard() {
             },
             Q.Primary,
         )
+    }
+}
+
+/** Smart TV (The Frame): link its YouTube once with the code YouTube shows on the TV. */
+@Composable
+private fun TvCodeLink(tvName: String, status: MovieSession.TvCodeStatus?, onLink: (String, String) -> Unit) {
+    var code by rememberSaveable { mutableStateOf("") }
+    QCard(highlighted = true) {
+        Text(stringResource(R.string.tv_code_title, tvName), style = MaterialTheme.typography.titleMedium, color = Q.Text)
+        Hint(stringResource(R.string.tv_code_steps))
+        androidx.compose.material3.OutlinedTextField(
+            value = code, onValueChange = { code = it.filter { c -> c.isDigit() || c == ' ' || c == '-' }.take(20) }, singleLine = true,
+            placeholder = { Text("123 456 789 012") }, modifier = Modifier.fillMaxWidth().testTag("tv_code"),
+            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+        )
+        GoldButton(
+            stringResource(when (status) { MovieSession.TvCodeStatus.LINKING -> R.string.tv_code_linking; MovieSession.TvCodeStatus.LINKED -> R.string.tv_code_linked; else -> R.string.tv_code_link }),
+            { onLink(tvName, code) }, Modifier.fillMaxWidth().testTag("tv_code_link"), height = 48.dp,
+            enabled = code.count { it.isDigit() } >= 8 && status != MovieSession.TvCodeStatus.LINKING,
+        )
+        if (status == MovieSession.TvCodeStatus.FAILED) Hint(stringResource(R.string.tv_code_failed))
+        if (status == MovieSession.TvCodeStatus.LINKED) Hint(stringResource(R.string.tv_code_done))
     }
 }
 

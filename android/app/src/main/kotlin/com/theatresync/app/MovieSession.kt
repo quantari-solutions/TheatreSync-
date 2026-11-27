@@ -125,6 +125,8 @@ class MovieSession(private val app: Application) {
         val remoteCast: Boolean = true,
         /** The last Samsung TV search, in plain words (Settings → Samsung TV), for when The Frame isn't listed. */
         val samsungSearch: String? = null,
+        /** Linking a smart TV's YouTube by its code. */
+        val tvCodeStatus: TvCodeStatus? = null,
         /** Play along (Netflix / Prime Video): which TV it follows, and how it's going. */
         val playAlongTv: String? = null,
         val playAlong: PlayAlong.Status = PlayAlong.Status(),
@@ -401,6 +403,8 @@ class MovieSession(private val app: Application) {
         Thread({
             val result = when (key) {
                 "YOUTUBE" -> com.theatresync.core.SamsungRemote.send(ip, "APP:" + com.theatresync.core.SamsungRemote.YOUTUBE_APP)
+                "NETFLIX" -> com.theatresync.core.SamsungRemote.send(ip, *com.theatresync.core.SamsungRemote.NETFLIX_APPS.map { "APP:$it" }.toTypedArray())
+                "PRIME" -> com.theatresync.core.SamsungRemote.send(ip, *com.theatresync.core.SamsungRemote.PRIME_APPS.map { "APP:$it" }.toTypedArray())
                 else -> com.theatresync.core.SamsungRemote.send(ip, key)
             }
             if (key == com.theatresync.core.SamsungRemote.Keys.POWER && result == com.theatresync.core.SamsungRemote.Result.FAILED) {
@@ -502,6 +506,12 @@ class MovieSession(private val app: Application) {
         dialTvs[tvId]?.let { d ->
             val ip = d.appsUrl.substringAfter("//").substringBefore(':')
             val samsung = d.manufacturer?.contains("Samsung", true) == true
+            // Linked with the TV's code (YouTube → Settings → Link with TV code): open YouTube on it (best
+            // effort) and use that link; the TV's own DIAL screen ID isn't needed.
+            prefs.getString("ytPaired_" + d.name.removePrefix("[TV] ").trim(), null)?.let { paired ->
+                runCatching { Dial.youTubeScreenId(d, timeoutMs = 4_000, fallbackLaunch = if (samsung) { { com.theatresync.core.SamsungRemote.send(ip, "APP:" + com.theatresync.core.SamsungRemote.YOUTUBE_APP) == com.theatresync.core.SamsungRemote.Result.OK } } else null) }
+                return paired
+            }
             return Dial.youTubeScreenId(d, fallbackLaunch = if (!samsung) null else {
                 { com.theatresync.core.SamsungRemote.send(ip, "APP:" + com.theatresync.core.SamsungRemote.YOUTUBE_APP) == com.theatresync.core.SamsungRemote.Result.OK }
             })
@@ -1788,6 +1798,29 @@ class MovieSession(private val app: Application) {
     /** Something is playing through TheatreSync, so it must keep running in the background whatever the idle limit. */
     fun busyInBackground(): Boolean =
         server != null || playAlong.running || _ui.value.youTubeHeadphonesTv != null || _ui.value.guests.isNotEmpty() || _ui.value.phase != Phase.SETUP
+
+    /** Links a smart TV's YouTube by the code it shows (YouTube → Settings → Link with TV code). */
+    fun linkTvCode(tvName: String, code: String) = guard("linkTvCode") {
+        _ui.update { it.copy(tvCodeStatus = TvCodeStatus.LINKING) }
+        Thread({
+            val r = runCatching { YouTubeLounge().screenIdForCode(code) }
+            main.post {
+                r.onSuccess { id ->
+                    prefs.edit { putString("ytPaired_$tvName", id) }
+                    rememberAway(tvName, id)
+                    _ui.update { it.copy(tvCodeStatus = TvCodeStatus.LINKED, youTube = YouTubeState.IDLE) }
+                }.onFailure { e ->
+                    lastYouTubeError = "TV code: ${e.javaClass.simpleName}: ${e.message}"
+                    _ui.update { it.copy(tvCodeStatus = TvCodeStatus.FAILED) }
+                }
+            }
+        }, "tv-code").apply { isDaemon = true }.start()
+    }
+
+    enum class TvCodeStatus { LINKING, LINKED, FAILED }
+
+    /** Why the last YouTube cast failed, in short (shown under the failure so a screenshot says it). */
+    fun youTubeProblem(): String? = lastYouTubeError
 
     /** A plain message on the current page (from the screen layer). */
     fun notice(text: String) = say(text)

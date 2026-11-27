@@ -518,4 +518,12 @@
     <string name="bg_now_always">Keeps running until you tap Quit</string>
     <string name="bg_now_until">Stops at %1$s if idle</string>
     <string name="bg_now_hours">Stops after %1$s h idle</string>
+    <string name="yt_failed_detail">What happened: %1$s</string>
+    <string name="tv_code_title">Link %1$s once</string>
+    <string name="tv_code_steps">On the TV, open YouTube → Settings (gear) → Link with TV code. Type the code it shows here. After that TheatreSync casts to it directly, every time.</string>
+    <string name="tv_code_link">Link</string>
+    <string name="tv_code_linking">Linking…</string>
+    <string name="tv_code_linked">Linked ✓</string>
+    <string name="tv_code_failed">YouTube didn\'t accept that code. Codes change after a few minutes: check the one on the TV and try again.</string>
+    <string name="tv_code_done">Linked. Tap Cast again.</string>
 </resources>
