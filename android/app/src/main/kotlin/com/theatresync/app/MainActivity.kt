@@ -727,6 +727,7 @@ class MainActivity : ComponentActivity() {
         askToRunInBackgroundOnce()
         refreshCrashes()
         AppUpdates.check(this)        // quietly, at most every 10 minutes
+        GitHubLink.uploadPending(this) // any waiting reports, all in one batch (automatic, every time the app opens)
         GitHubLink.keepAlive(this)    // renew the crash-report sign-in before it runs out
         CrashReporter.prune(this)     // reports older than 69 days are deleted from the phone
         AppUpdates.onResume(this)     // back from allowing updates: carry on
@@ -933,7 +934,9 @@ class MainActivity : ComponentActivity() {
     /** Copies the GitHub sign-in code, so it can just be pasted on GitHub's page. */
     private fun copyGitHubCode(code: String) {
         val cm = getSystemService(android.content.ClipboardManager::class.java) ?: return
-        cm.setPrimaryClip(android.content.ClipData.newPlainText("GitHub code", code))
+        // Just the letters and digits (no dash): GitHub's page has one box per character and fills them all
+        // from one paste only without the dash (owner: "doesn't paste the full code at once").
+        cm.setPrimaryClip(android.content.ClipData.newPlainText("GitHub code", code.filter { it.isLetterOrDigit() }))
         // Android 13+ shows its own "Copied" bubble; older versions get ours.
         if (Build.VERSION.SDK_INT < 33) android.widget.Toast.makeText(this, getString(R.string.github_code_copied), android.widget.Toast.LENGTH_SHORT).show()
     }

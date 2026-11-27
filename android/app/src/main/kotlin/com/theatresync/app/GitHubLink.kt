@@ -151,40 +151,38 @@ object GitHubLink {
 
     private val uploadLock = Any()
 
-    /** Blocking upload (call off the main thread). Returns the new "last upload" line, or null if nothing to do. */
+    /**
+     * Blocking upload (call off the main thread). Returns the new "last upload" line, or null if nothing to do.
+     *
+     * Everything waiting goes in one batch (owner: "not able to send all the issues at once"): one GitHub
+     * issue per batch instead of one per report, with repeats of the same problem merged and counted, so
+     * GitHub's "too many, too fast" limit is never hit. A batch too big for one issue is split into a few,
+     * a couple of seconds apart; if GitHub still asks to slow down, the rest go next time.
+     */
     fun uploadPendingNow(context: Context): String? = synchronized(uploadLock) {
         val app = context.applicationContext
         var token = validToken(app) ?: return null
-        val today = System.currentTimeMillis() / 86_400_000
         val prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        var handledToday = if (prefs.getLong("day", -1) == today) prefs.getInt("handled", 0) else 0
-        val uploadedTitles = prefs.getStringSet("titles", emptySet())!!.toMutableSet()
+        val pending = CrashReporter.entries(app).filter { it.status == CrashReporter.Status.SAVED }.reversed() // oldest first
+        if (pending.isEmpty()) return null
         var last: String? = null
-        for (e in CrashReporter.entries(app).filter { it.status == CrashReporter.Status.SAVED }.reversed()) {
-            val dedupeKey = "${e.version}|${e.kind}|${e.title}"
-            val isTest = TEST_TITLE in e.title
-            if (!isTest && e.kind == CrashReporter.Kind.HANDLED && (handledToday >= 5 || dedupeKey in uploadedTitles)) {
-                // Same handled problem already reported for this version, or daily cap reached: don't spam.
-                continue
-            }
-            var r = createIssue(token, e)
+        for ((i, chunk) in CrashBatch.chunks(pending).withIndex()) {
+            if (i > 0) Thread.sleep(2_500)
+            val (title, body) = CrashBatch.issue(chunk, BuildConfig.VERSION_NAME)
+            val label = if (chunk.any { it.kind == CrashReporter.Kind.CRASH }) "crash" else "handled-problem"
+            var r = createIssue(token, title, body, label)
             if (r.status == 401) {
                 // Sign-in ran out early: renew it and try once more, without bothering the owner.
                 val renewed = validToken(app, forceRefresh = true)
                 if (renewed == null) { last = "GitHub sign-in ended: tap Connect GitHub once"; break }
                 token = renewed
-                r = createIssue(token, e)
+                r = createIssue(token, title, body, label)
             }
-            if (r.number == null) { last = r.message; break } // offline or refused: retry next time
-            CrashReporter.mark(app, e.id, CrashReporter.Status.SENT_GITHUB, "#${r.number}")
-            last = "Uploaded #${r.number} · ${CrashReporter.formatTime(System.currentTimeMillis())}"
-            uploadedTitles += dedupeKey
-            if (e.kind == CrashReporter.Kind.HANDLED && !isTest) handledToday++
+            if (r.number == null) { last = r.message; break } // offline, refused or "slow down": the rest go next time
+            chunk.forEach { CrashReporter.mark(app, it.id, CrashReporter.Status.SENT_GITHUB, "#${r.number}") }
+            last = "Uploaded ${chunk.size} report${if (chunk.size == 1) "" else "s"} as #${r.number} · ${CrashReporter.formatTime(System.currentTimeMillis())}"
         }
-        prefs.edit {
-            putLong("day", today).putInt("handled", handledToday).putStringSet("titles", uploadedTitles)
-            if (last != null) putString("last_upload", last)
-        }
+        prefs.edit { if (last != null) putString("last_upload", last) }
         last
     }
 
@@ -198,26 +196,26 @@ object GitHubLink {
 
     private data class IssueResult(val number: Int?, val message: String, val status: Int = 0)
 
-    private fun createIssue(token: String, e: CrashReporter.Entry): IssueResult = try {
-        val label = if (e.kind == CrashReporter.Kind.CRASH) "crash" else "handled-problem"
-        var r = postIssue(token, e, label)
+    private fun createIssue(token: String, title: String, body: String, label: String): IssueResult = try {
+        var r = postIssue(token, title, body, label)
         // Labels can be refused (422) if they don't exist and can't be created: retry without them.
-        if (r.first == 422) r = postIssue(token, e, null)
+        if (r.first == 422) r = postIssue(token, title, body, null)
         when (r.first) {
             in 200..299 -> JSONObject(r.second).optInt("number").takeIf { it > 0 }
                 ?.let { IssueResult(it, "") } ?: IssueResult(null, "GitHub gave no issue number")
             401 -> IssueResult(null, "GitHub sign-in ended: tap Connect GitHub once", 401)
-            403, 404 -> IssueResult(null, "GitHub refused (${r.first}): install the GitHub App on ${BuildConfig.CRASH_REPO}")
+            403, 429 -> if (r.second.contains("rate limit", ignoreCase = true) || r.first == 429)
+                IssueResult(null, "GitHub asked to slow down: the rest go in a few minutes")
+                else IssueResult(null, "GitHub refused (${r.first}): install the GitHub App on ${BuildConfig.CRASH_REPO}")
+            404 -> IssueResult(null, "GitHub refused (404): install the GitHub App on ${BuildConfig.CRASH_REPO}")
             else -> IssueResult(null, "GitHub error ${r.first}")
         }
     } catch (x: Exception) {
         IssueResult(null, "No internet (${x.javaClass.simpleName}); will retry")
     }
 
-    private fun postIssue(token: String, e: CrashReporter.Entry, label: String?): Pair<Int, String> {
-        val body = JSONObject()
-            .put("title", "${if (e.kind == CrashReporter.Kind.CRASH) "Crash" else "Handled problem"}: ${e.title}".take(150))
-            .put("body", "Uploaded automatically by TheatreSync ${e.version} at ${CrashReporter.formatTime(e.timeMs)}.\n\n```\n${e.report.take(60_000)}\n```")
+    private fun postIssue(token: String, title: String, text: String, label: String?): Pair<Int, String> {
+        val body = JSONObject().put("title", title.take(150)).put("body", text)
         if (label != null) body.put("labels", org.json.JSONArray().put(label))
         val c = URL("$apiBase/repos/${BuildConfig.CRASH_REPO}/issues").openConnection() as HttpURLConnection
         c.requestMethod = "POST"
