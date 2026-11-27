@@ -23,6 +23,11 @@ want=$(cat scripts/release-signing-cert.sha256)
 
 ver=$(sed -n 's/.*versionName = "\(.*\)".*/\1/p' android/app/build.gradle.kts)
 code=$(sed -n 's/.*versionCode = \([0-9]*\).*/\1/p' android/app/build.gradle.kts)
+# The APK must be the version being announced (owner, 2026-11-27: a stale 0.7.8 file published as "0.7.9"
+# installed over itself and the app offered the same update forever). Rebuild if it doesn't match.
+badging=$("$(dirname "$signer")"/aapt2 dump badging "$apk" | sed -n 1p)
+case "$badging" in *"versionCode='$code'"*"versionName='$ver'"*) ;;
+  *) echo "REFUSED: $apk is not $ver ($code) — run scripts/build-android.sh first. It is: $badging"; exit 1;; esac
 name="TheatreSync-$ver.apk"
 rm -f "$repo"/TheatreSync-*.apk
 cp "$apk" "$repo/$name"

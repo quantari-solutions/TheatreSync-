@@ -10,7 +10,7 @@ code repository is private (a private repo can't serve downloads without putting
 
 Only when the owner says "release":
 1. Merge to `main`, then `scripts/build-android.sh`.
-2. `scripts/publish-release.sh releases "What's new" https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases` — refuses any APK whose
+2. `scripts/publish-release.sh releases "What's new" https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases` — refuses an APK that isn't the version in `build.gradle.kts` (a stale build once re-sent 0.7.8 as "0.7.9" and the phone offered it forever), and any APK whose
    signing certificate isn't the one in `scripts/release-signing-cert.sha256` (otherwise Android would refuse
    the update and the owner would have to uninstall).
 3. Commit `releases/` in a PR and merge it: phones see the update once it's on `main`.
