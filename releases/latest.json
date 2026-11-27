@@ -1,8 +1,8 @@
 {
-  "versionCode": 42,
-  "versionName": "0.7.7",
-  "apkUrl": "https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases/TheatreSync-0.7.7.apk",
-  "sha256": "b2f08430c77483d20b971ef08cc6bb3df3959d30fa373252b214456ecb73a261",
-  "sizeBytes": 24324735,
-  "notes": "Play along: hear Netflix or Prime Video from the TV in your headphones (same title on your phone, kept in step). Share a Netflix/Prime/YouTube title to TheatreSync to start. The Frame casting fix, stronger ad mute, TapIn section with QR in the headphones window, NFC fix, easier-to-tap buttons, TV name on each Now casting card."
+  "versionCode": 43,
+  "versionName": "0.7.8",
+  "apkUrl": "https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases/TheatreSync-0.7.8.apk",
+  "sha256": "d8f6e34a9399e7a28cf537838b9fa7702235f437b5ae4decbcdc50dbb979d208",
+  "sizeBytes": 24339423,
+  "notes": "TheatreSync stops by itself after 4 hours unused in the background (change it in Settings \u2192 Experimental \u2192 Run in the background). Updates now finish by themselves, and pick up where they left off if interrupted."
 }
