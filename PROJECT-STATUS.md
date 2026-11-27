@@ -2,6 +2,18 @@
 
 _Last updated: 2026-11-22. Android 0.7.0: TapIn fixed and on the movie screen, TapIn for YouTube (any phone's cast). iOS 0.7.0: full TheatreSync part 1_
 
+## Android 0.7.6: owner's list (TapIn, NFC, Netflix, ad mute, buttons, cards, The Frame casting)
+| Ask | Done | Checked |
+|---|---|---|
+| Cast to The Frame "refused to connect" (address verified) | If DIAL refuses to start YouTube (or is off), YouTube is opened through the TV's own remote channel (WebSocket `ed.apps.launch` 111299001912), then the screen ID is read as before; The Frame remote's YouTube button uses the same | Build; needs HW (first time: Allow on the TV) |
+| Ad mute not working | Mute now goes every way at once: Chromecast mute (ignored when it has fixed volume on an AV receiver) + YouTube "mute" + setVolume muted, re-applied every 3 s during the ad; every exit path unmutes both | Build; needs HW |
+| Separate TapIn section in the headphones window; "Connect other" opened Bluetooth | TapIn is its own card with the QR code shown inline, for a movie from this phone and now also YouTube on a TV; the Bluetooth button says "Pair other headphones (Bluetooth)" | Screenshots |
+| NFC: connects but nothing arrives | The headphones window shared an empty link for YouTube (only movies had one). Fixed; the NFC window shows "Sent ✓" when the other phone reads the link, and the QR code as a fallback | Build; needs HW |
+| Netflix to headphones (friend's iPhone casting) | The TV's sound can't be taken (DRM). Instead **Play along** (Android, 0.7.7): the same title plays in the Netflix / Prime Video app on this phone (headphones get its sound) and TheatreSync keeps it in step with the TV once a second via Android media controls (`PlayAlongSync`: follows play/pause, jumps when > 0.6 s off, learns how far ahead to aim). One-time "Notification access". Card on Now casting for Netflix/Prime. **More accurate (owner: "send it ahead so it matches"):** aims ahead by the headphones' own delay (Android's estimate, ~200 ms for Bluetooth), checks twice a second, and closes gaps under 2.5 s by nudging the app's speed ±2–8 % (no jumps) where the app accepts speed, jumps only for big gaps. **Share from Netflix / Prime:** a shared title opens that TV's Now casting with Play along on and the title in the app on the phone | `PlayAlongSyncTest`, `PlayAlongLinkTest`, `playAlong1_netflix` screenshot; needs HW (does the TV's Netflix report its position? how precisely does Netflix seek?) |
+| Menu/back buttons hard to hit | 60 dp touch ring around the 48 dp circles; titles wrap instead of breaking mid-word | Screenshots |
+| One Now casting card per device, clearly | Each card's heading is the TV's name (wraps, never cut) | Screenshots |
+| SmartThings "super subtle" | Remote cast page: a plain "Wake The Frame" button, no brand or explanation | Screenshot |
+
 ## Android 0.7.5: "remote cast isn't working… it says connecting… doesn't cast"
 | Finding | Change | Checked |
 |---|---|---|

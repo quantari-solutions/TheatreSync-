@@ -55,7 +55,7 @@
     <string name="mirroring_title">Mirroring from another device</string>
     <string name="mirroring_hint">Use the laptop or phone that started it to pause or stop.</string>
     <string name="cast_sound_title">Want this in your headphones?</string>
-    <string name="cast_sound_hint">Mirrored screens and tabs send their sound straight to the TV, so it plays through the room speakers. For headphones in perfect sync, play your own movie files with TheatreSync, or YouTube with Sound in headphones.</string>
+    <string name="cast_sound_hint">Netflix, Prime Video, Disney+ and other apps (and mirrored screens) keep their sound locked to the TV: their protection stops any app, TheatreSync included, from passing it to a phone. For that sound in headphones, pair the headphones with the TV or AV receiver itself. TheatreSync puts sound in headphones for your own movie files and YouTube.</string>
     <string name="headphones">Headphones</string>
     <string name="technical_details">Technical details</string>
     <string name="no_headphones">No headphones connected</string>
@@ -266,7 +266,7 @@
     <string name="hp_options">Headphone options</string>
     <string name="hp_device">Play the sound on</string>
     <string name="hp_no_devices">No headphones found. Connect them in Bluetooth first.</string>
-    <string name="hp_connect_other">Connect other</string>
+    <string name="hp_connect_other">Pair other headphones (Bluetooth)</string>
     <string name="hp_test">Test sound</string>
     <string name="hp_one_device">Android plays movie sound on one Bluetooth headset at a time. Friends listen with TheatreSync on their own phone.</string>
     <string name="hp_sync">Auto sync</string>
@@ -476,9 +476,9 @@
     <string name="yt_find_title">Find a video</string>
     <string name="yt_find_cast">Cast this video</string>
     <string name="yt_find_cast_to">Cast to %1$s</string>
-    <string name="remote_samsung_title">The Frame (Samsung) from anywhere</string>
-    <string name="remote_samsung_text">Switch The Frame on and open YouTube on it with Samsung\'s SmartThings, then cast YouTube from here and it plays on The Frame. At home, TheatreSync\'s Remote page controls The Frame directly.</string>
-    <string name="remote_samsung_button">Open SmartThings</string>
+    <string name="remote_samsung_title">The Frame</string>
+    <string name="remote_samsung_text">If The Frame doesn\'t answer from away, wake it first, then cast.</string>
+    <string name="remote_samsung_button">Wake The Frame</string>
     <string name="samsung_remote_title">%1$s remote</string>
     <string name="samsung_remote_hint">Controls the TV directly over the Wi-Fi. The first time, press Allow on the TV when it asks about TheatreSync.</string>
     <string name="samsung_power">Power</string>
@@ -488,4 +488,22 @@
     <string name="samsung_home">Home</string>
     <string name="samsung_allow">Look at The Frame: press Allow when it asks about TheatreSync (once only).</string>
     <string name="samsung_no_answer">The Frame didn\'t answer. Is it on and on the same Wi-Fi?</string>
+    <string name="tapin_section">TapIn · friends listen on their own phones</string>
+    <string name="tapin_nothing">Starts when something plays: a movie from this phone, or YouTube on a TV. (Netflix, Prime Video and other apps keep their sound locked to the TV, so no app can share it.)</string>
+    <string name="nfc_sent">Sent ✓</string>
+    <string name="nfc_sent_hint">The other phone got the link: it opens the listening page (it needs the same Wi-Fi).</string>
+    <string name="nfc_nothing">Nothing to share yet: start a movie or YouTube first.</string>
+    <string name="nfc_or_scan">Or scan this with the other phone\'s camera.</string>
+    <string name="play_along_access_label">TheatreSync Play along (follows Netflix / Prime Video on the TV)</string>
+    <string name="play_along_title">Play along in your headphones</string>
+    <string name="play_along_short">Hear %1$s through this phone, in step with the TV</string>
+    <string name="play_along_how">%1$s doesn\'t let any app take the TV\'s sound, so this phone plays the same title in the %1$s app (your headphones get its sound) and TheatreSync keeps it in step with the TV: pause, play and skips follow. Close, not exact: within about half a second. Needs a %1$s login on this phone.</string>
+    <string name="play_along_access">Once only: allow TheatreSync to follow and control the playback of other apps on this phone (Android calls it Notification access). Turn on TheatreSync in the list, then come back.</string>
+    <string name="play_along_allow">Allow (once)</string>
+    <string name="play_along_open">Open %1$s on this phone and start the same title (any point: TheatreSync moves it to where the TV is). Headphones on.</string>
+    <string name="play_along_open_button">Open %1$s</string>
+    <string name="play_along_no_position">The TV hasn\'t said where it is in the film yet. Give it a few seconds; if it stays like this, this app on the TV doesn\'t report its position.</string>
+    <string name="play_along_in_step">In step with the TV · %1$s ms</string>
+    <string name="play_along_following">Following the TV…</string>
+    <string name="play_along_share_none">Nothing is playing %1$s on a TV yet. Start it on the TV first (cast from the app), then share again.</string>
 </resources>

@@ -288,16 +288,20 @@ class MainActivity : ComponentActivity() {
                     }
                     val listenUrl = ui.joinAddress?.let { "http://$it/listen" }
                     if (audioSheet.value) {
+                        // TapIn link: the movie playing from this phone, else YouTube on a TV (whoever cast it).
+                        val ytTv = ui.nowCasting.firstOrNull { it.activity.kind == CastActivity.Kind.YOUTUBE && !it.tvId.startsWith("dial:away:") }?.tvId
+                        val sheetTapIn = listenUrl ?: ytTv?.let { id -> remember(id) { session.youTubeTapInUrl(id) } }
                         AudioSheet(
                             ui = ui,
                             outputs = outputs.value,
                             connectedHeadsets = connectedHeadsets.value,
                             battery = headsetBattery.value,
                             listenUrl = listenUrl,
+                            tapInUrl = sheetTapIn,
                             onRoomSpeakers = session::setRoomSpeakers,
                             onSelectOutput = session::setPreferredOutput,
                             onPickDevice = ::pickAudioDevice,
-                            onShareNfc = { setNfcSharing(true, listenUrl) },
+                            onShareNfc = { setNfcSharing(true, sheetTapIn) },
                             onShowQr = { qrDialog.value = true },
                             onGuestSound = session::setGuestSound,
                             onGuestVolume = session::setGuestVolume,
@@ -308,7 +312,7 @@ class MainActivity : ComponentActivity() {
                             onDismiss = { audioSheet.value = false },
                         )
                     }
-                    if (nfcSharing.value) NfcShareDialog(onDone = { setNfcSharing(false, null) })
+                    if (nfcSharing.value) NfcShareDialog(TapInService.url, onDone = { setNfcSharing(false, null) })
                     if (smartTvInfo.value) {
                         androidx.compose.material3.AlertDialog(
                             onDismissRequest = { smartTvInfo.value = false },
@@ -322,6 +326,21 @@ class MainActivity : ComponentActivity() {
                     if (qrDialog.value && listenUrl != null) QrDialog(listenUrl, onDone = { qrDialog.value = false })
                     // Shared from the YouTube app: jump straight to the YouTube page.
                     LaunchedEffect(sharedLink.value) { if (sharedLink.value != null) page = Page.YOUTUBE }
+                    // Shared from Netflix / Prime Video: open that TV's page with Play along on, and the title in the app.
+                    LaunchedEffect(sharedPlayAlong.value) {
+                        val (app, link) = sharedPlayAlong.value ?: return@LaunchedEffect
+                        var tv: TvWatchers.NowCasting? = null
+                        repeat(20) { if (tv == null) { tv = session.ui.value.nowCasting.firstOrNull { PlayAlong.appFor(it.activity.appName) == app }; if (tv == null) kotlinx.coroutines.delay(500) } }
+                        sharedPlayAlong.value = null
+                        val found = tv
+                        if (found == null) { session.notice(getString(R.string.play_along_share_none, if (app == "netflix") "Netflix" else "Prime Video")); return@LaunchedEffect }
+                        castTvId = found.tvId
+                        page = Page.NOW_CASTING
+                        session.setPlayAlong(found.tvId, true)
+                        // The same title in the app on this phone (the app opens its page); press play and it lines up.
+                        val open = link?.let { Intent(Intent.ACTION_VIEW, it.toUri()) } ?: session.playAlong.openAppIntent(app)
+                        runCatching { startActivity(open.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                    }
                     // If the cast we're looking at ends, go back home on its own.
                     LaunchedEffect(page, casting == null) {
                         if (page == Page.NOW_CASTING && casting == null) {
@@ -577,6 +596,11 @@ class MainActivity : ComponentActivity() {
                                         onAudio = { refreshAudio(); audioSheet.value = true },
                                         onRemote = { page = Page.REMOTE },
                                         onCastAnother = { page = Page.YOUTUBE },
+                                        playAlongOn = ui.playAlongTv == c.tvId,
+                                        playAlong = ui.playAlong,
+                                        onPlayAlong = { on -> session.setPlayAlong(c.tvId, on) },
+                                        onPlayAlongOpenApp = { PlayAlong.appFor(c.activity.appName)?.let { runCatching { startActivity(session.playAlong.openAppIntent(it)) } } },
+                                        onPlayAlongAccess = { runCatching { startActivity(session.playAlong.accessIntent()) } },
                                         message = ui.message,
                                         onDismissMessage = session::dismissMessage,
                                         upNext = ui.upNext[c.tvId].orEmpty(),
@@ -792,8 +816,13 @@ class MainActivity : ComponentActivity() {
     private fun handleShare(intent: Intent?) {
         if (intent?.action != Intent.ACTION_SEND) return
         val text = intent.getStringExtra(Intent.EXTRA_TEXT) ?: return
-        if (YouTubeLinks.videoId(text) != null) { sharedLink.value = text; ytLink.value = text }
+        if (YouTubeLinks.videoId(text) != null) { sharedLink.value = text; ytLink.value = text; return }
+        // Shared from Netflix / Prime Video: Play along for the TV playing it, and the title opened on this phone.
+        PlayAlong.appForLink(text)?.let { sharedPlayAlong.value = it to PlayAlong.linkIn(text) }
     }
+
+    /** A Netflix / Prime title shared to TheatreSync: (app, link), handled once the TVs are known. */
+    private val sharedPlayAlong = mutableStateOf<Pair<String, String?>?>(null)
 
     private fun openYouTubeApp(link: String?) {
         val uri = (link?.takeIf { YouTubeLinks.videoId(it) != null } ?: "https://www.youtube.com/").toUri()
@@ -1006,21 +1035,25 @@ class MainActivity : ComponentActivity() {
 internal fun TopBar(title: String, onBack: () -> Unit, action: (@Composable () -> Unit)? = null) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         RoundIconButton("←", stringResource(R.string.back), onBack, Modifier.testTag("back"))
-        Text(title, Modifier.weight(1f).padding(horizontal = 14.dp), style = MaterialTheme.typography.titleLarge, color = Q.Text)
+        Text(title, Modifier.weight(1f).padding(horizontal = 8.dp), style = MaterialTheme.typography.titleLarge, color = Q.Text, maxLines = 2, overflow = TextOverflow.Ellipsis)
         action?.invoke()
     }
 }
 
 @Composable
 private fun RoundIconButton(glyph: String, description: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    // The visible circle stays 48 dp, but taps anywhere in a 60 dp ring around it count (owner: "even if I
+    // flick the circumference it should activate"): the touch area extends 6 dp past the edge on every side.
     Box(
-        modifier.size(48.dp).clip(CircleShape).background(Q.Card)
-            .border(BorderStroke(1.dp, Q.BorderAccent), CircleShape)
+        modifier.size(60.dp).clip(CircleShape)
             .clickable(role = Role.Button, onClick = onClick)
             .semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) {
-        Text(glyph, color = Q.PrimaryLight, style = MaterialTheme.typography.titleMedium)
+        Box(
+            Modifier.size(48.dp).clip(CircleShape).background(Q.Card).border(BorderStroke(1.dp, Q.BorderAccent), CircleShape),
+            contentAlignment = Alignment.Center,
+        ) { Text(glyph, color = Q.PrimaryLight, style = MaterialTheme.typography.titleMedium) }
     }
 }
 
@@ -1808,13 +1841,14 @@ private fun NowCastingCard(item: TvWatchers.NowCasting, onOpen: () -> Unit, onPl
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Thumb(a, Modifier.width(128.dp).aspectRatio(16f / 9f))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                // One card per TV: its name leads, so several TVs playing at once are told apart at a glance.
                 Text(
-                    stringResource(R.string.now_casting).uppercase(),
-                    color = Q.Primary, style = MaterialTheme.typography.labelMedium, maxLines = 1,
+                    item.tvName.uppercase(),
+                    color = Q.Primary, style = MaterialTheme.typography.labelMedium, maxLines = 2, overflow = TextOverflow.Ellipsis,
                 )
-                Text(a.headline(), color = Q.Text, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(a.headline().ifBlank { a.label() }, color = Q.Text, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(
-                    listOfNotNull(a.subtitle ?: a.label(), item.tvName).joinToString(" · "),
+                    a.subtitle ?: a.label(),
                     color = Q.TextFaint, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
             }
@@ -1848,6 +1882,11 @@ internal fun NowCastingScreen(
     onAudio: () -> Unit = {},
     onRemote: () -> Unit = {},
     onCastAnother: () -> Unit = {},
+    playAlongOn: Boolean = false,
+    playAlong: PlayAlong.Status = PlayAlong.Status(),
+    onPlayAlong: (Boolean) -> Unit = {},
+    onPlayAlongOpenApp: () -> Unit = {},
+    onPlayAlongAccess: () -> Unit = {},
     message: String? = null,
     onDismissMessage: () -> Unit = {},
     upNext: List<MovieSession.UpNextVideo> = emptyList(),
@@ -1998,8 +2037,11 @@ internal fun NowCastingScreen(
     if (a.sessionId != null || viaYouTube) {
         GhostButton("■  " + stringResource(R.string.stop_casting), onStop, Modifier.fillMaxWidth().testTag("stop_casting"), height = 52.dp, description = stringResource(R.string.stop_casting))
     }
+    // Netflix / Prime Video: Play along — the same title in the app on this phone, kept in step with the TV.
+    val playApp = PlayAlong.appFor(a.appName)
+    if (playApp != null && !viaYouTube) PlayAlongCard(playApp, playAlongOn, playAlong, onPlayAlong, onPlayAlongOpenApp, onPlayAlongAccess)
     // YouTube has its own "Sound in headphones" card above; this note is for mirroring and other apps.
-    if (a.kind != CastActivity.Kind.YOUTUBE) QCard {
+    if (a.kind != CastActivity.Kind.YOUTUBE && playApp == null) QCard {
         Text(stringResource(R.string.cast_sound_title), style = MaterialTheme.typography.titleMedium, color = Q.Text)
         Hint(stringResource(R.string.cast_sound_hint))
         GhostButton("🎧  " + stringResource(R.string.hp_settings), onHeadphoneOptions, Modifier.fillMaxWidth().testTag("cast_hp_settings"), height = 48.dp)
@@ -2039,6 +2081,40 @@ private fun SamsungRemoteCard(name: String, onKey: (String) -> Unit) {
     }
 }
 
+@Composable
+private fun PlayAlongCard(app: String, on: Boolean, st: PlayAlong.Status, onToggle: (Boolean) -> Unit, onOpenApp: () -> Unit, onAccess: () -> Unit) {
+    val appName = if (app == "netflix") "Netflix" else "Prime Video"
+    QCard(highlighted = on) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                Text(stringResource(R.string.play_along_title), style = MaterialTheme.typography.titleLarge, color = Q.Text)
+                Hint(stringResource(R.string.play_along_short, appName))
+            }
+            Switch(
+                checked = on, onCheckedChange = onToggle, modifier = Modifier.testTag("play_along"),
+                colors = SwitchDefaults.colors(checkedThumbColor = Color.Black, checkedTrackColor = Q.Primary),
+            )
+        }
+        if (on) {
+            when (st.problem) {
+                PlayAlong.Problem.NEEDS_ACCESS -> {
+                    Hint(stringResource(R.string.play_along_access))
+                    GoldButton(stringResource(R.string.play_along_allow), onAccess, Modifier.fillMaxWidth().testTag("play_along_allow"), height = 48.dp)
+                }
+                PlayAlong.Problem.OPEN_APP -> {
+                    Hint(stringResource(R.string.play_along_open, appName))
+                    GoldButton(stringResource(R.string.play_along_open_button, appName), onOpenApp, Modifier.fillMaxWidth().testTag("play_along_open"), height = 48.dp)
+                }
+                PlayAlong.Problem.TV_NO_POSITION -> Hint(stringResource(R.string.play_along_no_position))
+                null -> StatusPill(
+                    st.driftMs?.let { d -> stringResource(R.string.play_along_in_step, (if (d >= 0) "+" else "") + d) } ?: stringResource(R.string.play_along_following),
+                    if (st.driftMs != null && kotlin.math.abs(st.driftMs) < 700) Q.Success else Q.Primary,
+                )
+            }
+        } else Hint(stringResource(R.string.play_along_how, appName))
+    }
+}
+
 // ---------------------------------------------------------------- remote cast (away from home)
 
 /**
@@ -2051,10 +2127,13 @@ private fun SamsungRemoteCard(name: String, onKey: (String) -> Unit) {
 internal fun RemoteCastScreen(tvs: List<Pair<String, com.theatresync.core.CastModel.Kind?>>, onYouTube: () -> Unit, onBack: () -> Unit) = Screen {
     TopBar(stringResource(R.string.remote_cast), onBack)
     Hint(stringResource(R.string.remote_cast_intro))
+    RemoteOption("▶", stringResource(R.string.youtube), stringResource(R.string.remote_opt_youtube), stringResource(R.string.remote_ready), true, onYouTube, "remote_opt_youtube")
+    RemoteOption("🎬", stringResource(R.string.remote_opt_movie_title), stringResource(R.string.remote_opt_movie), stringResource(R.string.remote_needs_hub), false, {}, "remote_opt_movie")
+    RemoteOption("⧉", stringResource(R.string.mirror_screen), stringResource(R.string.remote_opt_mirror), stringResource(R.string.remote_needs_hub), false, {}, "remote_opt_mirror")
     // Samsung TVs (The Frame) can be switched on and have YouTube opened from anywhere with Samsung's free
     // SmartThings app; then YouTube from here plays on it.
     val context = LocalContext.current
-    QCard(highlighted = true) {
+    QCard {
         Text(stringResource(R.string.remote_samsung_title), style = MaterialTheme.typography.titleMedium, color = Q.Text)
         Hint(stringResource(R.string.remote_samsung_text))
         GhostButton(stringResource(R.string.remote_samsung_button), {
@@ -2064,9 +2143,6 @@ internal fun RemoteCastScreen(tvs: List<Pair<String, com.theatresync.core.CastMo
             runCatching { context.startActivity(open.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
         }, Modifier.fillMaxWidth().testTag("open_smartthings"), height = 48.dp)
     }
-    RemoteOption("▶", stringResource(R.string.youtube), stringResource(R.string.remote_opt_youtube), stringResource(R.string.remote_ready), true, onYouTube, "remote_opt_youtube")
-    RemoteOption("🎬", stringResource(R.string.remote_opt_movie_title), stringResource(R.string.remote_opt_movie), stringResource(R.string.remote_needs_hub), false, {}, "remote_opt_movie")
-    RemoteOption("⧉", stringResource(R.string.mirror_screen), stringResource(R.string.remote_opt_mirror), stringResource(R.string.remote_needs_hub), false, {}, "remote_opt_mirror")
     if (tvs.isNotEmpty()) QCard {
         Text(stringResource(R.string.remote_your_tvs), style = MaterialTheme.typography.titleMedium, color = Q.Text)
         tvs.forEach { (name, kind) ->
@@ -2932,6 +3008,7 @@ internal fun AudioSheet(
     battery: Map<String, Int> = emptyMap(),
     listenUrl: String?,
     onRoomSpeakers: (Boolean) -> Unit,
+    tapInUrl: String? = listenUrl,
     onSelectOutput: (Int?) -> Unit,
     onPickDevice: () -> Unit,
     onShareNfc: () -> Unit,
@@ -3006,19 +3083,18 @@ internal fun AudioSheet(
             }
             GhostButton(stringResource(R.string.hp_connect_other), onPickDevice, Modifier.fillMaxWidth(), height = 48.dp)
 
-            // Guests
-            Text(stringResource(R.string.guests_title), style = MaterialTheme.typography.titleMedium, color = Q.Text, modifier = Modifier.padding(top = 8.dp))
-            if (listenUrl == null) Hint(stringResource(R.string.guests_need_movie))
-            else {
-                Hint(stringResource(R.string.guests_hint))
-                if (ui.guestSoundUnsupported) Hint(stringResource(R.string.guests_sound_unsupported))
-                if (ui.guests.isNotEmpty()) {
-                    Text(stringResource(R.string.guests_now), style = MaterialTheme.typography.titleSmall, color = Q.Primary)
-                    ui.guests.forEach { g -> GuestRow(g, onGuestSound, onGuestVolume, onGuestRemove) }
-                }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    GoldButton(stringResource(R.string.share_nfc), onShareNfc, Modifier.weight(1f).testTag("share_nfc"), height = 52.dp)
-                    GhostButton(stringResource(R.string.show_qr), onShowQr, Modifier.weight(1f).testTag("show_qr"), height = 52.dp)
+            // TapIn: its own section. Friends listen on their own phones (QR right here, or NFC), for a movie
+            // from this phone and for YouTube on the TV.
+            QCard(highlighted = tapInUrl != null) {
+                Text(stringResource(R.string.tapin_section), style = MaterialTheme.typography.titleMedium, color = Q.Text)
+                if (tapInUrl == null) Hint(stringResource(R.string.tapin_nothing))
+                else {
+                    if (ui.guestSoundUnsupported) Hint(stringResource(R.string.guests_sound_unsupported))
+                    if (ui.guests.isNotEmpty()) {
+                        Text(stringResource(R.string.guests_now), style = MaterialTheme.typography.titleSmall, color = Q.Primary)
+                        ui.guests.forEach { g -> GuestRow(g, onGuestSound, onGuestVolume, onGuestRemove) }
+                    }
+                    TapInCard(tapInUrl, onShareNfc, stringResource(R.string.guests_hint))
                 }
             }
             GhostButton("⚙  " + stringResource(R.string.hp_settings), onMore, Modifier.fillMaxWidth(), height = 48.dp)
@@ -3083,15 +3159,26 @@ private fun CheckRow(checked: Boolean, title: String, subtitle: String?, tag: St
 
 /** "Share by NFC": the guest holds their phone to this one. TheatreSync answers taps only while this is open. */
 @Composable
-private fun NfcShareDialog(onDone: () -> Unit) {
+private fun NfcShareDialog(url: String?, onDone: () -> Unit) {
+    // "Sent ✓" once the other phone has read the link; the QR code underneath works if NFC doesn't.
+    val openedAt = remember { android.os.SystemClock.elapsedRealtime() }
+    var sent by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { while (!sent) { kotlinx.coroutines.delay(300); sent = TapInService.lastReadMs > openedAt } }
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDone,
         containerColor = Q.Card,
         title = { Text(stringResource(R.string.share_nfc), color = Q.Text) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                StatusPill(stringResource(R.string.nfc_hold), Q.Primary, pulsing = true)
-                Text(stringResource(R.string.nfc_steps), color = Q.TextMuted)
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (url == null) Text(stringResource(R.string.nfc_nothing), color = Q.TextMuted)
+                else if (sent) StatusPill(stringResource(R.string.nfc_sent), Q.Success)
+                else StatusPill(stringResource(R.string.nfc_hold), Q.Primary, pulsing = true)
+                Text(stringResource(if (sent) R.string.nfc_sent_hint else R.string.nfc_steps), color = Q.TextMuted)
+                if (url != null) {
+                    val qr = remember(url) { qrBitmap(url, 400) }
+                    if (qr != null) androidx.compose.foundation.Image(qr, stringResource(R.string.show_qr), Modifier.size(180.dp).background(Color.White).padding(8.dp))
+                    Hint(stringResource(R.string.nfc_or_scan))
+                }
             }
         },
         confirmButton = { GoldButton(stringResource(R.string.done), onDone, height = 48.dp) },

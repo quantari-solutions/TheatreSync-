@@ -125,6 +125,9 @@ class MovieSession(private val app: Application) {
         val remoteCast: Boolean = true,
         /** The last Samsung TV search, in plain words (Settings → Samsung TV), for when The Frame isn't listed. */
         val samsungSearch: String? = null,
+        /** Play along (Netflix / Prime Video): which TV it follows, and how it's going. */
+        val playAlongTv: String? = null,
+        val playAlong: PlayAlong.Status = PlayAlong.Status(),
         /** Quantari screensaver on the TV while connected with nothing playing (Settings → Experimental). */
         val screensaver: Boolean = true,
         /** Projectors / receivers found on the Wi-Fi that can be switched on and off (labels). */
@@ -397,7 +400,7 @@ class MovieSession(private val app: Application) {
         val ip = d.appsUrl.substringAfter("//").substringBefore(':')
         Thread({
             val result = when (key) {
-                "YOUTUBE" -> if (runCatching { Dial.youTubeScreenId(d) }.isSuccess) com.theatresync.core.SamsungRemote.Result.OK else com.theatresync.core.SamsungRemote.Result.FAILED
+                "YOUTUBE" -> com.theatresync.core.SamsungRemote.send(ip, "APP:" + com.theatresync.core.SamsungRemote.YOUTUBE_APP)
                 else -> com.theatresync.core.SamsungRemote.send(ip, key)
             }
             if (key == com.theatresync.core.SamsungRemote.Keys.POWER && result == com.theatresync.core.SamsungRemote.Result.FAILED) {
@@ -496,7 +499,13 @@ class MovieSession(private val app: Application) {
     /** The YouTube "screen ID" of a Chromecast (Cast connection) or a smart TV (DIAL). Blocking. */
     private fun youTubeScreenId(tvId: String): String {
         if (tvId.startsWith(AWAY)) return awayTvs()[tvId.removePrefix(AWAY)] ?: throw java.io.IOException("TV not remembered")
-        dialTvs[tvId]?.let { return Dial.youTubeScreenId(it) }
+        dialTvs[tvId]?.let { d ->
+            val ip = d.appsUrl.substringAfter("//").substringBefore(':')
+            val samsung = d.manufacturer?.contains("Samsung", true) == true
+            return Dial.youTubeScreenId(d, fallbackLaunch = if (!samsung) null else {
+                { com.theatresync.core.SamsungRemote.send(ip, "APP:" + com.theatresync.core.SamsungRemote.YOUTUBE_APP) == com.theatresync.core.SamsungRemote.Result.OK }
+            })
+        }
         val tv = knownTvs.firstOrNull { it.id == tvId } ?: throw java.io.IOException("TV not found")
         return YouTubeScreenFinder({ TvWatchers.openTls(tv.address, tv.port) }).screenId()
     }
@@ -1776,6 +1785,8 @@ class MovieSession(private val app: Application) {
 
     private fun say(res: Int) = _ui.update { it.copy(message = app.getString(res)) }
     private fun say(text: String) = _ui.update { it.copy(message = text) }
+    /** A plain message on the current page (from the screen layer). */
+    fun notice(text: String) = say(text)
 
     // ---------------------------------------------------------------- crash safety
     //
@@ -1851,12 +1862,34 @@ class MovieSession(private val app: Application) {
 
     private data class YtAnchor(val activity: CastActivity, val atMs: Long)
     private val ytAnchors = java.util.concurrent.ConcurrentHashMap<String, YtAnchor>() // also read by the TapIn server
+    private val playAnchors = java.util.concurrent.ConcurrentHashMap<String, YtAnchor>()
+
+    /** Where a TV is in what it's playing now (ms) and whether it plays, from its last status. */
+    private fun tvPositionMs(tvId: String): Pair<Long, Boolean>? {
+        val (a, at) = playAnchors[tvId] ?: return null
+        val t = a.currentTimeSec ?: return null
+        val playing = a.playerState == "PLAYING"
+        return ((t * 1000).toLong() + if (playing) SystemClock.elapsedRealtime() - at else 0L) to playing
+    }
+
+    /** Play along (Netflix / Prime Video on [tvId], the same title in the app on this phone, in step). */
+    val playAlong by lazy { PlayAlong(app).also { p -> p.onStatus = { st -> _ui.update { it.copy(playAlong = st, playAlongTv = if (st.on) it.playAlongTv else null) } } } }
+
+    fun setPlayAlong(tvId: String, on: Boolean) = guard("setPlayAlong") {
+        val appName = rawNowCasting.firstOrNull { it.tvId == tvId }?.activity?.appName
+        val kind = PlayAlong.appFor(appName)
+        if (!on || kind == null) { playAlong.stop(); _ui.update { it.copy(playAlongTv = null) }; return@guard }
+        _ui.update { it.copy(playAlongTv = tvId) }
+        playAlong.start(kind) { tvPositionMs(tvId) }
+    }
 
     /** Remembers when each TV's YouTube status arrived, so its position can be followed between updates. */
     private fun noteYouTubePositions(list: List<TvWatchers.NowCasting>) {
         val now = SystemClock.elapsedRealtime()
         for (n in list) {
             val a = n.activity
+            // Any app's position (Netflix, Prime Video…), for Play along.
+            if (a.currentTimeSec != null && playAnchors[n.tvId]?.activity != a) playAnchors[n.tvId] = YtAnchor(a, now)
             if (a.kind != CastActivity.Kind.YOUTUBE || a.currentTimeSec == null) continue
             if (ytAnchors[n.tvId]?.activity != a) ytAnchors[n.tvId] = YtAnchor(a, now)
         }
