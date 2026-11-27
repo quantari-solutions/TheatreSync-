@@ -2,7 +2,7 @@
   "versionCode": 44,
   "versionName": "0.7.9",
   "apkUrl": "https://raw.githubusercontent.com/quantari-solutions/TheatreSync-/main/releases/TheatreSync-0.7.9.apk",
-  "sha256": "d8f6e34a9399e7a28cf537838b9fa7702235f437b5ae4decbcdc50dbb979d208",
-  "sizeBytes": 24339423,
+  "sha256": "1affd8e75aa140d71eaa5569471d5ac0e6f410a94d8af850f586211708ef45f8",
+  "sizeBytes": 24350427,
   "notes": "The Frame: link YouTube with the TV's code, clearer reasons when it fails, Netflix and Prime buttons on The Frame remote. Crash reports now upload automatically, all together, and the GitHub code pastes in one go."
 }
