@@ -180,7 +180,7 @@ object GitHubLink {
             }
             if (r.number == null) { last = r.message; break } // offline, refused or "slow down": the rest go next time
             chunk.forEach { CrashReporter.mark(app, it.id, CrashReporter.Status.SENT_GITHUB, "#${r.number}") }
-            last = "Uploaded ${chunk.size} report${if (chunk.size == 1) "" else "s"} as #${r.number} · ${CrashReporter.formatTime(System.currentTimeMillis())}"
+            last = (if (chunk.size == 1) "Uploaded #${r.number}" else "Uploaded ${chunk.size} reports as #${r.number}") + " · ${CrashReporter.formatTime(System.currentTimeMillis())}"
         }
         prefs.edit { if (last != null) putString("last_upload", last) }
         last
