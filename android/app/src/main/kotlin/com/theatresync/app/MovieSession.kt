@@ -1785,6 +1785,10 @@ class MovieSession(private val app: Application) {
 
     private fun say(res: Int) = _ui.update { it.copy(message = app.getString(res)) }
     private fun say(text: String) = _ui.update { it.copy(message = text) }
+    /** Something is playing through TheatreSync, so it must keep running in the background whatever the idle limit. */
+    fun busyInBackground(): Boolean =
+        server != null || playAlong.running || _ui.value.youTubeHeadphonesTv != null || _ui.value.guests.isNotEmpty() || _ui.value.phase != Phase.SETUP
+
     /** A plain message on the current page (from the screen layer). */
     fun notice(text: String) = say(text)
 

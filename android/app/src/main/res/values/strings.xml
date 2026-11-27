@@ -506,4 +506,16 @@
     <string name="play_along_in_step">In step with the TV · %1$s ms</string>
     <string name="play_along_following">Following the TV…</string>
     <string name="play_along_share_none">Nothing is playing %1$s on a TV yet. Start it on the TV first (cast from the app), then share again.</string>
+    <string name="update_channel">App updates</string>
+    <string name="update_notice_title">Finish updating TheatreSync</string>
+    <string name="update_notice_text">Tap to install the new version (Android needs one tap).</string>
+    <string name="bg_title">Run in the background</string>
+    <string name="bg_hint">How long TheatreSync keeps running after you leave it, when nothing is playing. It never starts by itself; open it and it runs again. It always keeps running during a movie, Play along, YouTube sound in headphones or TapIn guests.</string>
+    <string name="bg_hours_short">%1$d h</string>
+    <string name="bg_always">Always</string>
+    <string name="bg_hours_label">Hours</string>
+    <string name="bg_until_label">Until (hh:mm)</string>
+    <string name="bg_now_always">Keeps running until you tap Quit</string>
+    <string name="bg_now_until">Stops at %1$s if idle</string>
+    <string name="bg_now_hours">Stops after %1$s h idle</string>
 </resources>

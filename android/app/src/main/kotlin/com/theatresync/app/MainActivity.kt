@@ -218,7 +218,15 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        HostService.onScreen = true
+        AppUpdates.inForeground = true
+    }
+
     override fun onPause() {
+        AppUpdates.inForeground = false
+        HostService.onScreen = false
         if (nfcSharing.value) setNfcSharing(false, null) // preferred service only while on screen
         super.onPause()
     }
@@ -713,6 +721,7 @@ class MainActivity : ComponentActivity() {
         // Keep running in the background for as long as needed (owner). Started now, while on screen,
         // because Android doesn't allow it from the background.
         if (!runningUnderTest) HostService.start(this, movie = false)
+        HostService.onScreen = true
         askToRunInBackgroundOnce()
         refreshCrashes()
         AppUpdates.check(this)        // quietly, at most every 10 minutes
@@ -2115,6 +2124,50 @@ private fun PlayAlongCard(app: String, on: Boolean, st: PlayAlong.Status, onTogg
     }
 }
 
+/** Experimental: how long TheatreSync keeps running in the background while idle. */
+@Composable
+private fun BackgroundLimitCard() {
+    val context = LocalContext.current
+    var s by remember { mutableStateOf(BackgroundLimit.get(context)) }
+    fun save(n: BackgroundLimit.Setting) { s = n; BackgroundLimit.set(context, n) }
+    var hoursText by remember { mutableStateOf(s.hours.let { if (it % 1.0 == 0.0) it.toInt().toString() else it.toString() }) }
+    var untilText by remember { mutableStateOf(s.until) }
+    QCard {
+        Text(stringResource(R.string.bg_title), style = MaterialTheme.typography.titleLarge, color = Q.Text)
+        Hint(stringResource(R.string.bg_hint))
+        @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(1.0, 2.0, 4.0, 8.0, 12.0).forEach { h ->
+                val on = s.mode == BackgroundLimit.Mode.HOURS && s.hours == h
+                val label = stringResource(R.string.bg_hours_short, h.toInt())
+                if (on) GoldButton(label, {}, height = 40.dp) else GhostButton(label, { hoursText = h.toInt().toString(); save(s.copy(mode = BackgroundLimit.Mode.HOURS, hours = h)) }, height = 40.dp)
+            }
+            val always = s.mode == BackgroundLimit.Mode.ALWAYS
+            if (always) GoldButton(stringResource(R.string.bg_always), {}, height = 40.dp, modifier = Modifier.testTag("bg_always"))
+            else GhostButton(stringResource(R.string.bg_always), { save(s.copy(mode = BackgroundLimit.Mode.ALWAYS)) }, height = 40.dp, modifier = Modifier.testTag("bg_always"))
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            androidx.compose.material3.OutlinedTextField(
+                value = hoursText, onValueChange = { t -> hoursText = t; t.replace(',', '.').toDoubleOrNull()?.takeIf { it > 0 }?.let { save(s.copy(mode = BackgroundLimit.Mode.HOURS, hours = it)) } },
+                label = { Text(stringResource(R.string.bg_hours_label)) }, singleLine = true, modifier = Modifier.weight(1f).testTag("bg_hours"),
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
+            )
+            androidx.compose.material3.OutlinedTextField(
+                value = untilText, onValueChange = { t -> untilText = t; if (Regex("^([01]?\\d|2[0-3]):[0-5]\\d$").matches(t)) save(s.copy(mode = BackgroundLimit.Mode.UNTIL, until = t)) },
+                label = { Text(stringResource(R.string.bg_until_label)) }, singleLine = true, modifier = Modifier.weight(1f).testTag("bg_until"),
+            )
+        }
+        StatusPill(
+            when (s.mode) {
+                BackgroundLimit.Mode.ALWAYS -> stringResource(R.string.bg_now_always)
+                BackgroundLimit.Mode.UNTIL -> stringResource(R.string.bg_now_until, s.until)
+                BackgroundLimit.Mode.HOURS -> stringResource(R.string.bg_now_hours, hoursText)
+            },
+            Q.Primary,
+        )
+    }
+}
+
 // ---------------------------------------------------------------- remote cast (away from home)
 
 /**
@@ -2896,6 +2949,7 @@ internal fun qrBitmap(text: String, size: Int): androidx.compose.ui.graphics.Ima
 @Composable
 internal fun ExperimentalScreen(ui: MovieSession.Ui, onSignatureIntro: (Boolean) -> Unit, onBack: () -> Unit, onMultiAudio: (Boolean) -> Unit = {}, onAdSkipper: (Boolean) -> Unit = {}, onScreensaver: (Boolean) -> Unit = {}, onRemoteCast: (Boolean) -> Unit = {}) = Screen {
     TopBar(stringResource(R.string.experimental), onBack)
+    BackgroundLimitCard()
     QCard(highlighted = ui.remoteCast) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f).padding(end = 12.dp)) {
